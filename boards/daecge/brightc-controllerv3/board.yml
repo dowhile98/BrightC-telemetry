@@ -1,0 +1,6 @@
+board:
+  name: brightc-controllerv3
+  full_name: DAECGE BrightC Controller V3
+  vendor: daecge
+  socs:
+    - name: stm32h743xx

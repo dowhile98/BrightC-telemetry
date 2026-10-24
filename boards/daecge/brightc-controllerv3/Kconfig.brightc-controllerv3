@@ -1,0 +1,5 @@
+# Copyright (c) 2026 DAECGE
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_BRIGHTC_CONTROLLERV3
+	select SOC_STM32H743XX

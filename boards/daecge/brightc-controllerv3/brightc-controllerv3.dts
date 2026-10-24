@@ -1,0 +1,627 @@
+/*
+ * Copyright (c) 2026 DAECGE
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * BrightC Controller V3 — based on STM32H743ZIT6 (LQFP144)
+ * Hardware reference: doc/brightcV3.md
+ */
+
+/dts-v1/;
+#include <st/h7/stm32h743Xi.dtsi>
+#include <st/h7/stm32h743zitx-pinctrl.dtsi>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/dma/stm32_dma.h>
+
+/ {
+	model = "DAECGE BrightC Controller V3";
+	compatible = "daecge,brightc-controllerv3";
+
+	chosen {
+		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,dtcm = &dtcm;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,wifi = &esp_hosted_mcu_wifi;
+		zephyr,bt-hci = &esp_hosted_mcu_hci;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		user_led: led_0 {
+			gpios = <&gpiof 2 GPIO_ACTIVE_HIGH>;
+			label = "User LED";
+		};
+	};
+
+	buzzer {
+		compatible = "pwm-leds";
+
+		buzzer_pwm: buzzer {
+			pwms = <&pwm15 1 PWM_MSEC(1) PWM_POLARITY_NORMAL>;
+			label = "Buzzer PWM";
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		user_button: button_0 {
+			label = "User";
+			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
+			zephyr,code = <INPUT_KEY_0>;
+		};
+	};
+
+	digital_alarms {
+		compatible = "gpio-keys";
+
+		alm_in_1: alm_in_1 { gpios = <&mcp23s17_0 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 1"; zephyr,code = <INPUT_KEY_1>; };
+		alm_in_2: alm_in_2 { gpios = <&mcp23s17_0 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 2"; zephyr,code = <INPUT_KEY_2>; };
+		alm_in_3: alm_in_3 { gpios = <&mcp23s17_0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 3"; zephyr,code = <INPUT_KEY_3>; };
+		alm_in_4: alm_in_4 { gpios = <&mcp23s17_0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 4"; zephyr,code = <INPUT_KEY_4>; };
+		alm_in_5: alm_in_5 { gpios = <&mcp23s17_0 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 5"; zephyr,code = <INPUT_KEY_5>; };
+		alm_in_6: alm_in_6 { gpios = <&mcp23s17_0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 6"; zephyr,code = <INPUT_KEY_6>; };
+		alm_in_7: alm_in_7 { gpios = <&mcp23s17_0 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 7"; zephyr,code = <INPUT_KEY_7>; };
+		alm_in_8: alm_in_8 { gpios = <&mcp23s17_0 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 8"; zephyr,code = <INPUT_KEY_8>; };
+		alm_in_9: alm_in_9 { gpios = <&mcp23s17_0 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 9"; zephyr,code = <INPUT_KEY_9>; };
+		alm_in_10: alm_in_10 { gpios = <&mcp23s17_0 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 10"; zephyr,code = <INPUT_KEY_A>; };
+		alm_in_11: alm_in_11 { gpios = <&mcp23s17_0 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 11"; zephyr,code = <INPUT_KEY_B>; };
+		alm_in_12: alm_in_12 { gpios = <&mcp23s17_0 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 12"; zephyr,code = <INPUT_KEY_C>; };
+
+		alm_in_13: alm_in_13 { gpios = <&mcp23s17_1 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 13"; zephyr,code = <INPUT_KEY_D>; };
+		alm_in_14: alm_in_14 { gpios = <&mcp23s17_1 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 14"; zephyr,code = <INPUT_KEY_E>; };
+		alm_in_15: alm_in_15 { gpios = <&mcp23s17_1 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 15"; zephyr,code = <INPUT_KEY_F>; };
+		alm_in_16: alm_in_16 { gpios = <&mcp23s17_1 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 16"; zephyr,code = <INPUT_KEY_G>; };
+		alm_in_17: alm_in_17 { gpios = <&mcp23s17_1 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 17"; zephyr,code = <INPUT_KEY_H>; };
+		alm_in_18: alm_in_18 { gpios = <&mcp23s17_1 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 18"; zephyr,code = <INPUT_KEY_I>; };
+		alm_in_19: alm_in_19 { gpios = <&mcp23s17_1 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 19"; zephyr,code = <INPUT_KEY_J>; };
+		alm_in_20: alm_in_20 { gpios = <&mcp23s17_1 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 20"; zephyr,code = <INPUT_KEY_K>; };
+		alm_in_21: alm_in_21 { gpios = <&mcp23s17_1 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 21"; zephyr,code = <INPUT_KEY_L>; };
+		alm_in_22: alm_in_22 { gpios = <&mcp23s17_1 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 22"; zephyr,code = <INPUT_KEY_M>; };
+		alm_in_23: alm_in_23 { gpios = <&mcp23s17_1 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 23"; zephyr,code = <INPUT_KEY_N>; };
+		alm_in_24: alm_in_24 { gpios = <&mcp23s17_1 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 24"; zephyr,code = <INPUT_KEY_O>; };
+	};
+
+	hvac_relays {
+		compatible = "gpio-leds";
+
+		relay_sm3: relay_sm3 { gpios = <&mcp23s17_2 0 GPIO_ACTIVE_HIGH>; label = "Relay Smart 3"; };
+		relay_g4:  relay_g4  { gpios = <&mcp23s17_2 1 GPIO_ACTIVE_HIGH>; label = "Relay Fan 4"; };
+		relay_aa4: relay_aa4 { gpios = <&mcp23s17_2 2 GPIO_ACTIVE_HIGH>; label = "Relay AC 4"; };
+		relay_sm4: relay_sm4 { gpios = <&mcp23s17_2 3 GPIO_ACTIVE_HIGH>; label = "Relay Smart 4"; };
+
+		relay_g1:  relay_g1  { gpios = <&mcp23s17_2 8 GPIO_ACTIVE_HIGH>; label = "Relay Fan 1"; };
+		relay_aa1: relay_aa1 { gpios = <&mcp23s17_2 9 GPIO_ACTIVE_HIGH>; label = "Relay AC 1"; };
+		relay_sm1: relay_sm1 { gpios = <&mcp23s17_2 10 GPIO_ACTIVE_HIGH>; label = "Relay Smart 1"; };
+		relay_g2:  relay_g2  { gpios = <&mcp23s17_2 11 GPIO_ACTIVE_HIGH>; label = "Relay Fan 2"; };
+		relay_aa2: relay_aa2 { gpios = <&mcp23s17_2 12 GPIO_ACTIVE_HIGH>; label = "Relay AC 2"; };
+		relay_sm2: relay_sm2 { gpios = <&mcp23s17_2 13 GPIO_ACTIVE_HIGH>; label = "Relay Smart 2"; };
+		relay_g3:  relay_g3  { gpios = <&mcp23s17_2 14 GPIO_ACTIVE_HIGH>; label = "Relay Fan 3"; };
+		relay_aa3: relay_aa3 { gpios = <&mcp23s17_2 15 GPIO_ACTIVE_HIGH>; label = "Relay AC 3"; };
+	};
+
+	alarm_relays {
+		compatible = "gpio-leds";
+
+		alm_out_1: alm_out_1 { gpios = <&mcp23s17_3 8 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 1"; };
+		alm_out_2: alm_out_2 { gpios = <&mcp23s17_3 9 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 2"; };
+		alm_out_3: alm_out_3 { gpios = <&mcp23s17_3 10 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 3"; };
+		alm_out_4: alm_out_4 { gpios = <&mcp23s17_3 11 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 4"; };
+		alm_out_5: alm_out_5 { gpios = <&mcp23s17_3 12 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 5"; };
+		alm_out_6: alm_out_6 { gpios = <&mcp23s17_3 13 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 6"; };
+	};
+
+	board_gpio_controls {
+		compatible = "gpio-leds";
+
+		rs485_1_de: rs485_1_de { gpios = <&gpiod 4 GPIO_ACTIVE_HIGH>; label = "RS485-1 DE/RE Enable"; };
+		rs485_2_de: rs485_2_de { gpios = <&gpiog 8 GPIO_ACTIVE_HIGH>; label = "RS485-2 DE/RE Enable"; };
+		dwin_en:    dwin_en    { gpios = <&gpiod 9 GPIO_ACTIVE_LOW>; label = "DWIN LCD Power Enable"; };
+		eth_phy_rst: eth_phy_rst { gpios = <&gpiog 4 GPIO_ACTIVE_LOW>; label = "Ethernet PHY Reset"; };
+		usb_pwr_on: usb_pwr_on { gpios = <&gpiod 10 GPIO_ACTIVE_HIGH>; label = "USB Power Enable"; };
+	};
+
+	board_gpio_inputs {
+		compatible = "gpio-keys";
+
+		dwin_ovc:   dwin_ovc   { gpios = <&gpiod 8 GPIO_ACTIVE_LOW>; label = "DWIN LCD Overcurrent Detect"; zephyr,code = <INPUT_KEY_1>; };
+		usb_ovcr:   usb_ovcr   { gpios = <&gpiog 7 GPIO_ACTIVE_HIGH>; label = "USB Overcurrent Detect"; zephyr,code = <INPUT_KEY_2>; };
+		sw_bypass:  sw_bypass  { gpios = <&gpiod 11 GPIO_ACTIVE_HIGH>; label = "Bypass Switch Input"; zephyr,code = <INPUT_KEY_3>; };
+	};
+
+	aliases {
+		led0 = &user_led;
+		rtc = &rtc;
+		sw0 = &user_button;
+		watchdog0 = &iwdg;
+		die-temp0 = &die_temp;
+		volt-sensor0 = &vref;
+		volt-sensor1 = &vbat;
+		eeprom0 = &eeprom0;
+		storage-flash = &w25q16_qspi;
+	};
+
+	fstab {
+		compatible = "zephyr,fstab";
+
+		lfs_ext: lfs_ext {
+			compatible = "zephyr,fstab,littlefs";
+			mount-point = "/lfs";
+			partition = <&external_flash_partition>;
+			read-size = <16>;
+			prog-size = <16>;
+			cache-size = <64>;
+			lookahead-size = <32>;
+			block-cycles = <512>;
+		};
+	};
+};
+
+/* ---- Clocks ---- */
+
+&clk_lsi {
+	status = "okay";
+};
+
+&clk_lse {
+	status = "okay";
+};
+
+&clk_hsi48 {
+	status = "okay";
+};
+
+&clk_hse {
+	clock-frequency = <DT_FREQ_M(25)>; /* 25 MHz crystal on PH0/PH1 */
+	status = "okay";
+};
+
+&pll {
+	div-m = <5>;    /* VCO in  = 25/5 = 5 MHz */
+	mul-n = <192>;  /* VCO     = 5*192 = 960 MHz */
+	div-p = <2>;    /* sysclk  = 960/2 = 480 MHz */
+	div-q = <2>;
+	div-r = <2>;
+	clocks = <&clk_hse>;
+	status = "okay";
+};
+
+&rcc {
+	clocks = <&pll>;
+	clock-frequency = <DT_FREQ_M(480)>;
+	d1cpre = <1>;
+	hpre = <2>;
+	d1ppre = <2>;
+	d2ppre1 = <2>;
+	d2ppre2 = <2>;
+	d3ppre = <2>;
+};
+
+&pwr {
+	power-supply = "ldo";
+};
+
+/* ---- Serial: Console (USART1 on PB14/PB15) ---- */
+
+&usart1 {
+	pinctrl-0 = <&usart1_tx_pb14 &usart1_rx_pb15>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+&usart2 {
+	pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+
+	modbus0: modbus0 {
+		compatible = "zephyr,modbus-serial";
+		status = "okay";
+		de-gpios = <&gpiod 4 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* ---- Serial: DWIN LCD (USART3 on PB10/PB11) ---- */
+
+&usart3 {
+	pinctrl-0 = <&usart3_tx_pb10 &usart3_rx_pb11>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+/* ---- Serial: ESP32 (UART4 on PD1/TX, PD0/RX with DMA TX/RX) ---- */
+
+&uart4 {
+	pinctrl-0 = <&uart4_tx_pd1 &uart4_rx_pd0>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	dmas = <&dmamux1 5 64 (STM32_DMA_PERIPH_TX | STM32_DMA_PRIORITY_HIGH)>,
+	       <&dmamux1 6 63 (STM32_DMA_PERIPH_RX | STM32_DMA_PRIORITY_HIGH)>;
+	dma-names = "tx", "rx";
+	status = "okay";
+};
+
+/* ---- Serial: RS485-2 (USART6 on PC6/PC7, DE on PG8) ---- */
+
+&usart6 {
+	pinctrl-0 = <&usart6_tx_pc6 &usart6_rx_pc7>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+/* ---- I2C1: DHT22 sensor (PB7/SDA, PB6/SCL) ---- */
+
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	status = "okay";
+};
+
+/* ---- I2C2: AT24C256C EEPROM (PF1/SCL, PF0/SDA) ---- */
+
+&i2c2 {
+	pinctrl-0 = <&i2c2_scl_pf1 &i2c2_sda_pf0>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	status = "okay";
+
+	eeprom0: eeprom@50 {
+		compatible = "atmel,at24c256", "atmel,at24";
+		reg = <0x50>;
+		size = <DT_SIZE_K(32)>;
+		pagesize = <64>;
+		address-width = <16>;
+		timeout = <5>;
+		status = "okay";
+	};
+};
+
+/* ---- SPI1: MultiSPI for MCP23S17 I/O expanders (PD7/MOSI, PG9/MISO, PA5/SCK) ---- */
+
+&spi1 {
+	pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pg9 &spi1_mosi_pd7>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 15 GPIO_ACTIVE_LOW>,
+		   <&gpiog 3 GPIO_ACTIVE_LOW>,
+		   <&gpiog 2 GPIO_ACTIVE_LOW>,
+		   <&gpiod 15 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	mcp23s17_0: mcp23s17@0 {
+		compatible = "microchip,mcp23s17";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		int-gpios = <&gpioe 1 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+
+	mcp23s17_1: mcp23s17@1 {
+		compatible = "microchip,mcp23s17";
+		reg = <1>;
+		spi-max-frequency = <10000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		int-gpios = <&gpioe 0 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+
+	mcp23s17_2: mcp23s17@2 {
+		compatible = "microchip,mcp23s17";
+		reg = <2>;
+		spi-max-frequency = <10000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		int-gpios = <&gpiob 9 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+
+	mcp23s17_3: mcp23s17@3 {
+		compatible = "microchip,mcp23s17";
+		reg = <3>;
+		spi-max-frequency = <10000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		int-gpios = <&gpiob 8 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+};
+
+/* ---- SPI4: ESP32 esp-hosted-mcu (PE14/MOSI, PE13/MISO, PE12/SCK, PE11/NSS, PD13/HS, PE15/DR, PD14/NRST) ---- */
+
+&spi4 {
+	pinctrl-0 = <&spi4_mosi_pe14 &spi4_miso_pe13 &spi4_sck_pe12>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>;
+	status = "okay";
+
+	esp_hosted_mcu: esp-hosted-mcu@0 {
+		compatible = "espressif,esp-hosted-mcu";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(5)>;
+		reset-gpios = <&gpiod 14 GPIO_ACTIVE_HIGH>;
+		handshake-gpios = <&gpiod 13 GPIO_ACTIVE_HIGH>;
+		dataready-gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+
+		esp_hosted_mcu_wifi: wifi {
+			compatible = "espressif,esp-hosted-mcu-wifi";
+			status = "okay";
+		};
+
+		esp_hosted_mcu_hci: bt-hci {
+			compatible = "espressif,esp-hosted-mcu-bt-hci";
+			status = "okay";
+		};
+	};
+};
+
+/* ---- QSPI: external flash (PF8/IO0, PD12/IO1, PE2/IO2, PF6/IO3, PF10/CLK, PG6/NSS) ---- */
+
+&quadspi {
+	pinctrl-0 = <&quadspi_bk1_io0_pf8 &quadspi_bk1_io1_pd12
+		     &quadspi_bk1_io2_pe2 &quadspi_bk1_io3_pf6
+		     &quadspi_clk_pf10 &quadspi_bk1_ncs_pg6>;
+	pinctrl-names = "default";
+	flash-id = <1>;
+	status = "okay";
+
+	w25q16_qspi: qspi-nor-flash@0 {
+		compatible = "st,stm32-qspi-nor";
+		reg = <0>;
+		size = <DT_SIZE_M(16)>; /* 16 Mbits = 2 MBytes */
+		qspi-max-frequency = <40000000>;
+		cs-high-time = <2>;
+		status = "okay";
+		spi-bus-width = <4>;
+		writeoc = "PP_1_1_4";
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			external_flash_partition: partition@0 {
+				label = "ext-flash-storage";
+				reg = <0x00000000 DT_SIZE_M(2)>;
+			};
+		};
+	};
+};
+
+/* ---- SDMMC1: microSD (PC8/D0, PC9/D1, PC10/D2, PC11/D3, PC12/CLK, PD2/CMD) ---- */
+
+&sdmmc1 {
+	pinctrl-0 = <&sdmmc1_d0_pc8 &sdmmc1_d1_pc9
+		     &sdmmc1_d2_pc10 &sdmmc1_d3_pc11
+		     &sdmmc1_ck_pc12 &sdmmc1_cmd_pd2>;
+	pinctrl-names = "default";
+	clocks = <&rcc STM32_CLOCK(AHB3, 16)>,
+		 <&rcc STM32_SRC_HSI48 SDMMC_SEL(2)>;
+	cd-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+	disk-name = "SD";
+	bus-width = <4>;
+	clk-div = <4>;
+	idma;
+	status = "okay";
+};
+
+&sdmmc1_ck_pc12 {
+	bias-disable;
+};
+
+/* ---- ADC Clock Configuration (Common Clusters) ---- */
+&adc12_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
+&adc3_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
+/* ---- ADC1 (9 Canales: PC0, PA0, PA3, PA4, PA6, PB0, PB1, PF11, PF12) ---- */
+&adc1 {
+	pinctrl-0 = <&adc1_inp10_pc0 &adc1_inp16_pa0 &adc1_inp15_pa3
+		     &adc1_inp18_pa4 &adc1_inp3_pa6 &adc1_inp9_pb0
+		     &adc1_inp5_pb1 &adc1_inp2_pf11 &adc1_inp6_pf12>;
+	pinctrl-names = "default";
+	dmas = <&dmamux1 0 9 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PRIORITY_HIGH)>;
+	dma-names = "rx";
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@2  { reg = <2>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@3  { reg = <3>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@5  { reg = <5>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@6  { reg = <6>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@9  { reg = <9>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@a  { reg = <10>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@f  { reg = <15>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@10 { reg = <16>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@12 { reg = <18>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+};
+
+/* ---- ADC2 (2 Canales: PF13, PF14) ---- */
+&adc2 {
+	pinctrl-0 = <&adc2_inp2_pf13 &adc2_inp6_pf14>;
+	pinctrl-names = "default";
+	dmas = <&dmamux1 1 10 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PRIORITY_HIGH)>;
+	dma-names = "rx";
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@2 { reg = <2>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@6 { reg = <6>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+};
+
+/* ---- ADC3 (4 Canales: PF9, PF7, PF5, PF3) ---- */
+&adc3 {
+	pinctrl-0 = <&adc3_inp2_pf9 &adc3_inp3_pf7 &adc3_inp4_pf5 &adc3_inp5_pf3>;
+	pinctrl-names = "default";
+	dmas = <&dmamux1 2 115 (STM32_DMA_PERIPH_TO_MEMORY | STM32_DMA_PRIORITY_HIGH)>;
+	dma-names = "rx";
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@2 { reg = <2>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@3 { reg = <3>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@4 { reg = <4>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@5 { reg = <5>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+};
+
+/* ---- USB OTG FS (PA11/DM, PA12/DP, PA10/ID, PA9/VBUS) ---- */
+
+zephyr_udc0: &usbotg_fs {
+	pinctrl-0 = <&usb_otg_fs_dm_pa11 &usb_otg_fs_dp_pa12
+		     &usb_otg_fs_id_pa10 &usb_otg_fs_vbus_pa9>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&die_temp {
+	status = "okay";
+};
+
+/* ---- TIM15: Buzzer PWM (PE5 channel 1) ---- */
+
+&timers15 {
+	st,prescaler = <10000>;
+	status = "okay";
+
+	pwm15: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim15_ch1_pe5>;
+		pinctrl-names = "default";
+	};
+};
+
+/* ---- RTC (clocked from LSE 32.768 kHz) ---- */
+
+&rtc {
+	clocks = <&rcc STM32_CLOCK(APB4, 16)>,
+		 <&rcc STM32_SRC_LSE RTC_SEL(1)>;
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+};
+
+&backup_sram {
+	status = "okay";
+};
+
+/* ---- Flash partitions (mcuboot layout) ---- */
+
+&flash0 {
+	partitions {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* 128 KB for bootloader */
+		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			label = "mcuboot";
+			reg = <0x00000000 DT_SIZE_K(128)>;
+			read-only;
+		};
+
+		/* 128 KB for settings storage */
+		storage_partition: partition@20000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x00020000 DT_SIZE_K(128)>;
+		};
+
+		/* 256 KB application image slot 0 */
+		slot0_partition: partition@40000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-0";
+			reg = <0x00040000 DT_SIZE_K(256)>;
+		};
+
+		/* 256 KB application image slot 1 */
+		slot1_partition: partition@80000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-1";
+			reg = <0x00080000 DT_SIZE_K(256)>;
+		};
+
+		/* 128 KB for swap */
+		scratch_partition: partition@c0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-scratch";
+			reg = <0x000c0000 DT_SIZE_K(128)>;
+		};
+	};
+};
+
+&iwdg1 {
+	status = "okay";
+};
+
+&vref {
+	status = "okay";
+};
+
+&vbat {
+	status = "okay";
+};
+
+/* ---- DMA Controllers & DMAMUX Multiplexer ---- */
+&dma1 {
+	status = "okay";
+};
+
+&dma2 {
+	status = "okay";
+};
+
+&dmamux1 {
+	status = "okay";
+};
+
+/* ---- Ethernet MAC (LAN8742A RMII + PG4 PHY Reset) ---- */
+&mac {
+	status = "okay";
+	pinctrl-0 = <&eth_ref_clk_pa1
+		     &eth_crs_dv_pa7
+		     &eth_rxd0_pc4
+		     &eth_rxd1_pc5
+		     &eth_tx_en_pg11
+		     &eth_txd0_pg13
+		     &eth_txd1_pb13>;
+	pinctrl-names = "default";
+	phy-connection-type = "rmii";
+	phy-handle = <&eth_phy>;
+};
+
+&mdio {
+	status = "okay";
+	pinctrl-0 = <&eth_mdio_pa2 &eth_mdc_pc1>;
+	pinctrl-names = "default";
+
+	eth_phy: ethernet-phy@0 {
+		compatible = "ethernet-phy";
+		reg = <0x00>;
+		reset-gpios = <&gpiog 4 GPIO_ACTIVE_LOW>;
+	};
+};
