@@ -20,3 +20,27 @@ manifest:
           - cmsis_6    # required by the ARM port for Cortex-M
           - hal_nordic # required by the custom_plank board (Nordic based)
           - hal_stm32  # required by the nucleo_f302r8 board (STM32 based)
+          - fatfs
+          - mbedtls
+          - mldsa-native
+          - tf-psa-crypto
+          - mipi-sys-t
+          - percepio
+          - segger
+          - lvgl
+          - zcbor
+          - nanopb
+          - cmsis-dsp
+          - cmsis-nn
+    - name: microconf
+      url: https://github.com/dowhile98/microconf.git
+      revision: master
+      path: modules/lib/microconf
+    - name: nanoMODBUS
+      url: https://github.com/dowhile98/nanoMODBUS.git
+      revision: master
+      path: modules/lib/nanoMODBUS
+    - name: zephyr-snmp
+      url: https://github.com/dowhile98/zephyr-snmp.git
+      revision: main
+      path: modules/lib/zephyr-snmp
