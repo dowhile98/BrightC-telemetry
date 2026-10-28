@@ -9,8 +9,24 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 project(app LANGUAGES C)
 
-target_sources(app PRIVATE src/main.c)
-target_include_directories(app PRIVATE include)
+target_sources(app PRIVATE
+    src/main.c
+    src/application/active_objects/ao_modbus.c
+    src/application/modbus/modbus_registry.c
+    src/domain/services/cwt_tm16pt_codec.c
+    src/domain/services/slave_scheduler.c
+    src/infrastructure/di/composition_root.c
+)
+target_include_directories(app PRIVATE
+    include
+    src
+)
+
+# The nanoMODBUS transport adapter is the only part that depends on the stack,
+# so it is only compiled when the stack is enabled.
+if(CONFIG_NANOMODBUS)
+    target_sources(app PRIVATE src/infrastructure/adapters/adapter_modbus_nmbs.c)
+endif()
 
 # The code below locates the git index file for this repository and adds it as a dependency for
 # the application VERSION file so that if the repo has a new commit added, even if no files in

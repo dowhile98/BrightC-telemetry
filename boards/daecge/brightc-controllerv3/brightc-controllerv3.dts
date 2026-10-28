@@ -59,78 +59,298 @@
 	digital_alarms {
 		compatible = "gpio-keys";
 
-		alm_in_1: alm_in_1 { gpios = <&mcp23s17_0 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 1"; zephyr,code = <INPUT_KEY_1>; };
-		alm_in_2: alm_in_2 { gpios = <&mcp23s17_0 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 2"; zephyr,code = <INPUT_KEY_2>; };
-		alm_in_3: alm_in_3 { gpios = <&mcp23s17_0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 3"; zephyr,code = <INPUT_KEY_3>; };
-		alm_in_4: alm_in_4 { gpios = <&mcp23s17_0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 4"; zephyr,code = <INPUT_KEY_4>; };
-		alm_in_5: alm_in_5 { gpios = <&mcp23s17_0 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 5"; zephyr,code = <INPUT_KEY_5>; };
-		alm_in_6: alm_in_6 { gpios = <&mcp23s17_0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 6"; zephyr,code = <INPUT_KEY_6>; };
-		alm_in_7: alm_in_7 { gpios = <&mcp23s17_0 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 7"; zephyr,code = <INPUT_KEY_7>; };
-		alm_in_8: alm_in_8 { gpios = <&mcp23s17_0 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 8"; zephyr,code = <INPUT_KEY_8>; };
-		alm_in_9: alm_in_9 { gpios = <&mcp23s17_0 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 9"; zephyr,code = <INPUT_KEY_9>; };
-		alm_in_10: alm_in_10 { gpios = <&mcp23s17_0 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 10"; zephyr,code = <INPUT_KEY_A>; };
-		alm_in_11: alm_in_11 { gpios = <&mcp23s17_0 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 11"; zephyr,code = <INPUT_KEY_B>; };
-		alm_in_12: alm_in_12 { gpios = <&mcp23s17_0 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 12"; zephyr,code = <INPUT_KEY_C>; };
+		alm_in_1: alm_in_1 {
+			gpios = <&mcp23s17_0 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 1";
+			zephyr,code = <INPUT_KEY_1>;
+		};
 
-		alm_in_13: alm_in_13 { gpios = <&mcp23s17_1 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 13"; zephyr,code = <INPUT_KEY_D>; };
-		alm_in_14: alm_in_14 { gpios = <&mcp23s17_1 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 14"; zephyr,code = <INPUT_KEY_E>; };
-		alm_in_15: alm_in_15 { gpios = <&mcp23s17_1 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 15"; zephyr,code = <INPUT_KEY_F>; };
-		alm_in_16: alm_in_16 { gpios = <&mcp23s17_1 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 16"; zephyr,code = <INPUT_KEY_G>; };
-		alm_in_17: alm_in_17 { gpios = <&mcp23s17_1 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 17"; zephyr,code = <INPUT_KEY_H>; };
-		alm_in_18: alm_in_18 { gpios = <&mcp23s17_1 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 18"; zephyr,code = <INPUT_KEY_I>; };
-		alm_in_19: alm_in_19 { gpios = <&mcp23s17_1 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 19"; zephyr,code = <INPUT_KEY_J>; };
-		alm_in_20: alm_in_20 { gpios = <&mcp23s17_1 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 20"; zephyr,code = <INPUT_KEY_K>; };
-		alm_in_21: alm_in_21 { gpios = <&mcp23s17_1 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 21"; zephyr,code = <INPUT_KEY_L>; };
-		alm_in_22: alm_in_22 { gpios = <&mcp23s17_1 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 22"; zephyr,code = <INPUT_KEY_M>; };
-		alm_in_23: alm_in_23 { gpios = <&mcp23s17_1 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 23"; zephyr,code = <INPUT_KEY_N>; };
-		alm_in_24: alm_in_24 { gpios = <&mcp23s17_1 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>; label = "Digital Alarm 24"; zephyr,code = <INPUT_KEY_O>; };
+		alm_in_2: alm_in_2 {
+			gpios = <&mcp23s17_0 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 2";
+			zephyr,code = <INPUT_KEY_2>;
+		};
+
+		alm_in_3: alm_in_3 {
+			gpios = <&mcp23s17_0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 3";
+			zephyr,code = <INPUT_KEY_3>;
+		};
+
+		alm_in_4: alm_in_4 {
+			gpios = <&mcp23s17_0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 4";
+			zephyr,code = <INPUT_KEY_4>;
+		};
+
+		alm_in_5: alm_in_5 {
+			gpios = <&mcp23s17_0 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 5";
+			zephyr,code = <INPUT_KEY_5>;
+		};
+
+		alm_in_6: alm_in_6 {
+			gpios = <&mcp23s17_0 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 6";
+			zephyr,code = <INPUT_KEY_6>;
+		};
+
+		alm_in_7: alm_in_7 {
+			gpios = <&mcp23s17_0 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 7";
+			zephyr,code = <INPUT_KEY_7>;
+		};
+
+		alm_in_8: alm_in_8 {
+			gpios = <&mcp23s17_0 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 8";
+			zephyr,code = <INPUT_KEY_8>;
+		};
+
+		alm_in_9: alm_in_9 {
+			gpios = <&mcp23s17_0 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 9";
+			zephyr,code = <INPUT_KEY_9>;
+		};
+
+		alm_in_10: alm_in_10 {
+			gpios = <&mcp23s17_0 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 10";
+			zephyr,code = <INPUT_KEY_A>;
+		};
+
+		alm_in_11: alm_in_11 {
+			gpios = <&mcp23s17_0 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 11";
+			zephyr,code = <INPUT_KEY_B>;
+		};
+
+		alm_in_12: alm_in_12 {
+			gpios = <&mcp23s17_0 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 12";
+			zephyr,code = <INPUT_KEY_C>;
+		};
+
+		alm_in_13: alm_in_13 {
+			gpios = <&mcp23s17_1 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 13";
+			zephyr,code = <INPUT_KEY_D>;
+		};
+
+		alm_in_14: alm_in_14 {
+			gpios = <&mcp23s17_1 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 14";
+			zephyr,code = <INPUT_KEY_E>;
+		};
+
+		alm_in_15: alm_in_15 {
+			gpios = <&mcp23s17_1 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 15";
+			zephyr,code = <INPUT_KEY_F>;
+		};
+
+		alm_in_16: alm_in_16 {
+			gpios = <&mcp23s17_1 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 16";
+			zephyr,code = <INPUT_KEY_G>;
+		};
+
+		alm_in_17: alm_in_17 {
+			gpios = <&mcp23s17_1 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 17";
+			zephyr,code = <INPUT_KEY_H>;
+		};
+
+		alm_in_18: alm_in_18 {
+			gpios = <&mcp23s17_1 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 18";
+			zephyr,code = <INPUT_KEY_I>;
+		};
+
+		alm_in_19: alm_in_19 {
+			gpios = <&mcp23s17_1 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 19";
+			zephyr,code = <INPUT_KEY_J>;
+		};
+
+		alm_in_20: alm_in_20 {
+			gpios = <&mcp23s17_1 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 20";
+			zephyr,code = <INPUT_KEY_K>;
+		};
+
+		alm_in_21: alm_in_21 {
+			gpios = <&mcp23s17_1 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 21";
+			zephyr,code = <INPUT_KEY_L>;
+		};
+
+		alm_in_22: alm_in_22 {
+			gpios = <&mcp23s17_1 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 22";
+			zephyr,code = <INPUT_KEY_M>;
+		};
+
+		alm_in_23: alm_in_23 {
+			gpios = <&mcp23s17_1 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 23";
+			zephyr,code = <INPUT_KEY_N>;
+		};
+
+		alm_in_24: alm_in_24 {
+			gpios = <&mcp23s17_1 11 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Digital Alarm 24";
+			zephyr,code = <INPUT_KEY_O>;
+		};
 	};
 
 	hvac_relays {
 		compatible = "gpio-leds";
 
-		relay_sm3: relay_sm3 { gpios = <&mcp23s17_2 0 GPIO_ACTIVE_HIGH>; label = "Relay Smart 3"; };
-		relay_g4:  relay_g4  { gpios = <&mcp23s17_2 1 GPIO_ACTIVE_HIGH>; label = "Relay Fan 4"; };
-		relay_aa4: relay_aa4 { gpios = <&mcp23s17_2 2 GPIO_ACTIVE_HIGH>; label = "Relay AC 4"; };
-		relay_sm4: relay_sm4 { gpios = <&mcp23s17_2 3 GPIO_ACTIVE_HIGH>; label = "Relay Smart 4"; };
+		relay_sm3: relay_sm3 {
+			gpios = <&mcp23s17_2 0 GPIO_ACTIVE_HIGH>;
+			label = "Relay Smart 3";
+		};
 
-		relay_g1:  relay_g1  { gpios = <&mcp23s17_2 8 GPIO_ACTIVE_HIGH>; label = "Relay Fan 1"; };
-		relay_aa1: relay_aa1 { gpios = <&mcp23s17_2 9 GPIO_ACTIVE_HIGH>; label = "Relay AC 1"; };
-		relay_sm1: relay_sm1 { gpios = <&mcp23s17_2 10 GPIO_ACTIVE_HIGH>; label = "Relay Smart 1"; };
-		relay_g2:  relay_g2  { gpios = <&mcp23s17_2 11 GPIO_ACTIVE_HIGH>; label = "Relay Fan 2"; };
-		relay_aa2: relay_aa2 { gpios = <&mcp23s17_2 12 GPIO_ACTIVE_HIGH>; label = "Relay AC 2"; };
-		relay_sm2: relay_sm2 { gpios = <&mcp23s17_2 13 GPIO_ACTIVE_HIGH>; label = "Relay Smart 2"; };
-		relay_g3:  relay_g3  { gpios = <&mcp23s17_2 14 GPIO_ACTIVE_HIGH>; label = "Relay Fan 3"; };
-		relay_aa3: relay_aa3 { gpios = <&mcp23s17_2 15 GPIO_ACTIVE_HIGH>; label = "Relay AC 3"; };
+		relay_g4: relay_g4 {
+			gpios = <&mcp23s17_2 1 GPIO_ACTIVE_HIGH>;
+			label = "Relay Fan 4";
+		};
+
+		relay_aa4: relay_aa4 {
+			gpios = <&mcp23s17_2 2 GPIO_ACTIVE_HIGH>;
+			label = "Relay AC 4";
+		};
+
+		relay_sm4: relay_sm4 {
+			gpios = <&mcp23s17_2 3 GPIO_ACTIVE_HIGH>;
+			label = "Relay Smart 4";
+		};
+
+		relay_g1: relay_g1 {
+			gpios = <&mcp23s17_2 8 GPIO_ACTIVE_HIGH>;
+			label = "Relay Fan 1";
+		};
+
+		relay_aa1: relay_aa1 {
+			gpios = <&mcp23s17_2 9 GPIO_ACTIVE_HIGH>;
+			label = "Relay AC 1";
+		};
+
+		relay_sm1: relay_sm1 {
+			gpios = <&mcp23s17_2 10 GPIO_ACTIVE_HIGH>;
+			label = "Relay Smart 1";
+		};
+
+		relay_g2: relay_g2 {
+			gpios = <&mcp23s17_2 11 GPIO_ACTIVE_HIGH>;
+			label = "Relay Fan 2";
+		};
+
+		relay_aa2: relay_aa2 {
+			gpios = <&mcp23s17_2 12 GPIO_ACTIVE_HIGH>;
+			label = "Relay AC 2";
+		};
+
+		relay_sm2: relay_sm2 {
+			gpios = <&mcp23s17_2 13 GPIO_ACTIVE_HIGH>;
+			label = "Relay Smart 2";
+		};
+
+		relay_g3: relay_g3 {
+			gpios = <&mcp23s17_2 14 GPIO_ACTIVE_HIGH>;
+			label = "Relay Fan 3";
+		};
+
+		relay_aa3: relay_aa3 {
+			gpios = <&mcp23s17_2 15 GPIO_ACTIVE_HIGH>;
+			label = "Relay AC 3";
+		};
 	};
 
 	alarm_relays {
 		compatible = "gpio-leds";
 
-		alm_out_1: alm_out_1 { gpios = <&mcp23s17_3 8 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 1"; };
-		alm_out_2: alm_out_2 { gpios = <&mcp23s17_3 9 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 2"; };
-		alm_out_3: alm_out_3 { gpios = <&mcp23s17_3 10 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 3"; };
-		alm_out_4: alm_out_4 { gpios = <&mcp23s17_3 11 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 4"; };
-		alm_out_5: alm_out_5 { gpios = <&mcp23s17_3 12 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 5"; };
-		alm_out_6: alm_out_6 { gpios = <&mcp23s17_3 13 GPIO_ACTIVE_HIGH>; label = "Alarm Output Relay 6"; };
+		alm_out_1: alm_out_1 {
+			gpios = <&mcp23s17_3 8 GPIO_ACTIVE_HIGH>;
+			label = "Alarm Output Relay 1";
+		};
+
+		alm_out_2: alm_out_2 {
+			gpios = <&mcp23s17_3 9 GPIO_ACTIVE_HIGH>;
+			label = "Alarm Output Relay 2";
+		};
+
+		alm_out_3: alm_out_3 {
+			gpios = <&mcp23s17_3 10 GPIO_ACTIVE_HIGH>;
+			label = "Alarm Output Relay 3";
+		};
+
+		alm_out_4: alm_out_4 {
+			gpios = <&mcp23s17_3 11 GPIO_ACTIVE_HIGH>;
+			label = "Alarm Output Relay 4";
+		};
+
+		alm_out_5: alm_out_5 {
+			gpios = <&mcp23s17_3 12 GPIO_ACTIVE_HIGH>;
+			label = "Alarm Output Relay 5";
+		};
+
+		alm_out_6: alm_out_6 {
+			gpios = <&mcp23s17_3 13 GPIO_ACTIVE_HIGH>;
+			label = "Alarm Output Relay 6";
+		};
 	};
 
 	board_gpio_controls {
 		compatible = "gpio-leds";
 
-		rs485_1_de: rs485_1_de { gpios = <&gpiod 4 GPIO_ACTIVE_HIGH>; label = "RS485-1 DE/RE Enable"; };
-		rs485_2_de: rs485_2_de { gpios = <&gpiog 8 GPIO_ACTIVE_HIGH>; label = "RS485-2 DE/RE Enable"; };
-		dwin_en:    dwin_en    { gpios = <&gpiod 9 GPIO_ACTIVE_LOW>; label = "DWIN LCD Power Enable"; };
-		eth_phy_rst: eth_phy_rst { gpios = <&gpiog 4 GPIO_ACTIVE_LOW>; label = "Ethernet PHY Reset"; };
-		usb_pwr_on: usb_pwr_on { gpios = <&gpiod 10 GPIO_ACTIVE_HIGH>; label = "USB Power Enable"; };
+		// rs485_1_de: rs485_1_de {
+		// 	gpios = <&gpiod 4 GPIO_ACTIVE_HIGH>;
+		// 	label = "RS485-1 DE/RE Enable";
+		// };
+
+		// rs485_2_de: rs485_2_de {
+		// 	gpios = <&gpiog 8 GPIO_ACTIVE_HIGH>;
+		// 	label = "RS485-2 DE/RE Enable";
+		// };
+
+		dwin_en: dwin_en {
+			gpios = <&gpiod 9 GPIO_ACTIVE_LOW>;
+			label = "DWIN LCD Power Enable";
+		};
+
+		eth_phy_rst: eth_phy_rst {
+			gpios = <&gpiog 4 GPIO_ACTIVE_LOW>;
+			label = "Ethernet PHY Reset";
+		};
+
+		usb_pwr_on: usb_pwr_on {
+			gpios = <&gpiod 10 GPIO_ACTIVE_HIGH>;
+			label = "USB Power Enable";
+		};
 	};
 
 	board_gpio_inputs {
 		compatible = "gpio-keys";
 
-		dwin_ovc:   dwin_ovc   { gpios = <&gpiod 8 GPIO_ACTIVE_LOW>; label = "DWIN LCD Overcurrent Detect"; zephyr,code = <INPUT_KEY_1>; };
-		usb_ovcr:   usb_ovcr   { gpios = <&gpiog 7 GPIO_ACTIVE_HIGH>; label = "USB Overcurrent Detect"; zephyr,code = <INPUT_KEY_2>; };
-		sw_bypass:  sw_bypass  { gpios = <&gpiod 11 GPIO_ACTIVE_HIGH>; label = "Bypass Switch Input"; zephyr,code = <INPUT_KEY_3>; };
+		dwin_ovc: dwin_ovc {
+			gpios = <&gpiod 8 GPIO_ACTIVE_LOW>;
+			label = "DWIN LCD Overcurrent Detect";
+			zephyr,code = <INPUT_KEY_1>;
+		};
+
+		usb_ovcr: usb_ovcr {
+			gpios = <&gpiog 7 GPIO_ACTIVE_HIGH>;
+			label = "USB Overcurrent Detect";
+			zephyr,code = <INPUT_KEY_2>;
+		};
+
+		sw_bypass: sw_bypass {
+			gpios = <&gpiod 11 GPIO_ACTIVE_HIGH>;
+			label = "Bypass Switch Input";
+			zephyr,code = <INPUT_KEY_3>;
+		};
 	};
 
 	aliases {
@@ -214,17 +434,13 @@
 	status = "okay";
 };
 
+/* ---- Serial: RS485-1 (USART2 on PD5/PD6, DE on PD4) ---- */
 &usart2 {
-	pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
+	pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6 &usart2_de_pd4>;
 	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "okay";
-
-	modbus0: modbus0 {
-		compatible = "zephyr,modbus-serial";
-		status = "okay";
-		de-gpios = <&gpiod 4 GPIO_ACTIVE_HIGH>;
-	};
+	de-enable;
 };
 
 /* ---- Serial: DWIN LCD (USART3 on PB10/PB11) ---- */
@@ -251,10 +467,11 @@
 /* ---- Serial: RS485-2 (USART6 on PC6/PC7, DE on PG8) ---- */
 
 &usart6 {
-	pinctrl-0 = <&usart6_tx_pc6 &usart6_rx_pc7>;
+	pinctrl-0 = <&usart6_tx_pc6 &usart6_rx_pc7 &usart6_de_pg8>;
 	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "okay";
+	de-enable;
 };
 
 /* ---- I2C1: DHT22 sensor (PB7/SDA, PB6/SCL) ---- */
@@ -445,15 +662,77 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	channel@2  { reg = <2>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@3  { reg = <3>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@5  { reg = <5>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@6  { reg = <6>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@9  { reg = <9>;  zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@a  { reg = <10>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@f  { reg = <15>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@10 { reg = <16>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@12 { reg = <18>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@2 {
+		reg = <2>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@3 {
+		reg = <3>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@5 {
+		reg = <5>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@6 {
+		reg = <6>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@9 {
+		reg = <9>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@a {
+		reg = <10>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@f {
+		reg = <15>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@10 {
+		reg = <16>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@12 {
+		reg = <18>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
 };
 
 /* ---- ADC2 (2 Canales: PF13, PF14) ---- */
@@ -466,8 +745,21 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	channel@2 { reg = <2>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@6 { reg = <6>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@2 {
+		reg = <2>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@6 {
+		reg = <6>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
 };
 
 /* ---- ADC3 (4 Canales: PF9, PF7, PF5, PF3) ---- */
@@ -480,10 +772,37 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	channel@2 { reg = <2>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@3 { reg = <3>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@4 { reg = <4>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
-	channel@5 { reg = <5>; zephyr,gain = "ADC_GAIN_1"; zephyr,reference = "ADC_REF_INTERNAL"; zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>; zephyr,resolution = <16>; };
+	channel@2 {
+		reg = <2>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@3 {
+		reg = <3>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@4 {
+		reg = <4>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
+
+	channel@5 {
+		reg = <5>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <16>;
+	};
 };
 
 /* ---- USB OTG FS (PA11/DM, PA12/DP, PA10/ID, PA9/VBUS) ---- */

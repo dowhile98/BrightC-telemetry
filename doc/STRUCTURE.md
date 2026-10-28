@@ -50,6 +50,7 @@ El firmware de **BrightC Telemetry** está diseñado bajo los principios de **Cl
 4. **Devicetree como Fuente Única de Verdad de Hardware**: No existen archivos `bsp.c` o llamadas a CubeMX. Toda la configuración de pines (pinctrl), relojes y buses reside en archivos `.dts` y `.overlay`.
 5. **Testabilidad Inmediata (TDD)**: Toda la lógica de negocio y aplicación puede probarse en milisegundos en la máquina anfitriona (Host PC o `native_sim`) sin necesidad de conectar la placa física.
 6. **Cero Malloc en el Bucle de Ejecución**: Memoria estática, pools preasignados (`k_mem_slab`, `k_heap` estático) y canales fuertemente tipados en tiempo de compilación.
+7. **Definición de Stacks y Protección MPU**: Los stacks de hilos de Zephyr (`k_thread_stack_t`) **NUNCA** deben embeberse dentro de estructuras (`struct` en `.bss`), como el contenedor `app_container_t`. En microcontroladores Cortex-M con MPU (Cortex-M7 STM32H7) y `CONFIG_HW_STACK_PROTECTION` / `CONFIG_MPU_STACK_GUARD`, Zephyr exige que los stacks residan en secciones dedicadas alineadas por hardware con sus respectivas guardias MPU. Incrustar un stack en un struct desalinea la memoria y corrompe las regiones MPU, desatando fallos de hardware críticos como `MPU FAULT (Instruction Access Violation)`. Es **mandatorio** definir los stacks a nivel de archivo (file scope) mediante `K_THREAD_STACK_DEFINE` o `K_THREAD_STACK_ARRAY_DEFINE`.
 
 ---
 
@@ -212,81 +213,124 @@ Cuando necesites crear un nuevo archivo o funcionalidad, responde las siguientes
 ### 4.1 Inversión de Control: Puertos y Adaptadores en C
 
 #### A. El Puerto Abstracto (Sin dependencias de Zephyr)
-`app/include/interfaces/i_relay_port.h`:
+
+Todo puerto vive en un único header `app/include/interfaces/i_<nombre>.h` y consta de
+tres piezas inseparables:
+
+1. La **v-table** `i_<nombre>_api_t`: los punteros a función que implementa el adaptador.
+2. El **handle** `i_<nombre>_t`: `const ... *api` (la v-table) más `void *impl` (estado
+   opaco del adaptador).
+3. Una **función `static inline` por operación**, `i_<nombre>_<operación>()`, que valida
+   el handle y los argumentos **antes** de despachar por la v-table.
+
 ```c
-#ifndef I_RELAY_PORT_H_
-#define I_RELAY_PORT_H_
+#ifndef APP_INTERFACES_I_RELAY_H_
+#define APP_INTERFACES_I_RELAY_H_
 
-#include <stdint.h>
+#include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-typedef enum {
-    RELAY_CHANNEL_MAIN_POWER = 0,
-    RELAY_CHANNEL_AUXILIARY,
-    RELAY_CHANNEL_MAX
-} relay_channel_t;
+typedef enum { RELAY_CHANNEL_MAIN_POWER = 0, RELAY_CHANNEL_AUXILIARY, RELAY_CHANNEL_MAX } relay_channel_t;
+typedef enum { RELAY_STATE_OPEN = 0, RELAY_STATE_CLOSED } relay_state_t;
 
-typedef enum {
-    RELAY_STATE_OPEN = 0,
-    RELAY_STATE_CLOSED
-} relay_state_t;
+static inline bool relay_channel_is_valid(relay_channel_t channel)
+{
+    return (unsigned int) channel < (unsigned int) RELAY_CHANNEL_MAX;
+}
 
-/* V-Table pura de operaciones del relé */
-struct i_relay_api {
-    int (*set_state)(relay_channel_t channel, relay_state_t state);
-    int (*get_state)(relay_channel_t channel, relay_state_t *out_state);
-};
-
+/* 1. V-table: detalle de implementación, nunca se llama desde la aplicación */
 typedef struct {
-    const struct i_relay_api *api;
-    void *context; /* Contexto opaco del adaptador */
-} relay_port_t;
+    int (*set_state)(void *impl, relay_channel_t channel, relay_state_t state);
+    int (*get_state)(void *impl, relay_channel_t channel, relay_state_t *out_state);
+} i_relay_api_t;
 
-#endif /* I_RELAY_PORT_H_ */
+/* 2. Handle que se inyecta a quien consume el puerto */
+typedef struct {
+    const i_relay_api_t *api;
+    void *impl;
+} i_relay_t;
+
+static inline bool i_relay_is_bound(const i_relay_t *relay)
+{
+    return relay != NULL && relay->api != NULL && relay->impl != NULL;
+}
+
+/* 3. Wrappers validados: el único camino permitido hacia la v-table */
+static inline int i_relay_set_state(const i_relay_t *relay, relay_channel_t channel,
+                                    relay_state_t state)
+{
+    if (!i_relay_is_bound(relay) || !relay_channel_is_valid(channel)) {
+        return -EINVAL;
+    }
+
+    return relay->api->set_state(relay->impl, channel, state);
+}
+
+static inline int i_relay_get_state(const i_relay_t *relay, relay_channel_t channel,
+                                    relay_state_t *out_state)
+{
+    if (!i_relay_is_bound(relay) || !relay_channel_is_valid(channel) || out_state == NULL) {
+        return -EINVAL;
+    }
+
+    return relay->api->get_state(relay->impl, channel, out_state);
+}
+
+#endif /* APP_INTERFACES_I_RELAY_H_ */
 ```
+
+El consumidor escribe `i_relay_set_state(&port, RELAY_CHANNEL_MAIN_POWER, RELAY_STATE_CLOSED)`;
+no ve la v-table y no puede olvidarse una comprobación.
 
 #### B. El Adaptador de Infraestructura (Conectado a Zephyr GPIO)
 `app/src/infrastructure/adapters/adapter_relay_gpio.c`:
 ```c
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
-#include "interfaces/i_relay_port.h"
+#include "interfaces/i_relay.h"
 
 struct relay_gpio_context {
     struct gpio_dt_spec gpio_spec[RELAY_CHANNEL_MAX];
 };
 
-static int relay_gpio_set(relay_channel_t channel, relay_state_t state)
+static int relay_gpio_set(void *impl, relay_channel_t channel, relay_state_t state)
 {
-    if (channel >= RELAY_CHANNEL_MAX) {
+    struct relay_gpio_context *ctx = impl;
+
+    /* La validación estructural (handle, canal) ya la hizo el wrapper del
+     * puerto: aquí solo se comprueba lo que depende del estado del adaptador. */
+    if (ctx == NULL) {
         return -EINVAL;
     }
-    /* Se interactúa directamente con el driver de Zephyr */
-    extern struct relay_gpio_context g_relay_hw_ctx;
-    return gpio_pin_set_dt(&g_relay_hw_ctx.gpio_spec[channel], (int)state);
+
+    return gpio_pin_set_dt(&ctx->gpio_spec[channel], (int) state);
 }
 
-static int relay_gpio_get(relay_channel_t channel, relay_state_t *out_state)
+static int relay_gpio_get(void *impl, relay_channel_t channel, relay_state_t *out_state)
 {
-    if (channel >= RELAY_CHANNEL_MAX || !out_state) {
-        return -EINVAL;
+    struct relay_gpio_context *ctx = impl;
+    int val = gpio_pin_get_dt(&ctx->gpio_spec[channel]);
+
+    if (val < 0) {
+        return val;
     }
-    extern struct relay_gpio_context g_relay_hw_ctx;
-    int val = gpio_pin_get_dt(&g_relay_hw_ctx.gpio_spec[channel]);
-    if (val < 0) return val;
+
     *out_state = val ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN;
     return 0;
 }
 
-static const struct i_relay_api s_relay_api = {
+static const i_relay_api_t s_relay_api = {
     .set_state = relay_gpio_set,
     .get_state = relay_gpio_get,
 };
 
-const relay_port_t g_relay_port = {
-    .api = &s_relay_api,
-    .context = NULL,
-};
+/* Enlazar el puerto es competencia de la raíz de composición, no del adaptador:
+ * el adaptador solo expone su v-table. */
+const i_relay_api_t *relay_gpio_api(void)
+{
+    return &s_relay_api;
+}
 ```
 
 #### C. Composition Root (El puente estático de Hardware a Software)
@@ -295,34 +339,99 @@ const relay_port_t g_relay_port = {
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
-#include "interfaces/i_relay_port.h"
+#include "interfaces/i_relay.h"
 
 LOG_MODULE_REGISTER(comp_root, LOG_LEVEL_INF);
 
-/* Estructura instanciada desde el Devicetree */
-struct relay_gpio_context g_relay_hw_ctx = {
+/* Estructura instanciada desde el Devicetree y propiedad del contenedor */
+static struct relay_gpio_context s_relay_hw_ctx = {
     .gpio_spec = {
         [RELAY_CHANNEL_MAIN_POWER] = GPIO_DT_SPEC_GET_OR(DT_NODELABEL(relay_main), gpios, {0}),
         [RELAY_CHANNEL_AUXILIARY]  = GPIO_DT_SPEC_GET_OR(DT_NODELABEL(relay_aux), gpios, {0}),
     }
 };
 
-int composition_root_init(void)
+int composition_root_init(app_container_t *self)
 {
     LOG_INF("Inicializando Composition Root & Verificación de Periféricos...");
 
     for (int i = 0; i < RELAY_CHANNEL_MAX; i++) {
-        if (!gpio_is_ready_dt(&g_relay_hw_ctx.gpio_spec[i])) {
+        if (!gpio_is_ready_dt(&s_relay_hw_ctx.gpio_spec[i])) {
             LOG_ERR("Relay GPIO %d no está listo en Devicetree", i);
             return -ENODEV;
         }
-        gpio_pin_configure_dt(&g_relay_hw_ctx.gpio_spec[i], GPIO_OUTPUT_INACTIVE);
+        gpio_pin_configure_dt(&s_relay_hw_ctx.gpio_spec[i], GPIO_OUTPUT_INACTIVE);
     }
+
+    /* Único punto del firmware que escribe la v-table del puerto. */
+    self->relay.api = relay_gpio_api();
+    self->relay.impl = &s_relay_hw_ctx;
 
     LOG_INF("Hardware vinculado correctamente a los puertos.");
     return 0;
 }
 ```
+
+---
+
+#### D. Regla general para definir puertos (obligatoria)
+
+Todo puerto nuevo, y toda modificación de uno existente, cumple estas reglas. No son
+recomendaciones de estilo: son el contrato que permite testear el dominio sin hardware y
+que impide que un `NULL` llegue a un driver.
+
+1. **Ubicación y pureza.** Un solo header en `app/include/interfaces/i_<dominio>.h`,
+   sólo cabecera (sin `.c` de puerto). Puede incluir `<stdint.h>`, `<stdbool.h>`,
+   `<stddef.h>`, `<errno.h>` y otros headers de `include/common/`. **Nunca**
+   `<zephyr/...>`, ni headers del MCU, ni de nanoMODBUS.
+2. **Tres piezas.** La v-table `i_<dominio>_api_t`, el handle
+   `i_<dominio>_t { const i_<dominio>_api_t *api; void *impl; }` y los wrappers.
+   Los nombres son `snake_case` y el prefijo coincide con el del header.
+3. **Un wrapper por operación, sin excepciones.** Cada entrada de la v-table tiene su
+   `static inline i_<dominio>_<operación>()` en el mismo header. Si una operación no
+   merece wrapper, no merece estar en la v-table.
+4. **`static inline`, no función externa.** Así el puerto no añade símbolos, no
+   necesita unidad de compilación propia y el compilador puede eliminar los wrappers
+   que nadie usa.
+5. **`i_<dominio>_is_bound()` público** y usado por todos los wrappers: el handle está
+   enlazado sólo si `api` e `impl` no son `NULL`.
+6. **Validación en dos niveles, sin duplicarla.**
+   - *Estructural (wrapper)*: handle enlazado, punteros de salida no nulos, rangos e
+     enumeraciones que forman parte del contrato, capacidades mayores que cero. Es
+     barata, no necesita estado y usa los predicados puros de `common/` (por ejemplo
+     `modbus_bus_id_is_valid()`), nunca los repite a mano.
+   - *Semántica (implementación)*: ¿existe el dispositivo?, ¿está lleno el bus?, ¿la
+     reclamación está vigente? El wrapper no puede responderlo y no lo intenta.
+7. **Retorno uniforme.** `int` con errno negativo (`-EINVAL`, `-ENOENT`, `-ENOSPC`,
+   `-EADDRINUSE`) para operaciones de estado o configuración; un enumerado del dominio
+   (por ejemplo `modbus_transaction_result_t`) para resultados de una transacción.
+   No se mezclan en la misma firma. Handle no enlazado o argumento inválido devuelve
+   `-EINVAL` (o el valor "rechazado localmente" del dominio: `MODBUS_RESULT_INVALID`) y
+   **no se despacha nada**.
+8. **Prohibido llamar la v-table desde la aplicación.** `handle->api->...` sólo aparece
+   en el adaptador que implementa el puerto y en la raíz de composición, que es la única
+   que escribe `api`/`impl`. Verificación rápida antes de cada PR:
+   ```bash
+   grep -rn "api->" app/src | grep -v "infrastructure/adapters/" | grep -v "infrastructure/di/"
+   ```
+   Debe salir vacío (las implementaciones de puerto en `application/` sólo *crean* el
+   handle, no lo consumen).
+9. **Sin estado global.** El `impl` apunta a una instancia propiedad del contenedor de
+   composición; el puerto no reserva memoria, no crea hilos y no conoce el RTOS.
+10. **Los fakes implementan la misma v-table** y se ejercitan a través de los wrappers,
+    no llamando a la v-table del fake: así el test verifica el contrato y no una copia
+    del contrato.
+11. **Documentación Doxygen** en el header para el handle, cada wrapper y cada parámetro
+    de salida, indicando qué error devuelve cada rechazo. Identificadores y comentarios
+    de código en inglés; la prosa de arquitectura (este documento) en español.
+
+Ejemplos vivos de esta regla: `app/include/interfaces/i_slave_registry.h` e
+`app/include/interfaces/i_modbus_client.h`; su cumplimiento se verifica en
+`tests/unit/modbus/src/test_interfaces.c`.
+
+> Un header `i_*.h` que sólo define **tipos de datos compartidos** (por ejemplo
+> `i_temperature_bank.h`, que describe una lectura) no es un puerto: no lleva v-table ni
+> wrappers. La regla aplica a cualquier header que declare una v-table de operaciones.
 
 ---
 
@@ -401,70 +510,80 @@ ZBUS_CHAN_DEFINE(chan_telemetry_alarm,
 3. **REFACTOR**: Mejorar el diseño, nombres de variables y eficiencia manteniendo todas las pruebas en verde.
 
 ### 5.2 Estructura de Test con Fakes en Memoria (Ztest)
-`tests/fakes/src/fake_relay_port.c`:
+
+Un fake implementa la **misma v-table** que el adaptador, con el mismo
+`void *impl`, y se enlaza en un handle durante el test. El código bajo prueba lo
+consume a través de los wrappers del puerto (regla §4.1.D), así que la prueba
+valida el contrato, no una copia del contrato.
+
+`tests/fakes/src/fake_relay.c`:
 ```c
-#include "interfaces/i_relay_port.h"
+#include "interfaces/i_relay.h"
 
-static relay_state_t s_fake_states[RELAY_CHANNEL_MAX];
-static int s_call_count[RELAY_CHANNEL_MAX];
+typedef struct {
+    relay_state_t states[RELAY_CHANNEL_MAX];
+    uint32_t call_count[RELAY_CHANNEL_MAX];
+} fake_relay_t;
 
-void fake_relay_reset(void) {
-    for (int i = 0; i < RELAY_CHANNEL_MAX; i++) {
-        s_fake_states[i] = RELAY_STATE_OPEN;
-        s_call_count[i] = 0;
-    }
-}
+static int fake_relay_set(void *impl, relay_channel_t channel, relay_state_t state) {
+    fake_relay_t *fake = impl;
 
-static int fake_relay_set(relay_channel_t channel, relay_state_t state) {
-    s_fake_states[channel] = state;
-    s_call_count[channel]++;
+    fake->states[channel] = state;
+    fake->call_count[channel]++;
     return 0;
 }
 
-static int fake_relay_get(relay_channel_t channel, relay_state_t *out_state) {
-    *out_state = s_fake_states[channel];
+static int fake_relay_get(void *impl, relay_channel_t channel, relay_state_t *out_state) {
+    fake_relay_t *fake = impl;
+
+    *out_state = fake->states[channel];
     return 0;
 }
 
-static const struct i_relay_api s_fake_api = {
+static const i_relay_api_t s_fake_api = {
     .set_state = fake_relay_set,
     .get_state = fake_relay_get,
 };
 
-const relay_port_t g_fake_relay_port = {
-    .api = &s_fake_api,
-    .context = NULL,
-};
+void fake_relay_bind(i_relay_t *out, fake_relay_t *storage) {
+    out->api = &s_fake_api;
+    out->impl = storage;
+}
 
-relay_state_t fake_relay_spy_state(relay_channel_t ch) { return s_fake_states[ch]; }
-int fake_relay_spy_calls(relay_channel_t ch) { return s_call_count[ch]; }
+relay_state_t fake_relay_spy_state(const fake_relay_t *fake, relay_channel_t ch) {
+    return fake->states[ch];
+}
 ```
 
 `tests/unit/domain/test_alarm_evaluator.c`:
 ```c
 #include <zephyr/ztest.h>
 #include "domain/services/alarm_evaluator.h"
-#include "fake_relay_port.h"
+#include "fake_relay.h"
+
+static fake_relay_t s_fake;
+static i_relay_t s_relay;
 
 ZTEST_SUITE(alarm_evaluator_suite, NULL, NULL, NULL, NULL, NULL);
 
 ZTEST(alarm_evaluator_suite, test_should_trip_relay_on_overcurrent)
 {
-    fake_relay_reset();
-    alarm_evaluator_init(&g_fake_relay_port);
+    (void) memset(&s_fake, 0, sizeof(s_fake));
+    fake_relay_bind(&s_relay, &s_fake);
+    alarm_evaluator_init(&s_relay);
 
     /* Muestra con corriente normal: relé debe mantenerse abierto */
     telemetry_sample_t normal_sample = { .current_ch1 = 15.0f };
     alarm_evaluator_process(&normal_sample);
-    zassert_equal(fake_relay_spy_state(RELAY_CHANNEL_MAIN_POWER), RELAY_STATE_OPEN, 
+    zassert_equal(fake_relay_spy_state(&s_fake, RELAY_CHANNEL_MAIN_POWER), RELAY_STATE_OPEN, 
                   "El relé no debe dispararse con corriente normal");
 
     /* Muestra con sobrecorriente crítica (60A): relé debe cerrarse/disparar */
     telemetry_sample_t fault_sample = { .current_ch1 = 60.0f };
     alarm_evaluator_process(&fault_sample);
-    zassert_equal(fake_relay_spy_state(RELAY_CHANNEL_MAIN_POWER), RELAY_STATE_CLOSED,
+    zassert_equal(fake_relay_spy_state(&s_fake, RELAY_CHANNEL_MAIN_POWER), RELAY_STATE_CLOSED,
                   "El relé debió dispararse ante sobrecorriente");
-    zassert_equal(fake_relay_spy_calls(RELAY_CHANNEL_MAIN_POWER), 1, "Debe existir un único disparo");
+    zassert_equal(s_fake.call_count[RELAY_CHANNEL_MAIN_POWER], 1U, "Debe existir un único disparo");
 }
 ```
 
@@ -498,7 +617,7 @@ El subsistema Modbus de BrightC Controller V3 está diseñado para alta disponib
                                                  |
  +-----------------------------------------------+-------------------------------------------------+
  |                    GESTOR DE ESCLAVOS Y ENRUTAMIENTO DE BUSES                                   |
- |                            (modbus_slave_manager.c)                                             |
+ |                    (modbus_registry.c + slave_scheduler.c)                                      |
  |                                                                                                 |
  |  - Mantiene tabla de modbus_slave_descriptor_t (serializable para microconf / EEPROM)           |
  |  - Failover dinámico: reasigna dispositivos entre RS485-1 y RS485-2 en tiempo de ejecución      |
@@ -507,8 +626,8 @@ El subsistema Modbus de BrightC Controller V3 está diseñado para alta disponib
                          |                                                |
                          v                                                v
  +-----------------------------------------------+  +----------------------------------------------+
- |       HILO RS485-1: ao_modbus_rtu1.c          |  |       HILO RS485-2: ao_modbus_rtu2.c         |
- |  - Instancia nmbs_z_client_t bus1 (<zephyr/nanomodbus/nanomodbus_z.h>)         |  |  - Instancia nmbs_z_client_t bus2 (<zephyr/nanomodbus/nanomodbus_z.h>)        |
+ |   HILO RS485-1: ao_modbus.c (bus 0)           |  |   HILO RS485-2: ao_modbus.c (bus 1)          |
+ |  - i_modbus_client_t bus1 -> adapter_modbus_nmbs (unico include de Zephyr)    |  |  - i_modbus_client_t bus2 -> adapter_modbus_nmbs                              |
  |  - Control de transceiver DE (PD4)            |  |  - Control de transceiver DE (PG8)           |
  |  - Reconfiguración en caliente de USART2      |  |  - Reconfiguración en caliente de USART6     |
  |  - Sondea: CWT-TM-16PT (16x PT100)            |  |  - Sondea: Medidores de energía, Relés       |
@@ -525,7 +644,7 @@ El subsistema Modbus de BrightC Controller V3 está diseñado para alta disponib
 2. **Intercambiabilidad de Hardware (Failover en Caliente)**:
    - Los dispositivos de campo no están atados a un puerto fijo en código. Si se daña el transceptor de `RS485-1` por una descarga eléctrica, el cable A/B se mueve a `RS485-2` y se ejecuta:
      ```c
-     modbus_slave_manager_set_bus(DEV_ID_CWT_TM16PT, MODBUS_BUS_RS485_2);
+     (void) i_slave_registry_set_bus(&app->registry, DEV_ID_CWT_TM16PT, MODBUS_BUS_RS485_2);
      ```
    - El sistema reubica el sondeo al instante sin reiniciar ni modificar el firmware.
 3. **Reconfiguración Dinámica de la UART en Zephyr**:
@@ -538,7 +657,10 @@ El subsistema Modbus de BrightC Controller V3 está diseñado para alta disponib
 
 ### 6.2 Driver del Sensor de Temperatura CWT-TM-16PT
 
-El sensor industrial **CWT-TM-16PT** (16 canales PT100/PT1000) se implementa en [`cwt_tm16pt.c`](app/src/infrastructure/modbus/devices/cwt_tm16pt.c):
+El sensor industrial **CWT-TM-16PT** (16 canales PT100/PT1000) se decodifica en
+[`cwt_tm16pt_codec.c`](app/src/domain/services/cwt_tm16pt_codec.c) (código puro, sin
+E/S); la lectura de registros la realiza el Active Object a través del puerto
+`i_modbus_client`, nunca incluyendo nanoMODBUS:
 - **Lectura Rápida en Ráfaga**: Lee los 16 canales en una única solicitud de 16 palabras (`0x0020` a `0x002F`), requiriendo apenas ~45 ms de tiempo de bus a 9600 baudios.
 - **Detección de Sonda Abierta**: Detecta el código centinela `0x7FFF` (3276.7 °C) o `-32768` y lo clasifica automáticamente en la máscara `open_probe_mask` sin generar valores espurios.
 - **Reconfiguración Remota**: Puede reprogramar el Slave ID, baudrate y paridad del sensor mediante escritura en el registro `0x0010`.
@@ -550,7 +672,9 @@ El sensor industrial **CWT-TM-16PT** (16 canales PT100/PT1000) se implementa en 
 Cuando el equipo desarrolle una nueva característica (ej: Lectura de Energía por I2C / SPI):
 
 1. **Definir el Puerto en `include/interfaces/`**:  
-   Crear `i_energy_meter.h` definiendo los contratos de datos y la struct API con punteros a función.
+   Crear `i_energy_meter.h` siguiendo la **regla obligatoria de §4.1.D**: v-table
+   `i_energy_meter_api_t`, handle `i_energy_meter_t` y un wrapper `static inline`
+   validado por operación. Nadie consume la v-table directamente.
 2. **Crear el Fake en `tests/fakes/`**:  
    Implementar `fake_energy_meter.c` para registrar lecturas simuladas y verificar llamadas.
 3. **Escribir las Pruebas Unitarias del Dominio (TDD Rojo)**:  
@@ -575,3 +699,6 @@ Cuando el equipo desarrolle una nueva característica (ej: Lectura de Energía p
 - **Prefijos de Interfaces**: Todo archivo de interfaz pública debe iniciar con el prefijo `i_` (ej: `i_storage.h`).
 - **Prefijos de Adaptadores**: Toda implementación física debe iniciar con `adapter_` (ej: `adapter_storage_nvs.c`).
 - **Documentación**: Comentarios Doxygen en todas las funciones públicas de interfaz (`@brief`, `@param`, `@return`).
+- **Puertos**: todo puerto cumple la regla de §4.1.D (v-table + handle + wrappers `static inline` con validación). Un puerto sin wrappers validados se rechaza en revisión.
+- **Acceso a la v-table**: `handle->api->...` sólo está permitido en el adaptador que implementa el puerto y en la raíz de composición.
+- **Definición de Stacks**: Prohibido embeber `k_thread_stack_t` dentro de structs en `.bss`. Usar exclusivamente `K_THREAD_STACK_DEFINE` o `K_THREAD_STACK_ARRAY_DEFINE` a nivel de archivo para preservar alineamiento MPU y guardias de stack.

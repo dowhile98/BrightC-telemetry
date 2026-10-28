@@ -1,0 +1,42 @@
+/ {
+	aliases {
+		modbus-uart-1 = &usart2;
+		modbus-uart-2 = &usart6;
+		modbus-rtu-1 = &modbusRTU0;
+		modbus-rtu-2 = &modbusRTU1;
+	};
+};
+
+&usart2 {
+	/*default baud rate */
+	current-speed = <9600>;
+	/*default de-assert time */
+	de-assert-time = <2>;
+	/*default de-deassert time */
+	de-deassert-time = <2>;
+
+	/*nanomodbus*/
+	modbusRTU0: modbusRTU0 {
+		compatible = "nanomodbus,serial";
+		status = "okay";
+		de-mode = "hardware";
+		rx-mode = "irq";
+	};
+};
+
+&usart6 {
+	/*default baud rate */
+	current-speed = <9600>;
+	/*default de-assert time */
+	de-assert-time = <2>;
+	/*default de-deassert time */
+	de-deassert-time = <2>;
+
+	/*nanomodbus*/
+	modbusRTU1: modbusRTU1 {
+		compatible = "nanomodbus,serial";
+		status = "okay";
+		de-mode = "hardware";
+		rx-mode = "irq";
+	};
+};

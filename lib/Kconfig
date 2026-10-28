@@ -3,7 +3,6 @@
 
 menu "BrightC Libraries"
 
-rsource "custom/Kconfig"
 
 config BRIGHTC_LIB_FILTER
 	bool "Digital Signal Filters (EMA, Median)"
