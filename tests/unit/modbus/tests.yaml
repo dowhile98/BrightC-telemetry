@@ -1,0 +1,9 @@
+common:
+  tags: unit modbus
+  platform_allow:
+    - native_sim
+    - qemu_cortex_m3
+tests:
+  unit.modbus.all:
+    integration_platforms:
+      - native_sim

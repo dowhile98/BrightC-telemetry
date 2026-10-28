@@ -1,0 +1,9 @@
+common:
+  tags: unit math
+  platform_allow:
+    - native_sim
+    - qemu_cortex_m3
+tests:
+  unit.lib.all:
+    integration_platforms:
+      - native_sim

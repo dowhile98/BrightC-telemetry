@@ -1,138 +1,128 @@
-# Zephyr Example Application
+# BrightC Telemetry Firmware
 
-<a href="https://github.com/zephyrproject-rtos/example-application/actions/workflows/build.yml?query=branch%3Amain">
-  <img src="https://github.com/zephyrproject-rtos/example-application/actions/workflows/build.yml/badge.svg?event=push">
-</a>
-<a href="https://github.com/zephyrproject-rtos/example-application/actions/workflows/docs.yml?query=branch%3Amain">
-  <img src="https://github.com/zephyrproject-rtos/example-application/actions/workflows/docs.yml/badge.svg?event=push">
-</a>
-<a href="https://zephyrproject-rtos.github.io/example-application">
-  <img alt="Documentation" src="https://img.shields.io/badge/documentation-3D578C?logo=sphinx&logoColor=white">
-</a>
-<a href="https://zephyrproject-rtos.github.io/example-application/doxygen">
-  <img alt="API Documentation" src="https://img.shields.io/badge/API-documentation-3D578C?logo=c&logoColor=white">
-</a>
+[![Build](https://github.com/daecge/BrightC-telemetry/actions/workflows/build.yml/badge.svg)](https://github.com/daecge/BrightC-telemetry/actions/workflows/build.yml)
+[![Architecture: Clean Architecture](https://img.shields.io/badge/Architecture-Clean%20Architecture%20%2F%20Hexagonal-blue.svg)](doc/STRUCTURE.md)
+[![Testing: TDD + Twister](https://img.shields.io/badge/Testing-TDD%20%7C%20Ztest%20%7C%20Twister-brightgreen.svg)](tests/)
+[![Target MCU](https://img.shields.io/badge/MCU-STM32H743ZIT6%20LQFP144-orange.svg)](boards/daecge/brightc-controllerv3/doc/brightcV3.md)
+[![RTOS: Zephyr](https://img.shields.io/badge/RTOS-Zephyr%20RTOS-purple.svg)](https://zephyrproject-rtos.org)
 
-This repository contains a Zephyr example application. The main purpose of this
-repository is to serve as a reference on how to structure Zephyr-based
-applications. Some of the features demonstrated in this example are:
+Firmware de grado industrial para la plataforma **DAECGE BrightC Controller V3**, diseñado para adquisición de telemetría de alta confiabilidad, monitoreo de energía, comunicaciones industriales (RS485/Modbus, Ethernet, Wi-Fi/BLE) y control de campo.
 
-- Basic [Zephyr application][app_dev] skeleton
-- [Zephyr workspace applications][workspace_app]
-- [Zephyr modules][modules]
-- [West T2 topology][west_t2]
-- [Custom boards][board_porting]
-- Custom [devicetree bindings][bindings]
-- Out-of-tree [drivers][drivers]
-- Out-of-tree libraries
-- Example CI configuration (using GitHub Actions)
-- Custom [west extension][west_ext]
-- Custom [Zephyr runner][runner_ext]
-- Doxygen and Sphinx documentation boilerplate
+El proyecto está construido desde sus cimientos siguiendo los principios de **Clean Architecture (Puertos y Adaptadores)** y **Desarrollo Guiado por Pruebas (TDD)**, explotando nativamente el ecosistema de **Zephyr RTOS** (Zbus, Devicetree, Kconfig, SMF, Settings y Shell).
 
-This repository is versioned together with the [Zephyr main tree][zephyr]. This
-means that every time that Zephyr is tagged, this repository is tagged as well
-with the same version number, and the [manifest](west.yml) entry for `zephyr`
-will point to the corresponding Zephyr tag. For example, the `example-application`
-v2.6.0 will point to Zephyr v2.6.0. Note that the `main` branch always
-points to the development branch of Zephyr, also `main`.
+---
 
-[app_dev]: https://docs.zephyrproject.org/latest/develop/application/index.html
-[workspace_app]: https://docs.zephyrproject.org/latest/develop/application/index.html#zephyr-workspace-app
-[modules]: https://docs.zephyrproject.org/latest/develop/modules.html
-[west_t2]: https://docs.zephyrproject.org/latest/develop/west/workspaces.html#west-t2
-[board_porting]: https://docs.zephyrproject.org/latest/guides/porting/board_porting.html
-[bindings]: https://docs.zephyrproject.org/latest/guides/dts/bindings.html
-[drivers]: https://docs.zephyrproject.org/latest/reference/drivers/index.html
-[zephyr]: https://github.com/zephyrproject-rtos/zephyr
-[west_ext]: https://docs.zephyrproject.org/latest/develop/west/extensions.html
-[runner_ext]: https://docs.zephyrproject.org/latest/develop/modules.html#external-runners
+## 🚀 Características Principales
 
-## Getting Started
+- **Hardware de Control**: Microcontrolador STM32H743ZIT6 (Cortex-M7 @ 480 MHz, 2MB Flash, 1MB RAM).
+- **Clean Architecture & Inversión de Dependencias**:
+  - Dominio 100% puro en C (agnóstico a Zephyr y al silicio).
+  - Puertos abstractos (`i_*.h`) para periféricos y almacenamiento.
+  - Adaptadores que implementan los puertos consumiendo drivers nativos de Zephyr.
+- **TDD (Test-Driven Development)**:
+  - Pruebas unitarias de dominio y aplicación en la máquina host con `native_sim` (POSIX) en milisegundos.
+  - Fakes en memoria para aislar lógica sin depender de hardware físico.
+  - Automatización con `twister` y métricas de cobertura de código con `lcov/gcov`.
+- **Comunicaciones y Telemetría Multicanal**:
+  - **Modbus RTU / Industrial**: Transceptores RS485-1 (USART2) y RS485-2 (USART6) vía `nanoMODBUS`.
+  - **Ethernet 10/100**: PHY LAN8742A con pila TCP/IP nativa de Zephyr.
+  - **Wi-Fi & Bluetooth LE**: Módulo ESP32 coprocesador vía protocolo ESP-Hosted.
+  - **HMI / Pantalla**: Panel LCD serial DWIN en UART3 con patrón Model-View-Presenter (MVP).
+  - **Monitoreo & SNMP**: Soporte para `zephyr-snmp` y micro-configurador `microconf`.
+- **Desacoplamiento con Zephyr Zbus**:
+  - Bus de eventos asíncrono y con seguridad de tipos en tiempo de compilación para la distribución de muestras y alarmas entre hilos (Active Objects).
+- **Consola Interactiva Zephyr Shell**:
+  - CLI para diagnóstico de campo, inspección de variables y prueba de relés por UART1 USB-Serial.
 
-Before getting started, make sure you have a proper Zephyr development
-environment. Follow the official
-[Zephyr Getting Started Guide](https://docs.zephyrproject.org/latest/develop/getting_started/index.html).
+---
 
-### Initialization
+## 📁 Estructura del Proyecto
 
-The first step is to initialize the workspace folder (``my-workspace``) where
-the ``example-application`` and all Zephyr modules will be cloned. Run the following
-command:
+Para una explicación exhaustiva de qué va en cada carpeta, las reglas de arquitectura y el árbol de decisión, consulta la [**Guía Maestra de Estructura (doc/STRUCTURE.md)**](doc/STRUCTURE.md).
 
-```shell
-# initialize my-workspace for the example-application (main branch)
-west init -m https://github.com/zephyrproject-rtos/example-application --mr main my-workspace
-# update Zephyr modules
-cd my-workspace
+```text
+BrightC-telemetry/
+├── app/                     # Aplicación principal
+│   ├── include/interfaces/  # Puertos abstractos (i_modbus.h, i_storage.h, i_relay.h)
+│   ├── src/domain/          # Dominio PURO (C99/C11 sin <zephyr/...>)
+│   ├── src/application/     # Casos de uso, Active Objects y canales Zephyr Zbus
+│   ├── src/infrastructure/  # Adaptadores a drivers Zephyr y Composition Root
+│   ├── src/presentation/    # MVP pantalla DWIN y comandos Zephyr Shell
+│   ├── boards/              # Overlays DTS específicos de la app
+│   └── prj.conf             # Configuración Kconfig de la aplicación
+├── boards/                  # Definición de hardware de la placa BrightC V3
+├── drivers/                 # Drivers Zephyr fuera del árbol (out-of-tree)
+├── lib/                     # Librerías auxiliares
+├── tests/                   # Suites de pruebas TDD (unitarias en native_sim, fakes, HIL)
+└── doc/                     # Documentación técnica de arquitectura y hardware
+```
+
+---
+
+## 🛠️ Requisitos Previos e Inicialización
+
+### 1. Entorno Zephyr
+Asegúrate de contar con el Zephyr SDK y la herramienta `west` instalada según la [Guía Oficial de Zephyr](https://docs.zephyrproject.org/latest/develop/getting_started/index.html).
+
+### 2. Inicializar el Workspace (Topología West T2)
+```bash
+# Inicializar el workspace en una carpeta dedicada
+west init -m https://github.com/daecge/BrightC-telemetry --mr main BrightC_TelemetryWorkspace
+cd BrightC_TelemetryWorkspace
+
+# Descargar Zephyr RTOS y todos los módulos dependientes (nanoMODBUS, microconf, hal_stm32, etc.)
 west update
 ```
 
-### Building and running
+---
 
-To build the application, run the following command:
+## 🔨 Compilación y Ejecución
 
-```shell
-cd example-application
-west build -b $BOARD app
+### Compilar para la placa física (BrightC Controller V3)
+```bash
+cd BrightC-telemetry
+
+# Compilación base
+west build -b brightc-controllerv3 app
+
+# Compilación con opciones de depuración y logs verbosos
+west build -b brightc-controllerv3 app -- -DEXTRA_CONF_FILE=debug.conf
 ```
 
-where `$BOARD` is the target board.
-
-You can use the `custom_plank` board found in this
-repository. Note that Zephyr sample boards may be used if an
-appropriate overlay is provided (see `app/boards`).
-
-A sample debug configuration is also provided. To apply it, run the following
-command:
-
-```shell
-west build -b $BOARD app -- -DEXTRA_CONF_FILE=debug.conf
+### Flashear el hardware (ST-Link / OpenOCD)
+Conecta tu programador ST-Link al conector SWD de la placa:
+```bash
+west flash --runner openocd
 ```
 
-Once you have built the application, run the following command to flash it:
+---
 
-```shell
-west flash
+## 🧪 Estrategia TDD y Ejecución de Pruebas
+
+Toda la lógica de dominio se desarrolla mediante el ciclo **Red-Green-Refactor**. Las pruebas unitarias no requieren el microcontrolador físico y corren instantáneamente sobre el target POSIX `native_sim`.
+
+```bash
+# 1. Ejecutar todas las pruebas unitarias en native_sim
+west twister -T tests/unit -p native_sim -v --inline-logs
+
+# 2. Ejecutar pruebas con reporte de cobertura de código
+west twister -T tests/unit -p native_sim --coverage -v
+
+# 3. Ejecutar pruebas de integración con emuladores Zephyr
+west twister -T tests/integration -p native_sim
 ```
 
-### Testing
+---
 
-To execute Twister integration tests, run the following command:
+## 📖 Documentación
 
-```shell
-west twister -T tests --integration
-```
+- [**Guía de Arquitectura y Estructura (doc/STRUCTURE.md)**](doc/STRUCTURE.md) — Explicación paso a paso de capas, patrones IoC, Zbus, Fakes y reglas de gobernanza.
+- [**Referencia de Hardware (boards/daecge/brightc-controllerv3/doc/brightcV3.md)**](boards/daecge/brightc-controllerv3/doc/brightcV3.md) — Mapeo de pines, transceptores, clocks y esquemáticos.
+- [**Devicetree de la Placa (boards/daecge/brightc-controllerv3/brightc-controllerv3.dts)**](boards/daecge/brightc-controllerv3/brightc-controllerv3.dts) — Definición de hardware DTS.
 
-### Documentation
+---
 
-A minimal documentation setup is provided for Doxygen and Sphinx. To build the
-documentation first change to the ``doc`` folder:
+## ⚖️ Licencia
 
-```shell
-cd doc
-```
-
-Before continuing, check if you have Doxygen installed. It is recommended to
-use the same Doxygen version used in [CI](.github/workflows/docs.yml). To
-install Sphinx, make sure you have a Python installation in place and run:
-
-```shell
-pip install -r requirements.txt
-```
-
-API documentation (Doxygen) can be built using the following command:
-
-```shell
-doxygen
-```
-
-The output will be stored in the ``_build_doxygen`` folder. Similarly, the
-Sphinx documentation (HTML) can be built using the following command:
-
-```shell
-make html
-```
-
-The output will be stored in the ``_build_sphinx`` folder. You may check for
-other output formats other than HTML by running ``make help``.
+Distribuido bajo la licencia [Apache 2.0](LICENSE).  
+Copyright (c) 2026 DAECGE.

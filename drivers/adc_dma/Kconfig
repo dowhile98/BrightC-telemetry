@@ -1,0 +1,9 @@
+# Copyright (c) 2026 DAECGE
+# SPDX-License-Identifier: Apache-2.0
+
+config ADC_DMA_ENGINE
+	bool "Multi-ADC DMA Parallel Engine for STM32H7"
+	default y
+	depends on ADC
+	help
+	  Enable the multi-ADC DMA parallel acquisition engine driver.

@@ -1,0 +1,12 @@
+description: DAECGE Multi-ADC DMA Parallel Acquisition Engine
+compatible: "daecge,adc-dma-engine"
+
+properties:
+  io-channels:
+    type: phandle-array
+    required: true
+    description: List of ADC channels to sample via DMA (e.g. <&adc1 10>, <&adc2 6>)
+  resolution:
+    type: int
+    default: 16
+    description: ADC sampling bit resolution (16-bit for STM32H7)

@@ -1,8 +1,26 @@
-# Copyright (c) 2021 Legrand North America, LLC.
+# Copyright (c) 2026 DAECGE
 # SPDX-License-Identifier: Apache-2.0
 
-menu "Custom libraries"
+menu "BrightC Libraries"
 
 rsource "custom/Kconfig"
+
+config BRIGHTC_LIB_FILTER
+	bool "Digital Signal Filters (EMA, Median)"
+	default y
+	help
+	  Enable pure C digital signal filtering library.
+
+config BRIGHTC_LIB_TRANSDUCERS
+	bool "Analog Transducer Formulas (RTD, 4-20mA, Voltage Divider, Linear)"
+	default y
+	help
+	  Enable pure C analog transducer conversion and NAMUR NE43 library.
+
+config BRIGHTC_LIB_MODBUS_CODEC
+	bool "Modbus Register Codec"
+	default y
+	help
+	  Enable pure C Modbus register decoding (float32, scaled integers).
 
 endmenu
