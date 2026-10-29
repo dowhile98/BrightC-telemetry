@@ -1,178 +1,179 @@
-# Arquitectura del Subsistema Modbus Industrial (Modbus Subsystem)
+# Architecture of the Industrial Modbus Subsystem (Modbus Subsystem)
 
-- **Estado**: Especificación Técnica de Arquitectura
-- **Plataforma**: DAECGE BrightC Controller V3 (STM32H743ZIT6)
-- **Puertos Físicos**: RS485-1 (USART2, DE=PD4) y RS485-2 (USART6, DE=PG8)
-- **Pila de Protocolo**: `nanoMODBUS` (vía transceptor serial Zephyr RTOS)
-- **Patrón Concurrente**: Active Object por puerto físico + Registro Inyectado con Exclusión Mutua
-
----
-
-## 1. Visión General y Principios Rectores
-
-El subsistema Modbus de BrightC Controller V3 está diseñado para adquisición de telemetría de campo y control de actuadores en entornos industriales ruidosos. Cumple con los siguientes requerimientos fundamentales:
-
-1. **Aislamiento Total de Buses (Dos Hilos Concurrentes)**:
-   - RS-485 es un medio de comunicación físico **half-duplex**.
-   - Cada puerto (`RS485-1` y `RS485-2`) es propiedad exclusiva de su propio hilo de ejecución (`ao_modbus`).
-   - Una falla catastrófica de cableado, cortocircuito o esclavo colgado en un bus jamás degrada el ancho de banda ni bloquea al otro bus.
-2. **Independencia del Hardware (Reasignación en Caliente / Failover)**:
-   - Los dispositivos de campo no están acoplados de forma rígida a un puerto físico en código.
-   - Es posible transferir un dispositivo del Bus 1 al Bus 2 en tiempo de ejecución (`set_bus`), notificando a los hilos y guardando la nueva topología en la EEPROM.
-3. **Planificación Pura y Tolerancia a Fallos (Offline Backoff)**:
-   - La lógica que decide qué esclavo está listo para sondeo y su clasificación de salud es **100% código C puro** (`slave_scheduler.c`), totalmente desacoplada de Zephyr y testeable en host PC (`native_sim`).
-4. **Protección contra Esclavos Desconectados**:
-   - Tras 3 fallos consecutivos, el esclavo pasa a estado de reposo lento (*probe ping* cada 10 s), impidiendo que timeouts repetitivos saturen el medio y demoren a los dispositivos sanos.
+- **Status**: Technical Architecture Specification
+- **Platform**: DAECGE BrightC Controller V3 (STM32H743ZIT6)
+- **Physical Ports**: RS485-1 (USART2, DE=PD4) and RS485-2 (USART6, DE=PG8)
+- **Protocol Stack**: `nanoMODBUS` (via serial Zephyr RTOS transceiver)
+- **Concurrent Pattern**: Active Object per physical port + Mutex-protected Injected Registry
 
 ---
 
-## 2. Diagrama de Arquitectura del Subsistema
+## 1. General Overview and Guiding Principles
+
+The BrightC Controller V3 Modbus subsystem is designed for field telemetry acquisition and actuator control in noisy industrial environments. It meets the following fundamental requirements:
+
+1. **Total Bus Isolation (Two Concurrent Threads)**:
+   - RS-485 is a physical **half-duplex** medium.
+   - Each port (`RS485-1` and `RS485-2`) is owned exclusively by its own execution thread (`ao_modbus`).
+   - A catastrophic wiring failure, short circuit, or hung slave on one bus never degrades bandwidth nor blocks the other bus.
+2. **Hardware Independence (Hot Reassignment / Failover)**:
+   - Field devices are not rigidly coupled to a physical port in code.
+   - It is possible to transfer a device from Bus 1 to Bus 2 at runtime (`set_bus`), notifying threads and saving the new topology to EEPROM.
+3. **Pure Planning and Fault Tolerance (Offline Backoff)**:
+   - The logic that decides which slave is ready for polling and its health classification is **100% pure C code** (`slave_scheduler.c`), fully decoupled from Zephyr and testable on host PC (`native_sim`).
+4. **Protection Against Disconnected Slaves**:
+   - After 3 consecutive failures, the slave enters slow idle state (*probe ping* every 10 s), preventing repetitive timeouts from saturating the medium and delaying healthy devices.
+
+---
+
+## 2. Modbus Subsystem Architecture Diagram
 
 ```text
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
- │                                   CAPA DE APLICACIÓN                                   │
+ │                                   APPLICATION LAYER                                    │
  │                                                                                        │
- │                    GESTOR CENTRAL DE ESCLAVOS: modbus_registry.c                       │
- │        - Tabla en RAM de modbus_slave_snapshot_t (hasta 32 dispositivos)               │
- │        - Cursor round-robin por bus y recuperación de claims obsoletos                 │
- │        - Exclusión mutua interna mediante k_mutex (transparente a los hilos)           │
- │        - Serializador export/import versionado para almacenamiento en EEPROM           │
+ │                    CENTRAL SLAVE MANAGER: modbus_registry.c                            │
+ │        - RAM table of modbus_slave_snapshot_t (up to 32 devices)                       │
+ │        - Round-robin cursor per bus and stale claim recovery                           │
+ │        - Internal mutual exclusion via k_mutex (transparent to threads)                │
+ │        - Versioned export/import serializer for EEPROM storage                         │
  │                                                                                        │
  └──────────────────────┬──────────────────────────────────────────┬──────────────────────┘
                         │                                          │
-        i_slave_registry│ (Puerto compartido)      i_slave_registry│ (Puerto compartido)
+        i_slave_registry│ (Shared port)      i_slave_registry│ (Shared port)
                         ▼                                          ▼
  ┌──────────────────────────────────────┐   ┌─────────────────────────────────────────┐
- │   HILO RS485-1: ao_modbus.c (Bus 0)  │   │   HILO RS485-2: ao_modbus.c (Bus 1)     │
+ │   RS485-1 THREAD: ao_modbus.c (Bus 0)│   │   RS485-2 THREAD: ao_modbus.c (Bus 1)   │
  │                                      │   │                                         │
- │ - Stack y Cola de eventos propios    │   │ - Stack y Cola de eventos propios       │
- │ - Sondea esclavos asignados a Bus 0  │   │ - Sondea esclavos asignados a Bus 1     │
- │ - Control exclusivo de USART2        │   │ - Control exclusivo de USART6           │
- │ - Driver Enable (DE) por HW en PD4   │   │ - Driver Enable (DE) por HW en PG8      │
+ │ - Own stack and event queue          │   │ - Own stack and event queue             │
+ │ - Polls slaves assigned to Bus 0     │   │ - Polls slaves assigned to Bus 1        │
+ │ - Exclusive control of USART2        │   │ - Exclusive control of USART6           │
+ │ - HW Driver Enable (DE) on PD4       │   │ - HW Driver Enable (DE) on PG8          │
  └──────────────────┬───────────────────┘   └────────────────────┬────────────────────┘
                     │                                            │
-   i_modbus_client_t│ (Puerto Bus 0)             i_modbus_client_t│ (Puerto Bus 1)
+       i_modbus_client_t│ (Bus 0 port)             i_modbus_client_t│ (Bus 1 port)
                     ▼                                            ▼
  ┌──────────────────────────────────────┐   ┌─────────────────────────────────────────┐
- │ adapter_modbus_nmbs.c (Instancia 0)  │   │ adapter_modbus_nmbs.c (Instancia 1)     │
- │ - Envuelve nmbs_z_client_t           │   │ - Envuelve nmbs_z_client_t              │
- │ - API de lectura/escritura Modbus    │   │ - API de lectura/escritura Modbus       │
+ │ adapter_modbus_nmbs.c (Instance 0)   │   │ adapter_modbus_nmbs.c (Instance 1)      │
+ │ - Wraps nmbs_z_client_t              │   │ - Wraps nmbs_z_client_t                 │
+ │ - Modbus read/write API              │   │ - Modbus read/write API                 │
  └──────────────────┬───────────────────┘   └────────────────────┬────────────────────┘
                     │                                            │
                     ▼                                            ▼
            [ USART2 + DE (PD4) ]                        [ USART6 + DE (PG8) ]
-           Transceptor Físico 1                         Transceptor Físico 2
+           Physical Transceiver 1                         Physical Transceiver 2
 ```
 
 ---
 
-## 3. Componentes y Separación de Responsabilidades
+## 3. Components and Separation of Responsibilities
 
-### 3.1 Dominio Puro: Planificación y Salud (`domain/services/slave_scheduler.c`)
-- Contiene las reglas matemáticas puras sin depender de sockets, colas ni RTOS:
-  - `slave_scheduler_is_due()`: Evalúa si un esclavo cumplió su intervalo según el reloj monotónico u64.
-  - `slave_scheduler_record()`: Actualiza contadores y conmuta estados de salud:
-    - `MODBUS_RESULT_OK`: Resetea contadores de fallo, pasa a `MODBUS_HEALTH_ONLINE`.
-    - `MODBUS_RESULT_TIMEOUT` y `MODBUS_RESULT_CRC`: Incrementan `consecutive_fails`. Si llega a 3, pasa a `MODBUS_HEALTH_OFFLINE_BACKOFF`.
-    - `MODBUS_RESULT_EXCEPTION`: El esclavo respondió (está vivo); no incrementa fallos ni degrada la salud, contabilizándose en su propia estadística.
+### 3.1 Pure Domain: Planning and Health (`domain/services/slave_scheduler.c`)
+- Contains pure mathematical rules without depending on sockets, queues, or RTOS:
+  - `slave_scheduler_is_due()`: Evaluates whether a slave fulfilled its interval according to the monotonic u64 clock.
+  - `slave_scheduler_record()`: Updates counters and toggles health states:
+    - `MODBUS_RESULT_OK`: Resets failure counters, passes to `MODBUS_HEALTH_ONLINE`.
+    - `MODBUS_RESULT_TIMEOUT` and `MODBUS_RESULT_CRC`: Increment `consecutive_fails`. If it reaches 3, passes to `MODBUS_HEALTH_OFFLINE_BACKOFF`.
+    - `MODBUS_RESULT_EXCEPTION`: The slave responded (is alive); does not increment failures nor degrade health, counted in its own statistic.
 
-### 3.2 Capa de Aplicación: Registro Concurrente (`application/modbus/modbus_registry.c`)
-- Mantiene la tabla de descriptores y estados de ejecución.
-- Protegido por un `k_mutex` interno: el llamante nunca gestiona locks.
-- **Ciclo Atómico `claim_next_due` / `record`**:
-  - Para evitar que dos llamadas concurrentes tomen el mismo esclavo, el reclamo marca el esclavo como `in_flight = true`.
-  - Si un hilo se cuelga o muere antes de reportar, el esclavo se recupera automáticamente tras `MODBUS_CLAIM_STALE_MS` (5 segundos).
-- **Serialización Portable (`export` / `import`)**:
-  - `modbus_registry_export()` empaqueta la configuración en un buffer plano little-endian independiente de la CPU.
-  - `modbus_registry_import()` valida la consistencia total del buffer antes de escribir la tabla en RAM.
+### 3.2 Application Layer: Concurrent Registry (`application/modbus/modbus_registry.c`)
+- Maintains the table of descriptors and execution states.
+- Protected by an internal `k_mutex`: the caller never manages locks.
+- **Atomic `claim_next_due` / `record` cycle**:
+  - To avoid two concurrent calls taking the same slave, the claim marks the slave as `in_flight = true`.
+  - If a thread hangs or dies before reporting, the slave is automatically recovered after `MODBUS_CLAIM_STALE_MS` (5 seconds).
+- **Portable Serialization (`export` / `import`)**:
+  - `modbus_registry_export()` packages configuration into a flat little-endian buffer independent of the CPU.
+  - `modbus_registry_import()` validates the consistency of the entire buffer before writing the table to RAM.
 
-### 3.3 Active Objects de Sondeo (`application/active_objects/ao_modbus.c`)
-- Cada instancia corre un bucle de eventos:
-  1. Consulta `i_slave_registry_claim_next_due()` para su `bus_id`.
-  2. Si hay un esclavo listo, ejecuta `poll_target()`.
-  3. Reporta el resultado con `i_slave_registry_record()`.
-  4. Si no hay nada listo, calcula `next_due_in()` y duerme en `k_msgq_get()` hasta el próximo vencimiento o hasta recibir un comando en su cola.
+### 3.3 Polling Active Objects (`application/active_objects/ao_modbus.c`)
+- Each instance runs an event loop:
+  1. Consults `i_slave_registry_claim_next_due()` for its `bus_id`.
+  2. If a slave is ready, executes `poll_target()`.
+  3. Reports the result with `i_slave_registry_record()`.
+  4. If nothing is ready, calculates `next_due_in()` and sleeps in `k_msgq_get()` until the next expiration or until receiving a command in its queue.
 
 ---
 
-## 4. Reasignación de Bus en Caliente (Runtime Failover)
+## 4. Hot Bus Reassignment (Runtime Failover)
 
-Si el cableado físico o el transceptor de `RS485-1` sufre daño, el operador puede mover los cables a `RS485-2` y reasignar el dispositivo mediante el puerto:
+If the physical wiring or the `RS485-1` transceiver is damaged, the operator can move the cables to `RS485-2` and reassign the device through the port:
 
 ```c
 int err = i_slave_registry_set_bus(&app->registry, device_id, MODBUS_BUS_RS485_2);
 ```
 
-### 4.1 Secuencia de Ejecución Interna:
-1. **Validación Atómica**: El registro comprueba que el Bus 2 no esté lleno (`MODBUS_MAX_SLAVES_PER_BUS = 16`) y que la dirección esclavo no esté duplicada en el bus destino (`-EADDRINUSE`).
-2. **Conmutación**: Se actualiza el campo `bus_id` dentro del descriptor.
-3. **Notificación Zbus**: Se emite el evento en `chan_system_config`.
-4. **Despertar del Bus Destino**: Se envía `AO_MODBUS_EVENT_POLL_NOW` al hilo del Bus 2 para que no espere inactivo y tome el esclavo al instante.
-5. **Persistencia en EEPROM**: El coordinador `ao_storage` recibe el evento Zbus y almacena la nueva asignación en la EEPROM mediante `microconf`.
+### 4.1 Internal Execution Sequence:
+1. **Atomic Validation**: The registry checks that Bus 2 is not full (`MODBUS_MAX_SLAVES_PER_BUS = 16`) and that the slave address is not duplicated on the destination bus (`-EADDRINUSE`).
+2. **Switching**: The `bus_id` field is updated inside the descriptor.
+3. **Zbus Notification**: The event is emitted on `chan_system_config`.
+4. **Destination Bus Wake**: `AO_MODBUS_EVENT_POLL_NOW` is sent to the Bus 2 thread so it does not wait idly and takes the slave instantly.
+5. **EEPROM Persistence**: The `ao_storage` coordinator receives the Zbus event and stores the new assignment in EEPROM via `microconf`.
 
 ---
 
-## 5. Guía para Extender: Cómo Agregar un Nuevo Dispositivo Modbus
+## 5. Extension Guide: How to Add a New Modbus Device
 
-Para incorporar un nuevo dispositivo de campo (ejemplo: un **Expansor de 8 Salidas a Relé por Modbus RTU**):
+To incorporate a new field device (e.g., an **8-Channel Relay Expander via Modbus RTU**):
 
 ```text
                ┌────────────────────────────────────────────────────────┐
-               │ 1. common/modbus_types.h: Identificador de dispositivo │
+               │ 1. common/modbus_types.h: Device identifier            │
                └───────────────────────────┬────────────────────────────┘
                                            │
                ┌───────────────────────────▼────────────────────────────┐
                │ 2. domain/services/relay_expander_codec.{c,h}          │
-               │    (Funciones puras de codificación/decodificación)    │
+               │    (Pure encoding/decoding functions)                  │
                └───────────────────────────┬────────────────────────────┘
                                            │
                ┌───────────────────────────▼────────────────────────────┐
                │ 3. application/active_objects/ao_modbus.c              │
-               │    - Lectura periódica en poll_target()                │
-               │    - Acciones de escritura asíncronas vía eventos      │
+               │    - Periodic reading in poll_target()                 │
+               │    - Asynchronous write actions via events             │
                └───────────────────────────┬────────────────────────────┘
                                            │
                ┌───────────────────────────▼────────────────────────────┐
                │ 4. interfaces/i_relay.h + adapter_relay_modbus.c       │
-               │    (Expone interfaz estándar hacia la aplicación)      │
+               │    (Exposes standard interface to application)         │
                └───────────────────────────┬────────────────────────────┘
                                            │
                ┌───────────────────────────▼────────────────────────────┐
-               │ 5. Registro & Persistencia EEPROM                      │
-               │    (Se registra en el registry y se guarda solo)       │
+               │ 5. Registry & EEPROM Persistence                       │
+               │    (Registers in registry and saves only)              │
                └────────────────────────────────────────────────────────┘
 ```
 
-### Paso 1: Declarar el Tipo en el Dominio (`app/include/common/modbus_types.h`)
-Añadir el identificador en la enumeración:
+### Step 1: Declare the Type in the Domain (`app/include/common/modbus_types.h`)
+Add the identifier in the enumeration:
 ```c
 typedef enum {
     MODBUS_DEV_TYPE_UNKNOWN = 0,
     MODBUS_DEV_TYPE_CWT_TM16PT,
     MODBUS_DEV_TYPE_ENERGY_METER_SDM,
-    MODBUS_DEV_TYPE_RELAY_EXPANDER,    /**< Módulo de salidas digitales Modbus */
+    MODBUS_DEV_TYPE_RELAY_EXPANDER,    /**< Modbus digital output module */
 } modbus_device_type_t;
 ```
 
-### Paso 2: Implementar el Codec de Dominio Puro (`app/src/domain/services/relay_expander_codec.{c,h}`)
-Escribir la lógica de conversión matemática y empaquetado de bits en C estándar, sin dependencias de hardware:
-- Función para empaquetar una máscara de bits a solicitud Modbus FC05 (Write Single Coil) o FC15 (Write Multiple Coils).
-- Función para decodificar la confirmación del esclavo o la lectura de coils (FC01).
-- Escribir su suite de pruebas unitarias en `tests/unit/modbus/`.
+### Step 2: Implement the Pure Domain Codec (`app/src/domain/services/relay_expander_codec.{c,h}`)
+Write the mathematical conversion logic and bit packing in standard C, without hardware dependencies:
+- Function to pack a bitmask into Modbus FC05 (Write Single Coil) or FC15 (Write Multiple Coils) request.
+- Function to decode slave confirmation or coil reading (FC01).
+- Write its unit test suite in `tests/unit/modbus/`.
 
-### Paso 3: Integrar en el Bucle del Active Object (`app/src/application/active_objects/ao_modbus.c`)
-Un actuador como un módulo de relés tiene dos tipos de interacción:
+### Step 3: Integrate into the Active Object Loop (`app/src/application/active_objects/ao_modbus.c`)
+A relay module actuator has two types of interaction:
 
-1. **Lectura Periódica de Estado (Sondeo)**:
-   En `poll_target()`, agregar el caso:
+1. **Periodic Status Reading (Polling)**:
+   In `poll_target()`, add the case:
    ```c
    case MODBUS_DEV_TYPE_RELAY_EXPANDER:
        return i_modbus_client_read_coils(self->client, target->slave_addr, ...);
    ```
-   Al recibir la trama válida, se publica el estado actual de los relés en un canal Zbus (`chan_relay_state`).
-2. **Escritura Asíncrona (Conmutación de un Relé bajo demanda)**:
-   - Dado que el puerto serie es half-duplex, **ningún hilo externo debe transmitir directamente a la UART**.
-   - Para conmutar un relé, la aplicación envía un evento a la cola del Active Object:
+   Upon receiving a valid frame, the current relay state is published on a Zbus channel (`chan_relay_state`).
+
+2. **Asynchronous Writing (Relay Switching on Demand)**:
+   - Since the serial port is half-duplex, **no external thread must transmit directly to the UART**.
+   - To switch a relay, the application sends an event to the Active Object queue:
      ```c
      modbus_event_t evt = {
          .type = AO_MODBUS_EVENT_WRITE_COIL,
@@ -182,15 +183,15 @@ Un actuador como un módulo de relés tiene dos tipos de interacción:
      };
      ao_modbus_post(&app->ao[bus_id], &evt);
      ```
-   - El hilo `ao_modbus` procesa el evento entre ciclos de sondeo y ejecuta `i_modbus_client_write_single_coil()`.
+   - The `ao_modbus` thread processes the event between polling cycles and executes `i_modbus_client_write_single_coil()`.
 
-### Paso 4: Adaptador al Puerto Estándar de la Aplicación (`i_relay.h`)
-- Para la lógica de negocio o alarmas, el control se realiza a través de `i_relay_set_state()`.
-- Se implementa `adapter_relay_modbus.c` implementando la v-table `i_relay_api_t`, traduciendo la llamada a un mensaje hacia la cola del `ao_modbus`.
-- La capa de dominio desconoce si el relé es un pin físico del STM32, un expansor SPI MCP23S17 o un esclavo Modbus.
+### Step 4: Adapter to the Application Standard Port (`i_relay.h`)
+- For business logic or alarms, control is performed through `i_relay_set_state()`.
+- `adapter_relay_modbus.c` is implemented implementing the `i_relay_api_t` v-table, translating the call into a message to the `ao_modbus` queue.
+- The domain layer does not know whether the relay is an STM32 physical pin, an MCP23S17 SPI expander, or a Modbus slave.
 
-### Paso 5: Registro y Persistencia Automática
-Al inicializar o mediante comando de configuración, se registra el descriptor:
+### Step 5: Registration and Automatic Persistence
+Upon initialization or via configuration command, the descriptor is registered:
 ```c
 modbus_slave_descriptor_t desc = {
     .device_id = 2U,
@@ -203,4 +204,4 @@ modbus_slave_descriptor_t desc = {
 };
 i_slave_registry_register_device(&app->registry, &desc);
 ```
-El coordinador de almacenamiento (`ao_storage`) detecta la inserción y guarda automáticamente el nuevo esclavo en la EEPROM.
+The storage coordinator (`ao_storage`) detects the insertion and automatically saves the new slave to EEPROM.

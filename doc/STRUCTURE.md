@@ -1,189 +1,190 @@
-# Arquitectura de Software y Estructura del Proyecto BrightC Telemetry
-**Guía Maestra de Clean Architecture, TDD y Zephyr RTOS**  
-*Plataforma: DAECGE BrightC Controller V3 (STM32H743ZIT6 LQFP144)*  
-*Entorno de Ejecución: Zephyr RTOS (Topología West T2)*
+# Software Architecture and Project Structure BrightC Telemetry
+**Master Guide for Clean Architecture, TDD and Zephyr RTOS**  
+*Platform: DAECGE BrightC Controller V3 (STM32H743ZIT6 LQFP144)*  
+*Execution Environment: Zephyr RTOS (West T2 Topology)*
 
 ---
 
-## 1. Visión Arquitectónica y Principios Rectores
+## 1. Architectural Vision and Guiding Principles
 
-El firmware de **BrightC Telemetry** está diseñado bajo los principios de **Clean Architecture (Puertos y Adaptadores / Arquitectura Hexagonal)** y **Desarrollo Guiado por Pruebas (TDD)**, aprovechando las capacidades del ecosistema **Zephyr RTOS**.
+The **BrightC Telemetry** firmware is designed under the principles of **Clean Architecture (Ports and Adapters / Hexagonal Architecture)** and **Test-Driven Development (TDD)**, leveraging the capabilities of the **Zephyr RTOS** ecosystem.
 
 ```
  +-----------------------------------------------------------------------+
- |                     PRESENTACIÓN & CLI (Shell)                        |
+ |                     PRESENTATION & CLI (Shell)                        |
  |         (HMI DWIN UART3, Zephyr Shell UART1, HTTP/SNMP Handlers)      |
  +-----------------------------------+-----------------------------------+
-                                     |
-                                     v
+                                      |
+                                      v
  +-----------------------------------------------------------------------+
- |                        CAPA DE APLICACIÓN                             |
- |       (Active Objects, Casos de Uso, Orquestación, Zephyr Zbus, SMF)  |
+ |                        APPLICATION LAYER                              |
+ |       (Active Objects, Use Cases, Orchestration, Zephyr Zbus, SMF)    |
  +------------------+---------------------------------+------------------+
-                    |                                 |
-                    v                                 v
+                     |                                 |
+                     v                                 v
  +------------------------------------+   +------------------------------+
- |          CAPA DE DOMINIO           |   |      PUERTOS / INTERFACES    |
- | (Lógica Pura C99/C11, Algoritmos,  |   | (Contratos abstractos en C:  |
- |  Modelos, Máquinas de Estado Puras)|   |  i_modbus.h, i_storage.h,    |
- |    *CERO dependencias de Zephyr*   |   |  i_sensor.h, i_network.h)    |
+ |          DOMAIN LAYER              |   |      PORTS / INTERFACES      |
+ | (Pure C99/C11 Logic, Algorithms,   |   | (Abstract contracts in C:    |
+ |  Models, Pure State Machines)      |   |  i_modbus.h, i_storage.h,    |
+ |    *ZERO Zephyr dependencies*      |   |  i_sensor.h, i_network.h)    |
  +------------------------------------+   +--------------+---------------+
-                                                         ^
-                                                         | (Implementa)
+                                                          ^
+                                                          | (Implements)
  +-------------------------------------------------------+---------------+
- |                      CAPA DE INFRAESTRUCTURA                          |
- | (Adaptadores Zephyr: GPIO, NVS/Settings, Ethernet LAN8742, WiFi ESP32)|
- |        (Composition Root / Dependency Injection: composition_root.c)  |
- +-----------------------------------------------------------------------+
-                                     |
-                                     v
+ |                      INFRASTRUCTURE LAYER                               |
+ | (Zephyr Adapters: GPIO, NVS/Settings, Ethernet LAN8742, WiFi ESP32)      |
+ |       (Composition Root / Dependency Injection: composition_root.c)      |
+ +---------------------------------------------------------------------------+
+                                      |
+                                      v
  +-----------------------------------------------------------------------+
  |                HARDWARE & DEVICETREE (DTS / Overlays)                 |
  |            (boards/daecge/brightc-controllerv3, app/boards/)          |
  +-----------------------------------------------------------------------+
 ```
 
-### 1.1 Invariantes Fundamentales
-1. **Regla de Dependencia Unidireccional**: Las capas internas jamás conocen a las capas externas. El Dominio desconoce la existencia de Zephyr, FreeRTOS, STM32 o cualquier hardware físico.
-2. **Pureza del Dominio**: Todo archivo en `domain/` se compila con C estándar (`stdint.h`, `stdbool.h`, `stddef.h`). Está **estrictamente prohibido** incluir `#include <zephyr/...>` o registros de silicio en el Dominio.
-3. **Inversión de Dependencias (IoC)**: El software interactúa con el mundo exterior mediante interfaces abstractas (*puertos* en `include/interfaces/`). La infraestructura implementa dichos puertos (*adaptadores*).
-4. **Devicetree como Fuente Única de Verdad de Hardware**: No existen archivos `bsp.c` o llamadas a CubeMX. Toda la configuración de pines (pinctrl), relojes y buses reside en archivos `.dts` y `.overlay`.
-5. **Testabilidad Inmediata (TDD)**: Toda la lógica de negocio y aplicación puede probarse en milisegundos en la máquina anfitriona (Host PC o `native_sim`) sin necesidad de conectar la placa física.
-6. **Cero Malloc en el Bucle de Ejecución**: Memoria estática, pools preasignados (`k_mem_slab`, `k_heap` estático) y canales fuertemente tipados en tiempo de compilación.
-7. **Definición de Stacks y Protección MPU**: Los stacks de hilos de Zephyr (`k_thread_stack_t`) **NUNCA** deben embeberse dentro de estructuras (`struct` en `.bss`), como el contenedor `app_container_t`. En microcontroladores Cortex-M con MPU (Cortex-M7 STM32H7) y `CONFIG_HW_STACK_PROTECTION` / `CONFIG_MPU_STACK_GUARD`, Zephyr exige que los stacks residan en secciones dedicadas alineadas por hardware con sus respectivas guardias MPU. Incrustar un stack en un struct desalinea la memoria y corrompe las regiones MPU, desatando fallos de hardware críticos como `MPU FAULT (Instruction Access Violation)`. Es **mandatorio** definir los stacks a nivel de archivo (file scope) mediante `K_THREAD_STACK_DEFINE` o `K_THREAD_STACK_ARRAY_DEFINE`.
+### 1.1 Fundamental Invariants
+
+1. **Unidirectional Dependency Rule**: Inner layers never know outer layers. The Domain does not know about Zephyr, FreeRTOS, STM32, or any physical hardware.
+2. **Domain Purity**: Every file in `domain/` compiles with standard C (`stdint.h`, `stdbool.h`, `stddef.h`). It is **strictly prohibited** to include `#include <zephyr/...>` or silicon registers in the Domain.
+3. **Dependency Inversion (IoC)**: Software interacts with the outside world through abstract interfaces (*ports* in `include/interfaces/`). Infrastructure implements those ports (*adapters*).
+4. **Devicetree as Single Source of Truth for Hardware**: There are no `bsp.c` files or CubeMX calls. All pin configuration (pinctrl), clocks, and buses reside in `.dts` and `.overlay` files.
+5. **Immediate Testability (TDD)**: All business and application logic can be tested in milliseconds on the host machine (Host PC or `native_sim`) without connecting the physical board.
+6. **Zero Malloc in the Execution Loop**: Static memory, preallocated pools (`k_mem_slab`, static `k_heap`) and strongly typed channels at compile time.
+7. **Stack Definition and MPU Protection**: Zephyr thread stacks (`k_thread_stack_t`) **MUST NEVER** be embedded inside structures (`struct` in `.bss`), such as the container `app_container_t`. In microcontrollers with Cortex-M MPU (Cortex-M7 STM32H7) and `CONFIG_HW_STACK_PROTECTION` / `CONFIG_MPU_STACK_GUARD`, Zephyr requires stacks to reside in hardware-aligned dedicated sections with their respective MPU guards. Embedding a stack inside a struct misaligns memory and corrupts MPU regions, triggering critical hardware faults such as `MPU FAULT (Instruction Access Violation)`. It is **mandatory** to define stacks at file scope using `K_THREAD_STACK_DEFINE` or `K_THREAD_STACK_ARRAY_DEFINE`.
 
 ---
 
-## 2. Estructura Canónica del Proyecto (West T2 Topology)
+## 2. Canonical Project Structure (West T2 Topology)
 
-El workspace de Zephyr organiza el proyecto mediante la topología **West T2**, donde `BrightC-telemetry` es el repositorio de aplicación y manifiesto.
+The Zephyr workspace organizes the project through the **West T2 topology**, where `BrightC-telemetry` is the application and manifest repository.
 
 ```text
-BrightC_TelemetryWorkspace/                  # Raíz del Workspace West
-├── .west/                                   # Metadatos locales de west
-├── zephyr/                                  # Árbol fuente de Zephyr RTOS (submódulo/upstream)
-├── modules/                                 # Módulos externos (nanoMODBUS, microconf, hal_stm32, etc.)
+BrightC_TelemetryWorkspace/                  # Root of the West Workspace
+├── .west/                                   # Local west metadata
+├── zephyr/                                  # Zephyr RTOS source tree (submodule/upstream)
+├── modules/                                 # External modules (nanoMODBUS, microconf, hal_stm32, etc.)
 │   └── lib/
 │       ├── nanoMODBUS/
 │       ├── microconf/
 │       └── zephyr-snmp/
 │
-└── BrightC-telemetry/                        # Repositorio Principal de la Aplicación (Este Repo)
-    ├── west.yml                             # Manifiesto West (pinning de dependencias y versiones)
-    ├── CMakeLists.txt                       # CMake de nivel módulo Zephyr
-    ├── Kconfig                              # Kconfig de nivel módulo Zephyr
+└── BrightC-telemetry/                        # Main Application Repository (This Repo)
+    ├── west.yml                             # West manifest (pinning dependencies and versions)
+    ├── CMakeLists.txt                       # Zephyr module-level CMake
+    ├── Kconfig                              # Zephyr module-level Kconfig
     ├── zephyr/
-    │   └── module.yml                       # Declaración del repo como módulo Zephyr (dts_root, board_root)
+    │   └── module.yml                       # Module declaration (dts_root, board_root)
     │
-    ├── boards/                              # Definiciones de placas personalizadas (Hardware Base)
+    ├── boards/                              # Custom board definitions (Hardware Base)
     │   └── daecge/
-    │       └── brightc-controllerv3/        # Placa BrightC BaseBoard V3 (STM32H743ZIT6)
-    │           ├── board.cmake              # Configuración de flasheo (openocd / runner)
-    │           ├── board.yml                # Metadatos de la placa
-    │           ├── brightc-controllerv3.dts # Devicetree completo (pinctrl, clocks, buses, PHY)
-    │           ├── brightc-controllerv3.yaml# Capacidades (RAM, Flash, periféricos)
-    │           ├── brightc-controllerv3_defconfig # Configuración por defecto de la placa
+    │       └── brightc-controllerv3/        # BrightC BaseBoard V3 (STM32H743ZIT6)
+    │           ├── board.cmake              # Flash configuration (openocd / runner)
+    │           ├── board.yml                # Board metadata
+    │           ├── brightc-controllerv3.dts # Complete Devicetree (pinctrl, clocks, buses, PHY)
+    │           ├── brightc-controllerv3.yaml# Capabilities (RAM, Flash, peripherals)
+    │           ├── brightc-controllerv3_defconfig # Default board configuration
     │           ├── Kconfig.brightc-controllerv3
     │           └── support/
-    │               └── openocd.cfg          # Configuración OpenOCD (ST-Link / SWD)
+    │               └── openocd.cfg          # OpenOCD configuration (ST-Link / SWD)
     │
-    ├── dts/                                 # Extensiones de Devicetree del proyecto
-    │   └── bindings/                        # Bindings YAML para dispositivos propietarios
+    ├── dts/                                 # Project Devicetree extensions
+    │   └── bindings/                        # YAML bindings for proprietary devices
     │
-    ├── drivers/                             # Drivers fuera del árbol (Out-of-tree Zephyr Drivers)
+    ├── drivers/                             # Out-of-tree Zephyr Drivers
     │   ├── CMakeLists.txt
     │   ├── Kconfig
-    │   └── sensor/                          # Drivers que implementan la API nativa de Zephyr
+    │   └── sensor/                          # Drivers implementing native Zephyr sensor API
     │
-    ├── lib/                                 # Librerías transversales y utilidades independientes
+    ├── lib/                                 # Cross-cutting libraries and utilities
     │   ├── CMakeLists.txt
     │   └── Kconfig
     │
-    ├── app/                                 # Aplicación Principal de Firmware
-    │   ├── CMakeLists.txt                   # CMake de la aplicación (target 'app')
-    │   ├── Kconfig                          # Menú de configuración Kconfig de la aplicación
-    │   ├── prj.conf                         # Kconfig base común para producción
-    │   ├── debug.conf                       # Overlay Kconfig para depuración (logs verbosos, asserts)
-    │   ├── VERSION                          # Versión semántica del firmware
+    ├── app/                                 # Main Firmware Application
+    │   ├── CMakeLists.txt                   # Application CMake (target 'app')
+    │   ├── Kconfig                          # Application Kconfig menu
+    │   ├── prj.conf                         # Base Kconfig common to production
+    │   ├── debug.conf                       # Debug Kconfig overlay (verbose logs, asserts)
+    │   ├── VERSION                          # Semantic firmware version
     │   │
-    │   ├── boards/                          # Overlays de hardware específicos de la aplicación
-    │   │   ├── brightc-controllerv3.overlay # Asignación de funciones de la app a nodos DTS
-    │   │   ├── brightc-controllerv3.conf    # Opciones Kconfig específicas para la V3
-    │   │   └── native_sim.overlay           # Simulación de periféricos (UARTs emuladas, etc.)
+    │   ├── boards/                          # Application-specific hardware overlays
+    │   │   ├── brightc-controllerv3.overlay # Assignment of app functions to DTS nodes
+    │   │   ├── brightc-controllerv3.conf    # V3-specific Kconfig options
+    │   │   └── native_sim.overlay           # Peripheral simulation (emulated UARTs, etc.)
     │   │
-    │   ├── include/                         # Puertos e Interfaces (Contratos puros)
-    │   │   ├── interfaces/                  # Interfaces abstractas (V-Tables / contratos C)
-    │   │   │   ├── i_telemetry_port.h       # Contrato de envío/recepción de telemetría
-    │   │   │   ├── i_modbus_client.h        # Contrato de transporte Modbus (FC03, FC06, etc.)
-    │   │   │   ├── i_slave_registry.h       # Contrato del gestor y planificación de esclavos
-    │   │   │   ├── i_config_storage.h       # Contrato modular de persistencia en EEPROM / NVS
-    │   │   │   ├── i_network.h              # Contrato de interfaz de red (Ethernet / WiFi)
-    │   │   │   ├── i_led.h                  # Contrato de LED de usuario
-    │   │   │   ├── i_buzzer.h               # Contrato de buzzer de señalización
-    │   │   │   ├── i_relay.h                # Contrato de salidas discretas / relés de control
-    │   │   │   ├── i_sensor_port.h          # Contrato de adquisición de mediciones analógicas
-    │   │   │   ├── i_temperature_bank.h     # Contrato de lectura multi-canal de temperatura
-    │   │   │   └── i_display_port.h         # Contrato para interfaz HMI DWIN
-    │   │   └── common/                      # Tipos de datos primitivos agnósticos
-    │   │       ├── config_types.h           # Dominios y eventos de configuración persistente
-    │   │       ├── indicator_types.h        # Tipos de indicadores (LED, buzzer, alarmas)
-    │   │       ├── modbus_types.h           # Structs de buses, descriptores, resultados
-    │   │       ├── telemetry_types.h        # Structs de mediciones, alarmas, timestamps
-    │   │       └── error_codes.h            # Códigos de error unificados
+    │   ├── include/                         # Ports and Interfaces (Pure Contracts)
+    │   │   ├── interfaces/                  # Abstract interfaces (V-Tables / C contracts)
+    │   │   │   ├── i_telemetry_port.h       # Send/receive telemetry contract
+    │   │   │   ├── i_modbus_client.h        # Modbus transport contract (FC03, FC06, etc.)
+    │   │   │   ├── i_slave_registry.h       # Slave manager and scheduling contract
+    │   │   │   ├── i_config_storage.h       # Modular EEPROM/NVS persistence contract
+    │   │   │   ├── i_network.h              # Network interface contract (Ethernet / WiFi)
+    │   │   │   ├── i_led.h                  # User LED contract
+    │   │   │   ├── i_buzzer.h               # Buzzer signaling contract
+    │   │   │   ├── i_relay.h                # Discrete output / relay control contract
+    │   │   │   ├── i_sensor_port.h          # Analog measurement acquisition contract
+    │   │   │   ├── i_temperature_bank.h     # Multi-channel temperature read contract
+    │   │   │   └── i_display_port.h         # DWIN HMI interface contract
+    │   │   └── common/                      # Agnostic primitive data types
+    │   │       ├── config_types.h           # Persistent configuration domains and events
+    │   │       ├── indicator_types.h        # Indicator types (LED, buzzer, alarms)
+    │   │       ├── modbus_types.h           # Bus structs, descriptors, results
+    │   │       ├── telemetry_types.h        # Measurement, alarm, timestamp structs
+    │   │       └── error_codes.h            # Unified error codes
     │   │
-    │   └── src/                             # Código fuente de la aplicación
-    │       ├── domain/                      # 100% PURO: Lógica de negocio (Sin <zephyr/...>)
-    │       │   ├── models/                  # Entidades (TelemetryFrame, AlarmState, DeviceProfile)
-    │       │   ├── services/                # Reglas de negocio (AlarmEvaluator, CalibrationEngine)
-    │       │   └── sm/                      # Máquinas de estado puras (TelemetryFSM)
+    │   └── src/                             # Application source code
+    │       ├── domain/                      # 100% PURE: Business logic (No <zephyr/...>)
+    │       │   ├── models/                  # Entities (TelemetryFrame, AlarmState, DeviceProfile)
+    │       │   ├── services/                # Business rules (AlarmEvaluator, CalibrationEngine)
+    │       │   └── sm/                      # Pure state machines (TelemetryFSM)
     │       │
-    │       ├── application/                 # Casos de uso y Orquestación (Usa Zephyr Zbus / RTOS)
-    │       │   ├── active_objects/          # Hilos de ejecución asíncronos (Actors)
-    │       │   │   ├── ao_telemetry.c       # Hilo coordinador de adquisición y muestreo
-    │       │   │   ├── ao_modbus.c          # Hilo de servicio Modbus (RS485-1 / RS485-2)
-    │       │   │   ├── ao_storage.c         # Hilo coordinador de persistencia asíncrona EEPROM
-    │       │   │   ├── ao_network.c         # Hilo de conectividad (Ethernet / WiFi ESP32)
-    │   │   │   ├── ao_system_indicator.c    # Hilo de indicadores (LED / Buzzer)
-    │       │   │   └── ao_hmi.c             # Hilo de atención a pantalla LCD DWIN
-    │       │   ├── zbus/                    # Canales de eventos Zephyr Zbus
-    │       │   │   ├── telemetry_channels.h # Definición de zbus_channel (muestras, alarmas)
-    │       │   │   └── telemetry_channels.c # Instanciación ZBUS_CHAN_DEFINE
-    │   │   │   ├── indicator_channels.h   # Canales de eventos de indicadores
-    │   │   │   └── indicator_channels.c # Instanciación ZBUS_CHAN_DEFINE para indicadores
-    │       │   └── use_cases/               # Flujos (ProcessTelemetrySample, PublishMqttReport)
+    │       ├── application/                 # Use cases and Orchestration (Uses Zephyr Zbus / RTOS)
+    │       │   ├── active_objects/          # Asynchronous execution threads (Actors)
+    │       │   │   ├── ao_telemetry.c       # Coordinator thread for acquisition and sampling
+    │       │   │   ├── ao_modbus.c          # Modbus service thread (RS485-1 / RS485-2)
+    │       │   │   ├── ao_storage.c         # Async persistence coordinator thread EEPROM
+    │       │   │   ├── ao_network.c         # Connectivity thread (Ethernet / WiFi ESP32)
+    │       │   │   ├── ao_system_indicator.c# Indicators thread (LED / Buzzer)
+    │       │   │   └── ao_hmi.c             # DWIN LCD HMI thread
+    │       │   ├── zbus/                    # Zephyr Zbus event channels
+    │       │   │   ├── telemetry_channels.h # zbus_channel definition (samples, alarms)
+    │       │   │   ├── telemetry_channels.c # ZBUS_CHAN_DEFINE instantiation
+    │       │   │   ├── indicator_channels.h # Indicator event channels
+    │       │   │   └── indicator_channels.c # ZBUS_CHAN_DEFINE instantiation for indicators
+    │       │   └── use_cases/               # Flows (ProcessTelemetrySample, PublishMqttReport)
     │       │
-    │       ├── infrastructure/              # Adaptadores a Zephyr y composición
-    │       │   ├── adapters/                # Implementación de los puertos con APIs de Zephyr
-    │       │   │   ├── adapter_modbus_nmbs.c      # nanoMODBUS montado sobre UART/RS485 Zephyr
-    │       │   │   ├── adapter_storage_microconf.c# Persistencia microconf sobre EEPROM AT24C256C
-    │       │   │   ├── adapter_sensor_zephyr.c    # Lectura de sensores usando <zephyr/drivers/sensor.h>
-    │       │   │   ├── adapter_relay_gpio.c       # Manejo de relés usando <zephyr/drivers/gpio.h>
-    │       │   │   ├── adapter_wifi_esp_hosted.c  # Driver de red ESP-Hosted (WiFi / BLE)
-    │   │   │   ├── adapter_led_gpio.c         # Control de LED de usuario por GPIO
-    │   │   │   ├── adapter_buzzer_pwm.c       # Control de buzzer por PWM
-    │       │   │   └── adapter_display_dwin.c     # Parser serial DWIN sobre UART3 de Zephyr
-    │       │   └── di/                      # Composition Root (Inyección de Dependencias)
-    │       │       ├── composition_root.h   # API de arranque del grafo de dependencias
-    │       │       └── composition_root.c   # DEVICE_DT_GET y vinculación puerto-adaptador
+    │       ├── infrastructure/              # Adapters to Zephyr and composition
+    │       │   ├── adapters/                # Port implementations using Zephyr APIs
+    │       │   │   ├── adapter_modbus_nmbs.c      # nanoMODBUS over Zephyr UART/RS485
+    │       │   │   ├── adapter_storage_microconf.c# Persistence microconf over EEPROM AT24C256C
+    │       │   │   ├── adapter_sensor_zephyr.c    # Sensor reading using <zephyr/drivers/sensor.h>
+    │       │   │   ├── adapter_relay_gpio.c       # Relay handling using <zephyr/drivers/gpio.h>
+    │       │   │   ├── adapter_wifi_esp_hosted.c  # ESP-Hosted network driver (WiFi / BLE)
+    │       │   │   ├── adapter_led_gpio.c         # User LED control via GPIO
+    │       │   │   ├── adapter_buzzer_pwm.c       # Buzzer control via PWM
+    │       │   │   └── adapter_display_dwin.c     # DWIN serial parser over Zephyr UART3
+    │       │   └── di/                      # Composition Root (Dependency Injection)
+    │       │       ├── composition_root.h   # Startup API of the dependency graph
+    │       │       └── composition_root.c   # DEVICE_DT_GET and port-adapter binding
     │       │
-    │       ├── presentation/                # Interfaz de Usuario / HMI
-    │       │   ├── dwin/                    # Model-View-Presenter (MVP) para LCD DWIN
-    │       │   │   ├── dwin_presenter.c     # Lógica de presentación de variables
-    │       │   │   └── dwin_views.c         # Formateo de tramas de pantalla
-    │       │   └── shell/                   # Comandos de CLI de Zephyr (Diagnóstico y Calibración)
-    │       │       └── telemetry_shell.c    # Comandos SHELL_CMD_REGISTER para terminal UART1
+    │       ├── presentation/                # User Interface / HMI
+    │       │   ├── dwin/                    # Model-View-Presenter (MVP) for DWIN LCD
+    │       │   │   ├── dwin_presenter.c     # Variable presentation logic
+    │       │   │   └── dwin_views.c         # Screen frame formatting
+    │       │   └── shell/                   # Zephyr CLI commands (Diagnostics and Calibration)
+    │       │       └── telemetry_shell.c    # SHELL_CMD_REGISTER commands for UART1 terminal
     │       │
-    │       └── main.c                       # Punto de entrada de la aplicación
+    │       └── main.c                       # Application entry point
     │
-    ├── tests/                               # Suites de Pruebas Automatizadas (TDD)
-    │   ├── testcase.yaml                    # Descriptor global para el runner 'twister'
-    │   ├── unit/                            # Pruebas Unitarias Aisladas (Corren en native_sim)
-    │   │   ├── domain/                      # Tests de lógica de negocio (100% Mockeado)
+    ├── tests/                               # Automated Test Suites (TDD)
+    │   ├── testcase.yaml                    # Global descriptor for 'twister' runner
+    │   ├── unit/                            # Isolated Unit Tests (Run in native_sim)
+    │   │   ├── domain/                      # Business logic tests (100% mocked)
     │   │   │   ├── test_alarm_evaluator.c
     │   │   │   └── test_telemetry_fsm.c
-    │   │   └── application/                 # Tests de casos de uso y Zbus
+    │   │   └── application/                 # Use case and Zbus tests
     │   │       └── test_process_sample.c
-    │   ├── fakes/                           # Fakes e Implementaciones en Memoria para pruebas
+    │   ├── fakes/                           # Fakes and In-Memory Implementations for tests
     │   │   ├── include/
     │   │   │   ├── fake_storage_port.h
     │   │   │   ├── fake_sensor_port.h
@@ -192,55 +193,52 @@ BrightC_TelemetryWorkspace/                  # Raíz del Workspace West
     │   │       ├── fake_storage_port.c
     │   │       ├── fake_sensor_port.c
     │   │       └── fake_relay_port.c
-    │   ├── integration/                     # Tests de integración en native_sim / Emuladores
+    │   ├── integration/                     # Integration tests in native_sim / Emulators
     │   │   └── test_modbus_loopback.c
-    │   └── hil/                             # Pruebas en Hardware Real (BrightC Controller V3)
+    │   └── hil/                             # Tests on Real Hardware (BrightC Controller V3)
     │       └── test_adc_accuracy.c
     │
-    └── doc/                                 # Documentación de Arquitectura y Referencia
-        ├── STRUCTURE.md                     # Este documento maestro de arquitectura
-        ├── architecture/                    # Especificaciones técnicas maestras por subsistema
-        │   ├── modbus_subsystem.md          # Arquitectura completa del subsistema Modbus
-        │   ├── network_subsystem.md         # Arquitectura del subsistema de red (Ethernet / WiFi)
-        │   ├── storage_subsystem.md         # Arquitectura del subsistema de persistencia EEPROM
-        │   └── system_indicators.md         # Arquitectura de indicadores de sistema (LED / Buzzer)
-        ├── brightcV3.md                     # Referencia esquemática y pinctrl del HW
-        └── Doxyfile                         # Generador de documentación API
+    └── doc/                                 # Architecture and Reference Documentation
+        ├── STRUCTURE.md                     # This master architecture document
+        ├── architecture/                    # Master technical specifications per subsystem
+        │   ├── modbus_subsystem.md          # Complete Modbus subsystem architecture
+        │   ├── network_subsystem.md         # Network subsystem architecture (Ethernet / WiFi)
+        │   ├── storage_subsystem.md         # EEPROM persistence subsystem architecture
+        │   └── system_indicators.md         # System indicators architecture (LED / Buzzer)
+        ├── brightcV3.md                     # HW schematic and pinctrl reference
+        └── Doxyfile                         # API documentation generator
 ```
 
 ---
 
-## 3. Matriz de Clasificación de Componentes (Decision Tree)
+## 3. Component Classification Matrix (Decision Tree)
 
-Cuando necesites crear un nuevo archivo o funcionalidad, responde las siguientes preguntas en orden:
+When you need to create a new file or functionality, answer the following questions in order:
 
-| Pregunta de Diseño | Clasificación Arquitectónica | Ubicación | Invariantes y Restricciones |
+| Design Question | Architectural Classification | Location | Invariants and Restrictions |
 | :--- | :--- | :--- | :--- |
-| **¿Contiene reglas de negocio, cálculos de alarmas, conversiones matemáticas o estados de telemetría?** | **Dominio (Domain)** | `app/src/domain/` | C99/C11 puro. Solo headers de libc (`stdint.h`). **PROHIBIDO** incluir `<zephyr/...>` o registros de microcontrolador. |
-| **¿Define el contrato abstracto de un servicio para desacoplar el dominio del HW o SO?** | **Puerto / Interfaz (Port)** | `app/include/interfaces/` | Solo headers (`i_*.h`). Estructuras de punteros a función (v-tables) o APIs tipadas en C. |
-| **¿Es un proceso asíncrono continuo, un actor que procesa mensajes de una cola o canal?** | **Aplicación / Active Object** | `app/src/application/active_objects/` | Posee su propio hilo/stack o workqueue; se comunica exclusivamente por **Zbus** o colas de mensajes. |
-| **¿Implementa un puerto interactuando con drivers de Zephyr, RTOS o librerías externas?** | **Adaptador (Infrastructure)** | `app/src/infrastructure/adapters/` | Contiene los `#include <zephyr/drivers/...>`. Traduce tipos nativos de Zephyr a los tipos del Dominio. |
-| **¿Dónde se obtienen los dispositivos de Devicetree y se conectan a los adaptadores?** | **Composition Root (DI)** | `app/src/infrastructure/di/` | Único lugar donde se invocan las macros `DEVICE_DT_GET()` para inyectar dependencias hacia arriba. |
-| **¿Es un comando para la consola serial de depuración o una pantalla gráfica HMI?** | **Presentación / Shell** | `app/src/presentation/` o `app/src/shell/` | Usa Zephyr Shell o el patrón Model-View-Presenter (MVP). No manipula hardware directamente. |
-| **¿Es un controlador para un chip de hardware que implementa el driver model de Zephyr?** | **Out-of-Tree Driver** | `drivers/<subsistema>/` | Usa `DEVICE_DT_DEFINE`, devicetree bindings (`dts/bindings/`) y APIs estándar (`sensor_driver_api`, etc.). |
-| **¿Configura pines físicos, relojes, particiones flash o instancias de periféricos de la placa?** | **Devicetree / BSP** | `boards/` o `app/boards/` | Archivos `.dts`, `.overlay` y `.defconfig`. Cero código C. |
+| **Does it contain business rules, alarm calculations, mathematical conversions, or telemetry states?** | **Domain** | `app/src/domain/` | C99/C11 pure. Only libc headers (`stdint.h`). **PROHIBITED** to include `<zephyr/...>` or microcontroller registers. |
+| **Does it define the abstract contract of a service to decouple the domain from HW or OS?** | **Port / Interface** | `app/include/interfaces/` | Header-only (`i_*.h`). Function pointer structures (v-tables) or typed C APIs. |
+| **Is it an asynchronous continuous process, an actor processing messages from a queue or channel?** | **Application / Active Object** | `app/src/application/active_objects/` | Owns its own thread/stack or workqueue; communicates exclusively via **Zbus** or message queues. |
+| **Does it implement a port interacting with Zephyr drivers, RTOS, or external libraries?** | **Adapter (Infrastructure)** | `app/src/infrastructure/adapters/` | Contains `#include <zephyr/drivers/...>`. Translates native Zephyr types to Domain types. |
+| **Where are Devicetree devices obtained and connected to adapters?** | **Composition Root (DI)** | `app/src/infrastructure/di/` | Only place where `DEVICE_DT_GET()` macros are invoked to inject dependencies upward. |
+| **Is it a command for the debug serial console or a graphical HMI screen?** | **Presentation / Shell** | `app/src/presentation/` or `app/src/shell/` | Uses Zephyr Shell or Model-View-Presenter (MVP) pattern. Does not manipulate hardware directly. |
+| **Is it a driver for a hardware chip implementing Zephyr driver model?** | **Out-of-Tree Driver** | `drivers/<subsystem>/` | Uses `DEVICE_DT_DEFINE`, devicetree bindings (`dts/bindings/`) and standard APIs (`sensor_driver_api`, etc.). |
+| **Does it configure physical pins, clocks, flash partitions, or board peripheral instances?** | **Devicetree / BSP** | `boards/` or `app/boards/` | `.dts`, `.overlay` and `.defconfig` files. Zero C code. |
 
 ---
 
-## 4. Implementación de Patrones Clave en Zephyr
+## 4. Implementation of Key Patterns in Zephyr
 
-### 4.1 Inversión de Control: Puertos y Adaptadores en C
+### 4.1 Inversion of Control: Ports and Adapters in C
 
-#### A. El Puerto Abstracto (Sin dependencias de Zephyr)
+#### A. The Abstract Port (No Zephyr Dependencies)
 
-Todo puerto vive en un único header `app/include/interfaces/i_<nombre>.h` y consta de
-tres piezas inseparables:
+Every port lives in a single header `app/include/interfaces/i_<name>.h` and consists of three inseparable pieces:
 
-1. La **v-table** `i_<nombre>_api_t`: los punteros a función que implementa el adaptador.
-2. El **handle** `i_<nombre>_t`: `const ... *api` (la v-table) más `void *impl` (estado
-   opaco del adaptador).
-3. Una **función `static inline` por operación**, `i_<nombre>_<operación>()`, que valida
-   el handle y los argumentos **antes** de despachar por la v-table.
+1. The **v-table** `i_<name>_api_t`: the function pointers implemented by the adapter.
+2. The **handle** `i_<name>_t`: `const ... *api` (the v-table) plus `void *impl` (opaque adapter state).
+3. One **`static inline` function per operation**, `i_<name>_<operation>()`, that validates the handle and arguments **before** dispatching through the v-table.
 
 ```c
 #ifndef APP_INTERFACES_I_RELAY_H_
@@ -258,13 +256,13 @@ static inline bool relay_channel_is_valid(relay_channel_t channel)
     return (unsigned int) channel < (unsigned int) RELAY_CHANNEL_MAX;
 }
 
-/* 1. V-table: detalle de implementación, nunca se llama desde la aplicación */
+/* 1. V-table: implementation detail, never called from the application */
 typedef struct {
     int (*set_state)(void *impl, relay_channel_t channel, relay_state_t state);
     int (*get_state)(void *impl, relay_channel_t channel, relay_state_t *out_state);
 } i_relay_api_t;
 
-/* 2. Handle que se inyecta a quien consume el puerto */
+/* 2. Handle injected into the port consumer */
 typedef struct {
     const i_relay_api_t *api;
     void *impl;
@@ -275,7 +273,7 @@ static inline bool i_relay_is_bound(const i_relay_t *relay)
     return relay != NULL && relay->api != NULL && relay->impl != NULL;
 }
 
-/* 3. Wrappers validados: el único camino permitido hacia la v-table */
+/* 3. Validated wrappers: the only allowed path to the v-table */
 static inline int i_relay_set_state(const i_relay_t *relay, relay_channel_t channel,
                                     relay_state_t state)
 {
@@ -299,10 +297,9 @@ static inline int i_relay_get_state(const i_relay_t *relay, relay_channel_t chan
 #endif /* APP_INTERFACES_I_RELAY_H_ */
 ```
 
-El consumidor escribe `i_relay_set_state(&port, RELAY_CHANNEL_MAIN_POWER, RELAY_STATE_CLOSED)`;
-no ve la v-table y no puede olvidarse una comprobación.
+The consumer writes `i_relay_set_state(&port, RELAY_CHANNEL_MAIN_POWER, RELAY_STATE_CLOSED)`; they never see the v-table and cannot forget a check.
 
-#### B. El Adaptador de Infraestructura (Conectado a Zephyr GPIO)
+#### B. Infrastructure Adapter (Connected to Zephyr GPIO)
 `app/src/infrastructure/adapters/adapter_relay_gpio.c`:
 ```c
 #include <zephyr/kernel.h>
@@ -317,8 +314,8 @@ static int relay_gpio_set(void *impl, relay_channel_t channel, relay_state_t sta
 {
     struct relay_gpio_context *ctx = impl;
 
-    /* La validación estructural (handle, canal) ya la hizo el wrapper del
-     * puerto: aquí solo se comprueba lo que depende del estado del adaptador. */
+    /* The wrapper already performed structural validation (handle, channel):
+     * here we only check what depends on adapter state. */
     if (ctx == NULL) {
         return -EINVAL;
     }
@@ -344,15 +341,15 @@ static const i_relay_api_t s_relay_api = {
     .get_state = relay_gpio_get,
 };
 
-/* Enlazar el puerto es competencia de la raíz de composición, no del adaptador:
- * el adaptador solo expone su v-table. */
+/* Port binding is the responsibility of the Composition Root, not the adapter:
+ * the adapter only exposes its v-table. */
 const i_relay_api_t *relay_gpio_api(void)
 {
     return &s_relay_api;
 }
 ```
 
-#### C. Composition Root (El puente estático de Hardware a Software)
+#### C. Composition Root (Static Bridge between Hardware and Software)
 `app/src/infrastructure/di/composition_root.c`:
 ```c
 #include <zephyr/kernel.h>
@@ -362,7 +359,7 @@ const i_relay_api_t *relay_gpio_api(void)
 
 LOG_MODULE_REGISTER(comp_root, LOG_LEVEL_INF);
 
-/* Estructura instanciada desde el Devicetree y propiedad del contenedor */
+/* Structure instantiated from Devicetree and owned by the container */
 static struct relay_gpio_context s_relay_hw_ctx = {
     .gpio_spec = {
         [RELAY_CHANNEL_MAIN_POWER] = GPIO_DT_SPEC_GET_OR(DT_NODELABEL(relay_main), gpios, {0}),
@@ -372,100 +369,99 @@ static struct relay_gpio_context s_relay_hw_ctx = {
 
 int composition_root_init(app_container_t *self)
 {
-    LOG_INF("Inicializando Composition Root & Verificación de Periféricos...");
+    LOG_INF("Initializing Composition Root & Peripheral Verification...");
 
     for (int i = 0; i < RELAY_CHANNEL_MAX; i++) {
         if (!gpio_is_ready_dt(&s_relay_hw_ctx.gpio_spec[i])) {
-            LOG_ERR("Relay GPIO %d no está listo en Devicetree", i);
+            LOG_ERR("Relay GPIO %d not ready in Devicetree", i);
             return -ENODEV;
         }
         gpio_pin_configure_dt(&s_relay_hw_ctx.gpio_spec[i], GPIO_OUTPUT_INACTIVE);
     }
 
-    /* Único punto del firmware que escribe la v-table del puerto. */
+    /* Only point in the firmware that writes the port v-table. */
     self->relay.api = relay_gpio_api();
     self->relay.impl = &s_relay_hw_ctx;
 
-    LOG_INF("Hardware vinculado correctamente a los puertos.");
+    LOG_INF("Hardware bound to ports correctly.");
     return 0;
 }
 ```
 
 ---
 
-#### D. Regla general para definir puertos (obligatoria)
+#### D. General Rule for Defining Ports (Mandatory)
 
-Todo puerto nuevo, y toda modificación de uno existente, cumple estas reglas. No son
-recomendaciones de estilo: son el contrato que permite testear el dominio sin hardware y
-que impide que un `NULL` llegue a un driver.
+Every new port, and every modification to an existing one, complies with these rules. They are not style recommendations: they are the contract that allows testing the domain without hardware and prevents a `NULL` from reaching a driver.
 
-1. **Ubicación y pureza.** Un solo header en `app/include/interfaces/i_<dominio>.h`,
-   sólo cabecera (sin `.c` de puerto). Puede incluir `<stdint.h>`, `<stdbool.h>`,
-   `<stddef.h>`, `<errno.h>` y otros headers de `include/common/`. **Nunca**
-   `<zephyr/...>`, ni headers del MCU, ni de nanoMODBUS.
-2. **Tres piezas.** La v-table `i_<dominio>_api_t`, el handle
-   `i_<dominio>_t { const i_<dominio>_api_t *api; void *impl; }` y los wrappers.
-   Los nombres son `snake_case` y el prefijo coincide con el del header.
-3. **Un wrapper por operación, sin excepciones.** Cada entrada de la v-table tiene su
-   `static inline i_<dominio>_<operación>()` en el mismo header. Si una operación no
-   merece wrapper, no merece estar en la v-table.
-4. **`static inline`, no función externa.** Así el puerto no añade símbolos, no
-   necesita unidad de compilación propia y el compilador puede eliminar los wrappers
-   que nadie usa.
-5. **`i_<dominio>_is_bound()` público** y usado por todos los wrappers: el handle está
-   enlazado sólo si `api` e `impl` no son `NULL`.
-6. **Validación en dos niveles, sin duplicarla.**
-   - *Estructural (wrapper)*: handle enlazado, punteros de salida no nulos, rangos e
-     enumeraciones que forman parte del contrato, capacidades mayores que cero. Es
-     barata, no necesita estado y usa los predicados puros de `common/` (por ejemplo
-     `modbus_bus_id_is_valid()`), nunca los repite a mano.
-   - *Semántica (implementación)*: ¿existe el dispositivo?, ¿está lleno el bus?, ¿la
-     reclamación está vigente? El wrapper no puede responderlo y no lo intenta.
-7. **Retorno uniforme.** `int` con errno negativo (`-EINVAL`, `-ENOENT`, `-ENOSPC`,
-   `-EADDRINUSE`) para operaciones de estado o configuración; un enumerado del dominio
-   (por ejemplo `modbus_transaction_result_t`) para resultados de una transacción.
-   No se mezclan en la misma firma. Handle no enlazado o argumento inválido devuelve
-   `-EINVAL` (o el valor "rechazado localmente" del dominio: `MODBUS_RESULT_INVALID`) y
-   **no se despacha nada**.
-8. **Prohibido llamar la v-table desde la aplicación.** `handle->api->...` sólo aparece
-   en el adaptador que implementa el puerto y en la raíz de composición, que es la única
-   que escribe `api`/`impl`. Verificación rápida antes de cada PR:
+1. **Location and purity.** A single header in `app/include/interfaces/i_<domain>.h`,
+   header-only (no port `.c`). It may include `<stdint.h>`, `<stdbool.h>`,
+   `<stddef.h>`, `<errno.h>` and other headers from `include/common/`. **Never**
+   `<zephyr/...>`, nor MCU headers, nor nanoMODBUS.
+2. **Three pieces.** The v-table `i_<domain>_api_t`, the handle
+   `i_<domain>_t { const i_<domain>_api_t *api; void *impl; }` and the wrappers.
+   Names are `snake_case` and the prefix matches the header name.
+3. **One wrapper per operation, without exception.** Every v-table entry has its
+   `static inline i_<domain>_<operation>()` in the same header. If an operation
+   does not deserve a wrapper, it does not belong in the v-table.
+4. **`static inline`, not an external function.** This way the port adds no
+   symbols, needs no translation unit of its own, and the compiler can eliminate
+   unused wrappers.
+5. **`i_<domain>_is_bound()` public** and used by all wrappers: the handle is
+   bound only if `api` and `impl` are not `NULL`.
+6. **Two-level validation, without duplication.**
+   - *Structural (wrapper)*: bound handle, non-null output pointers, ranges and
+     enumerations that are part of the contract, capacities greater than zero. It
+     is cheap, needs no state, and uses the pure predicates from `common/` (for
+     example `modbus_bus_id_is_valid()`), never repeating them by hand.
+   - *Semantic (implementation)*: Does the device exist?, is the bus full?,
+     is the claim active? The wrapper cannot answer this and does not try.
+7. **Uniform return.** `int` with negative errno (`-EINVAL`, `-ENOENT`, `-ENOSPC`,
+   `-EADDRINUSE`) for state or configuration operations; a domain enum
+   (for example `modbus_transaction_result_t`) for transaction results.
+   Do not mix them in the same signature. Unbound handle or invalid argument
+   returns `-EINVAL` (or the domain "locally rejected" value: `MODBUS_RESULT_INVALID`) and
+   **nothing is dispatched**.
+8. **Forbidden to call the v-table from the application.** `handle->api->...` only
+   appears in the adapter implementing the port and in the Composition Root, which is
+   the only one that writes `api`/`impl`. Quick verification before each PR:
    ```bash
    grep -rn "api->" app/src | grep -v "infrastructure/adapters/" | grep -v "infrastructure/di/"
    ```
-   Debe salir vacío (las implementaciones de puerto en `application/` sólo *crean* el
-   handle, no lo consumen).
-9. **Sin estado global.** El `impl` apunta a una instancia propiedad del contenedor de
-   composición; el puerto no reserva memoria, no crea hilos y no conoce el RTOS.
-10. **Los fakes implementan la misma v-table** y se ejercitan a través de los wrappers,
-    no llamando a la v-table del fake: así el test verifica el contrato y no una copia
-    del contrato.
-11. **Documentación Doxygen** en el header para el handle, cada wrapper y cada parámetro
-    de salida, indicando qué error devuelve cada rechazo. Identificadores y comentarios
-    de código en inglés; la prosa de arquitectura (este documento) en español.
+   Must return empty (port implementations in `application/` only *create* the
+   handle, they do not consume it).
+9. **No global state.** The `impl` points to an instance owned by the composition
+   container; the port does not allocate memory, does not create threads, and does
+   not know the RTOS.
+10. **Fakes implement the same v-table** and are exercised through the wrappers,
+    not calling the fake's v-table: this way the test verifies the contract and not a
+    copy of the contract.
+11. **Doxygen documentation** in the header for the handle, each wrapper and each
+    output parameter, indicating what error each rejection returns. Identifiers and
+    code comments in English; architecture prose (this document) in Spanish.
 
-Ejemplos vivos de esta regla: `app/include/interfaces/i_slave_registry.h` e
-`app/include/interfaces/i_modbus_client.h`; su cumplimiento se verifica en
+Living examples of this rule: `app/include/interfaces/i_slave_registry.h` and
+`app/include/interfaces/i_modbus_client.h`; their compliance is verified in
 `tests/unit/modbus/src/test_interfaces.c`.
 
-> Un header `i_*.h` que sólo define **tipos de datos compartidos** (por ejemplo
-> `i_temperature_bank.h`, que describe una lectura) no es un puerto: no lleva v-table ni
-> wrappers. La regla aplica a cualquier header que declare una v-table de operaciones.
+> A header `i_*.h` that only defines **shared data types** (for example
+> `i_temperature_bank.h`, which describes a reading) is not a port: it has no v-table
+> nor wrappers. The rule applies to any header declaring an operations v-table.
 
 ---
 
-### 4.2 Desacoplamiento de Hilos con Zephyr Zbus
+### 4.2 Thread Decoupling with Zephyr Zbus
 
-En aplicaciones complejas de telemetría, el acoplamiento directo entre hilos mediante llamadas directas provoca bloqueos, inversión de prioridades y código espagueti. **Zephyr Zbus** resuelve esto proveyendo un bus de mensajería asíncrono, con verificación en tiempo de compilación y cero copias dinámicas.
+In complex telemetry applications, direct coupling between threads via direct calls causes blocking, priority inversion, and spaghetti code. **Zephyr Zbus** solves this by providing an asynchronous messaging bus, with compile-time verification and zero dynamic copies.
 
 ```
- [Sensor AO] ----(publica)----> [chan_telemetry_sample]
-                                          |
-                        +-----------------+-----------------+
-                        |                                   |
-                        v                                   v
-                 [ao_modbus_sub]                     [ao_network_sub]
-              (Actualiza Holding Regs)            (Transmite por Ethernet/MQTT)
+ [Sensor AO] ----(publishes)---> [chan_telemetry_sample]
+                                           |
+                         +-----------------+-----------------+
+                         |                                   |
+                         v                                   v
+                  [ao_modbus_sub]                     [ao_network_sub]
+               (Updates Holding Regs)            (Transmits over Ethernet/MQTT)
 ```
 
 `app/src/application/zbus/telemetry_channels.h`:
@@ -476,7 +472,7 @@ En aplicaciones complejas de telemetría, el acoplamiento directo entre hilos me
 #include <zephyr/zbus/zbus.h>
 #include "common/telemetry_types.h"
 
-/* Mensajes fuertemente tipados */
+/* Strongly typed messages */
 typedef struct {
     uint32_t timestamp_ms;
     float current_ch1_amps;
@@ -491,7 +487,7 @@ typedef struct {
     bool is_active;
 } telemetry_alarm_msg_t;
 
-/* Declaración de canales Zbus */
+/* Zbus channel declarations */
 ZBUS_CHAN_DECLARE(chan_telemetry_sample);
 ZBUS_CHAN_DECLARE(chan_telemetry_alarm);
 
@@ -502,12 +498,12 @@ ZBUS_CHAN_DECLARE(chan_telemetry_alarm);
 ```c
 #include "zbus/telemetry_channels.h"
 
-ZBUS_CHAN_DEFINE(chan_telemetry_sample,       /* Nombre del canal */
-                 telemetry_sample_msg_t,       /* Tipo de dato */
-                 NULL,                         /* Validador opcional */
-                 NULL,                         /* Datos de usuario */
+ZBUS_CHAN_DEFINE(chan_telemetry_sample,       /* Channel name */
+                 telemetry_sample_msg_t,       /* Data type */
+                 NULL,                         /* Optional validator */
+                 NULL,                         /* User data */
                  ZBUS_OBSERVERS(modbus_sample_sub, network_sample_sub, dwin_sample_sub),
-                 ZBUS_MSG_INIT(0)              /* Valor inicial */
+                 ZBUS_MSG_INIT(0)              /* Initial value */
 );
 
 ZBUS_CHAN_DEFINE(chan_telemetry_alarm,
@@ -521,19 +517,19 @@ ZBUS_CHAN_DEFINE(chan_telemetry_alarm,
 
 ---
 
-## 5. Metodología TDD (Test-Driven Development)
+## 5. TDD Methodology (Test-Driven Development)
 
-### 5.1 El Ciclo Red-Green-Refactor en Firmware
-1. **RED**: Escribir una prueba unitaria en `tests/unit/domain/test_alarm_evaluator.c` que verifique un comportamiento requerido (ej: sobrecorriente > 50A activa alarma). La prueba **falla** al compilar o al correr.
-2. **GREEN**: Escribir el código mínimo en `app/src/domain/services/alarm_evaluator.c` para hacer que la prueba pase.
-3. **REFACTOR**: Mejorar el diseño, nombres de variables y eficiencia manteniendo todas las pruebas en verde.
+### 5.1 Red-Green-Refactor Cycle in Firmware
+1. **RED**: Write a unit test in `tests/unit/domain/test_alarm_evaluator.c` that verifies a required behavior (e.g. overcurrent > 50A triggers alarm). The test **fails** at compile or run time.
+2. **GREEN**: Write the minimum code in `app/src/domain/services/alarm_evaluator.c` to make the test pass.
+3. **REFACTOR**: Improve design, variable names, and efficiency keeping all tests green.
 
-### 5.2 Estructura de Test con Fakes en Memoria (Ztest)
+### 5.2 Test Structure with In-Memory Fakes (Ztest)
 
-Un fake implementa la **misma v-table** que el adaptador, con el mismo
-`void *impl`, y se enlaza en un handle durante el test. El código bajo prueba lo
-consume a través de los wrappers del puerto (regla §4.1.D), así que la prueba
-valida el contrato, no una copia del contrato.
+A fake implements the **same v-table** as the adapter, with the same
+`void *impl`, and is linked into a handle during the test. The code under test
+consumes it through the port wrappers (rule §4.1.D), so the test verifies the
+contract, not a copy of the contract.
 
 `tests/fakes/src/fake_relay.c`:
 ```c
@@ -591,158 +587,156 @@ ZTEST(alarm_evaluator_suite, test_should_trip_relay_on_overcurrent)
     fake_relay_bind(&s_relay, &s_fake);
     alarm_evaluator_init(&s_relay);
 
-    /* Muestra con corriente normal: relé debe mantenerse abierto */
+    /* Normal current: relay must stay open */
     telemetry_sample_t normal_sample = { .current_ch1 = 15.0f };
     alarm_evaluator_process(&normal_sample);
     zassert_equal(fake_relay_spy_state(&s_fake, RELAY_CHANNEL_MAIN_POWER), RELAY_STATE_OPEN, 
-                  "El relé no debe dispararse con corriente normal");
+                  "Relay must not trip with normal current");
 
-    /* Muestra con sobrecorriente crítica (60A): relé debe cerrarse/disparar */
+    /* Critical overcurrent (60A): relay must trip */
     telemetry_sample_t fault_sample = { .current_ch1 = 60.0f };
     alarm_evaluator_process(&fault_sample);
     zassert_equal(fake_relay_spy_state(&s_fake, RELAY_CHANNEL_MAIN_POWER), RELAY_STATE_CLOSED,
-                  "El relé debió dispararse ante sobrecorriente");
-    zassert_equal(s_fake.call_count[RELAY_CHANNEL_MAIN_POWER], 1U, "Debe existir un único disparo");
+                  "Relay must trip on overcurrent");
+    zassert_equal(s_fake.call_count[RELAY_CHANNEL_MAIN_POWER], 1U, "There must be a single trip");
 }
 ```
 
-### 5.3 Ejecución con Twister en `native_sim`
-Para ejecutar todas las pruebas unitarias a la velocidad nativa de la CPU de tu máquina Linux sin tocar el microcontrolador:
+### 5.3 Execution with Twister in `native_sim`
+To run all unit tests at native CPU speed on your Linux machine without touching the microcontroller:
 
 ```bash
-# Correr suite de pruebas unitarias sobre native_sim
+# Run unit test suites on native_sim
 west twister -T tests/unit -p native_sim -v --inline-logs
 
-# Correr pruebas con reporte de cobertura LCOV (gcov)
+# Run tests with LCOV/gcov coverage report
 west twister -T tests/unit -p native_sim --coverage -v
 ```
 
 ---
 
+## 6. Industrial Modbus Subsystem Architecture (nanoMODBUS)
 
----
+> **Master Document**: For exhaustive detail on sequence diagrams, stale claim recovery, and step-by-step guide to adding new actuators (e.g. relay expanders), consult [**doc/architecture/modbus_subsystem.md**](architecture/modbus_subsystem.md).
 
-## 6. Arquitectura del Subsistema Modbus Industrial (nanoMODBUS)
-
-> **Documento Maestro**: Para el detalle exhaustivo de diagramas de secuencia, recuperación de claims obsoletos y guía paso a paso para añadir nuevos actuadores (ej. expansores de relés), consultar [**doc/architecture/modbus_subsystem.md**](architecture/modbus_subsystem.md).
-
-El subsistema Modbus de BrightC Controller V3 está diseñado para alta disponibilidad, tolerancia a fallas de cableado y desacoplamiento físico total entre puertos RS485 y dispositivos de campo.
+The BrightC Controller V3 Modbus subsystem is designed for high availability, wiring fault tolerance, and total physical decoupling between RS485 ports and field devices.
 
 ```
  +-------------------------------------------------------------------------------------------------+
- |                                   CAPA DE APLICACIÓN & ZBUS                                     |
+ |                                   APPLICATION LAYER & ZBUS                                     |
  |   [chan_temperature_bank_16ch]       [chan_energy_metrics]           [chan_modbus_health]        |
  +-----------------^-----------------------------^--------------------------------^----------------+
-                   |                             |                                |
-                   +-----------------------------+--------------------------------+
-                                                 |
+                    |                             |                                |
+                    +-----------------------------+--------------------------------+
+                                                  |
  +-----------------------------------------------+-------------------------------------------------+
- |                    GESTOR DE ESCLAVOS Y ENRUTAMIENTO DE BUSES                                   |
+ |                    SLAVE MANAGER AND BUS ROUTING                                               |
  |                    (modbus_registry.c + slave_scheduler.c)                                      |
  |                                                                                                 |
- |  - Mantiene tabla de modbus_slave_descriptor_t (serializable para microconf / EEPROM)           |
- |  - Failover dinámico: reasigna dispositivos entre RS485-1 y RS485-2 en tiempo de ejecución      |
- |  - Máquina de estados de salud con Offline Backoff (aísla esclavos desconectados)               |
+ |  - Maintains modbus_slave_descriptor_t table (serializable for microconf / EEPROM)             |
+ |  - Dynamic failover: reassigns devices between RS485-1 and RS485-2 at runtime                   |
+ |  - Health state machine with Offline Backoff (isolates disconnected slaves)                   |
  +-----------------------------------------------+-------------------------------------------------+
-                         |                                                |
-                         v                                                v
+                          |                                                |
+                          v                                                v
  +-----------------------------------------------+  +----------------------------------------------+
- |   HILO RS485-1: ao_modbus.c (bus 0)           |  |   HILO RS485-2: ao_modbus.c (bus 1)          |
- |  - i_modbus_client_t bus1 -> adapter_modbus_nmbs (unico include de Zephyr)    |  |  - i_modbus_client_t bus2 -> adapter_modbus_nmbs                              |
- |  - Control de transceiver DE (PD4)            |  |  - Control de transceiver DE (PG8)           |
- |  - Reconfiguración en caliente de USART2      |  |  - Reconfiguración en caliente de USART6     |
- |  - Sondea: CWT-TM-16PT (16x PT100)            |  |  - Sondea: Medidores de energía, Relés       |
+ |   RS485-1 THREAD: ao_modbus.c (bus 0)         |  |   RS485-2 THREAD: ao_modbus.c (bus 1)       |
+ |  - i_modbus_client_t bus1 -> adapter_modbus_nmbs (single Zephyr include)    |  |  - i_modbus_client_t bus2 -> adapter_modbus_nmbs                              |
+ |  - DE transceiver control (PD4)               |  |  - DE transceiver control (PG8)           |
+ |  - Hot reconfiguration of USART2              |  |  - Hot reconfiguration of USART6          |
+ |  - Polls: CWT-TM-16PT (16x PT100)             |  |  - Polls: Energy meters, Relays          |
  +-----------------------+-----------------------+  +----------------------+-----------------------+
-                         |                                                 |
-                         v                                                 v
-           [ Hardware: USART2 + DE ]                         [ Hardware: USART6 + DE ]
+                          |                                                 |
+                          v                                                 v
+           [Hardware: USART2 + DE]                         [Hardware: USART6 + DE]
 ```
 
-### 6.1 Principios de Diseño del Subsistema Modbus
+### 6.1 Modbus Subsystem Design Principles
 
-1. **Aislamiento por Hilo (Active Object)**:
-   - RS485 es un medio **half-duplex**. Cada puerto físico (`RS485-1` y `RS485-2`) es propiedad exclusiva de su propio hilo. Ningún componente externo realiza llamadas directas de lectura/escritura a la UART.
-2. **Intercambiabilidad de Hardware (Failover en Caliente)**:
-   - Los dispositivos de campo no están atados a un puerto fijo en código. Si se daña el transceptor de `RS485-1` por una descarga eléctrica, el cable A/B se mueve a `RS485-2` y se ejecuta:
+1. **Thread Isolation (Active Object)**:
+   - RS485 is a **half-duplex** medium. Each physical port (`RS485-1` and `RS485-2`) is exclusively owned by its own thread. No external component performs direct read/write calls to the UART.
+2. **Hardware Interchangeability (Hot Failover)**:
+   - Field devices are not hard-coded to a fixed port. If the `RS485-1` transceiver is damaged by an electrical discharge, cables A/B are moved to `RS485-2` and:
      ```c
      (void) i_slave_registry_set_bus(&app->registry, DEV_ID_CWT_TM16PT, MODBUS_BUS_RS485_2);
      ```
-   - El sistema reubica el sondeo al instante sin reiniciar ni modificar el firmware.
-3. **Reconfiguración Dinámica de la UART en Zephyr**:
-   - Gracias a `CONFIG_UART_USE_RUNTIME_CONFIGURE=y` y la función `uart_configure()`, la velocidad (baudrate) y paridad del bus se pueden modificar en caliente si se cambia la configuración de campo.
-4. **Protección contra Esclavos Desconectados (Offline Backoff)**:
-   - Si un esclavo sufre 3 fallos consecutivos, pasa al estado `MODBUS_HEALTH_OFFLINE_BACKOFF`.
-   - En lugar de saturar el bus intentando leerlo cada 1 segundo (lo cual generaría demoras por timeout de 300 ms en cada ciclo), el gestor reduce su tasa de consulta a un sondeo lento (*probe ping*) cada 10 segundos, preservando el ancho de banda del bus para los dispositivos sanos.
-5. **Preparación para Persistencia con `microconf` y EEPROM**:
-   - Los descriptores de configuración (`modbus_slave_descriptor_t`) y transporte (`modbus_bus_transport_cfg_t`) son estructuras de memoria plana con tamaños fijos y sin punteros, listas para ser serializadas/deserializadas por bloques.
+   - The system relocates polling instantly without restarting or modifying firmware.
+3. **Dynamic UART Reconfiguration in Zephyr**:
+   - Thanks to `CONFIG_UART_USE_RUNTIME_CONFIGURE=y` and the `uart_configure()` function, baud rate and parity can be changed at runtime if field configuration changes.
+4. **Protection Against Disconnected Slaves (Offline Backoff)**:
+   - If a slave suffers 3 consecutive failures, it enters `MODBUS_HEALTH_OFFLINE_BACKOFF`.
+   - Instead of saturating the bus by trying to read it every 1 second (which would generate 300 ms timeouts each cycle), the manager reduces its query rate to a slow probe every 10 seconds, preserving bus bandwidth for healthy devices.
+5. **Preparation for Persistence with `microconf` and EEPROM**:
+   - Configuration descriptors (`modbus_slave_descriptor_t`) and transport (`modbus_bus_transport_cfg_t`) are flat memory structures with fixed sizes and no pointers, ready to be serialized/deserialized in blocks.
 
-### 6.2 Driver del Sensor de Temperatura CWT-TM-16PT
+### 6.2 CWT-TM-16PT Temperature Sensor Driver
 
-El sensor industrial **CWT-TM-16PT** (16 canales PT100/PT1000) se decodifica en
-[`cwt_tm16pt_codec.c`](app/src/domain/services/cwt_tm16pt_codec.c) (código puro, sin
-E/S); la lectura de registros la realiza el Active Object a través del puerto
-`i_modbus_client`, nunca incluyendo nanoMODBUS:
-- **Lectura Rápida en Ráfaga**: Lee los 16 canales en una única solicitud de 16 palabras (`0x0020` a `0x002F`), requiriendo apenas ~45 ms de tiempo de bus a 9600 baudios.
-- **Detección de Sonda Abierta**: Detecta el código centinela `0x7FFF` (3276.7 °C) o `-32768` y lo clasifica automáticamente en la máscara `open_probe_mask` sin generar valores espurios.
-- **Reconfiguración Remota**: Puede reprogramar el Slave ID, baudrate y paridad del sensor mediante escritura en el registro `0x0010`.
-
----
-
-## 7. Arquitectura del Subsistema de Almacenamiento Persistente (microconf)
-
-> **Documento Maestro**: Para el mapa completo de particionamiento de la EEPROM AT24C256C, políticas de debounce y guía para registrar nuevos dominios de configuración, consultar [**doc/architecture/storage_subsystem.md**](architecture/storage_subsystem.md).
-
-### 7.1 El Desafío de Concurrencia y la Solución con Active Object
-La EEPROM física externa AT24C256C (I2C2) requiere entre 5 ms y 10 ms por ciclo de escritura de página. Si un hilo de control o de comunicación serie escribe de forma directa y síncrona en la EEPROM, se congelaría provocando pérdidas de tramas y jitter severo. Además, `microconf` no posee primitivas de sincronización multihilo internas.
-
-Por ello, la arquitectura desacopla el almacenamiento en tres niveles:
-1. **Memoria RAM**: Los subsistemas leen y mutan su configuración en memoria de forma instantánea bajo mutex internos (`modbus_registry`, `ao_network`).
-2. **Notificación en Bus Zbus**: Al mutar una configuración, se emite un evento en el canal `chan_system_config`.
-3. **Coordinador Asíncrono (`ao_storage`)**: Un Active Object dedicado recibe los eventos, aplica una ventana de retardo (*debounce* de 500 ms) para amortiguar ráfagas de cambios, y ejecuta de forma atómica y en segundo plano `mconf_save()`.
-
-### 7.2 Particionamiento Modular de la EEPROM
-Para evitar que un cambio en la configuración de red o de telemetría invalide los datos de Modbus o de calibración, la EEPROM de 32 KB se divide en regiones virtuales independientes mediante `mconf_zephyr_eeprom_init()`:
-- `0x0000` (1 KB): Identidad del Dispositivo (`CONFIG_DOMAIN_DEVICE`)
-- `0x0400` (2 KB): Registro Modbus y Buses (`CONFIG_DOMAIN_MODBUS`)
-- `0x0C00` (1 KB): Parámetros de Red Ethernet (`CONFIG_DOMAIN_NET_ETH`)
-- `0x1000` (1 KB): Parámetros de Red Wi-Fi (`CONFIG_DOMAIN_NET_WIFI`)
-- `0x1400` (3 KB): Calibraciones y Offsets Analógicos (`CONFIG_DOMAIN_CALIBRATION`)
-- `0x4000` (16 KB): Registro circular de auditoría (*Event Log*)
+The industrial **CWT-TM-16PT** sensor (16 PT100/PT1000 channels) is decoded in
+[`cwt_tm16pt_codec.c`](app/src/domain/services/cwt_tm16pt_codec.c) (pure code, no
+I/O); register reads are performed by the Active Object through port
+`i_modbus_client`, never including nanoMODBUS:
+- **Fast Burst Read**: Reads all 16 channels in a single 16-word request (`0x0020` to `0x002F`), requiring only ~45 ms of bus time at 9600 baud.
+- **Open Probe Detection**: Detects the sentinel code `0x7FFF` (3276.7 °C) or `-32768` and classifies it automatically in the `open_probe_mask` without generating spurious values.
+- **Remote Reconfiguration**: Can reprogram Slave ID, baud rate and parity by writing to register `0x0010`.
 
 ---
 
-## 8. Flujo de Trabajo para Añadir un Nuevo Módulo
+## 7. Persistent Storage Subsystem Architecture (microconf)
 
-Cuando el equipo desarrolle una nueva característica (ej: Lectura de Energía por I2C / SPI):
+> **Master Document**: For the complete EEPROM AT24C256C partitioning map, debounce policies, and guide to register new configuration domains, consult [**doc/architecture/storage_subsystem.md**](architecture/storage_subsystem.md).
 
-1. **Definir el Puerto en `include/interfaces/`**:  
-   Crear `i_energy_meter.h` siguiendo la **regla obligatoria de §4.1.D**: v-table
-   `i_energy_meter_api_t`, handle `i_energy_meter_t` y un wrapper `static inline`
-   validado por operación. Nadie consume la v-table directamente.
-2. **Crear el Fake en `tests/fakes/`**:  
-   Implementar `fake_energy_meter.c` para registrar lecturas simuladas y verificar llamadas.
-3. **Escribir las Pruebas Unitarias del Dominio (TDD Rojo)**:  
-   Crear `tests/unit/domain/test_energy_service.c` probando los cálculos de acumulación de kWh y detección de fallo.
-4. **Implementar la Lógica de Dominio (TDD Verde)**:  
-   Implementar `app/src/domain/services/energy_service.c`.
-5. **Implementar el Adaptador de Hardware en `infrastructure/`**:  
-   Crear `app/src/infrastructure/adapters/adapter_energy_ade7953.c` llamando a la API I2C/SPI de Zephyr.
-6. **Conectar en Devicetree y Composition Root**:  
-   Añadir el nodo en el overlay de la placa (`app/boards/brightc-controllerv3.overlay`) y registrar la vinculación en `composition_root.c`.
-7. **Integrar con Zbus o Shell**:  
-   Publicar los datos procesados en un canal Zbus o crear un comando de inspección en `app/src/shell/`.
+### 7.1 The Concurrency Challenge and the Active Object Solution
+The external EEPROM AT24C256C (I2C2) requires between 5 ms and 10 ms per page write cycle. If a control or serial communication thread writes directly and synchronously to the EEPROM, it would freeze causing frame loss and severe jitter. Additionally, `microconf` does not have internal multi-threading synchronization primitives.
+
+Therefore, the architecture decouples storage into three levels:
+1. **RAM memory**: Subsystems read and mutate their configuration in memory instantly under internal mutexes (`modbus_registry`, `ao_network`).
+2. **Zbus Notification**: When a configuration is mutated, an event is emitted on channel `chan_system_config`.
+3. **Async Coordinator (`ao_storage`)**: A dedicated Active Object receives events, applies a delay window (*debounce* of 500 ms) to dampen change bursts, and atomically executes `mconf_save()` in the background.
+
+### 7.2 Modular EEPROM Partitioning
+To avoid a change in network or telemetry configuration invalidating Modbus or calibration data, the 32 KB EEPROM is divided into independent virtual regions via `mconf_zephyr_eeprom_init()`:
+- `0x0000` (1 KB): Device Identity (`CONFIG_DOMAIN_DEVICE`)
+- `0x0400` (2 KB): Modbus Register and Buses (`CONFIG_DOMAIN_MODBUS`)
+- `0x0C00` (1 KB): Ethernet Network Parameters (`CONFIG_DOMAIN_NET_ETH`)
+- `0x1000` (1 KB): Wi-Fi Network Parameters (`CONFIG_DOMAIN_NET_WIFI`)
+- `0x1400` (3 KB): Calibrations and Analog Offsets (`CONFIG_DOMAIN_CALIBRATION`)
+- `0x4000` (16 KB): Circular audit log (*Event Log*)
 
 ---
 
-## 9. Gobernanza de Código y Estándares
+## 8. Workflow for Adding a New Module
 
-- **Estándar C**: ISO C99 o C11.
-- **Tipos de Enteros**: Usar siempre `<stdint.h>` (`uint8_t`, `int32_t`, etc.). Prohibido usar `unsigned int`, `long` o `short` desnudos.
-- **Manejo de Errores**: Retornar siempre códigos de error POSIX estándar negativos (`-EINVAL`, `-ENODEV`, `-ETIMEDOUT`, `-EIO`).
-- **Nombres de Archivos**: `snake_case` estricto (ej: `telemetry_manager.c`, `i_modbus_port.h`).
-- **Prefijos de Interfaces**: Todo archivo de interfaz pública debe iniciar con el prefijo `i_` (ej: `i_storage.h`).
-- **Prefijos de Adaptadores**: Toda implementación física debe iniciar con `adapter_` (ej: `adapter_storage_nvs.c`).
-- **Documentación**: Comentarios Doxygen en todas las funciones públicas de interfaz (`@brief`, `@param`, `@return`).
-- **Puertos**: todo puerto cumple la regla de §4.1.D (v-table + handle + wrappers `static inline` con validación). Un puerto sin wrappers validados se rechaza en revisión.
-- **Acceso a la v-table**: `handle->api->...` sólo está permitido en el adaptador que implementa el puerto y en la raíz de composición.
-- **Definición de Stacks**: Prohibido embeber `k_thread_stack_t` dentro de structs en `.bss`. Usar exclusivamente `K_THREAD_STACK_DEFINE` o `K_THREAD_STACK_ARRAY_DEFINE` a nivel de archivo para preservar alineamiento MPU y guardias de stack.
+When the team develops a new feature (e.g., Energy reading via I2C / SPI):
+
+1. **Define the Port in `include/interfaces/`**:  
+   Create `i_energy_meter.h` following the **mandatory rule of §4.1.D**: v-table
+   `i_energy_meter_api_t`, handle `i_energy_meter_t` and a validated `static inline`
+   wrapper per operation. Nobody consumes the v-table directly.
+2. **Create the Fake in `tests/fakes/`**:  
+   Implement `fake_energy_meter.c` to record simulated reads and verify calls.
+3. **Write Domain Unit Tests (TDD Red)**:  
+   Create `tests/unit/domain/test_energy_service.c` testing kWh accumulation calculations and failure detection.
+4. **Implement Domain Logic (TDD Green)**:  
+   Implement `app/src/domain/services/energy_service.c`.
+5. **Implement Hardware Adapter in `infrastructure/`**:  
+   Create `app/src/infrastructure/adapters/adapter_energy_ade7953.c` calling Zephyr I2C/SPI API.
+6. **Connect in Devicetree and Composition Root**:  
+   Add the node in the board overlay (`app/boards/brightc-controllerv3.overlay`) and register binding in `composition_root.c`.
+7. **Integrate with Zbus or Shell**:  
+   Publish processed data on a Zbus channel or create an inspection command in `app/src/shell/`.
+
+---
+
+## 9. Code Governance and Standards
+
+- **C Standard**: ISO C99 or C11.
+- **principles**: SOLID
+- **Integer Types**: Always use `<stdint.h>` (`uint8_t`, `int32_t`, etc.). Prohibited to use bare `unsigned int`, `long` or `short`.
+- **Error Handling**: Always return standard negative POSIX error codes (`-EINVAL`, `-ENODEV`, `-ETIMEDOUT`, `-EIO`).
+- **File Names**: Strict `snake_case` (e.g., `telemetry_manager.c`, `i_modbus_port.h`).
+- **Interface Prefixes**: Every public interface file must start with prefix `i_` (e.g., `i_storage.h`).
+- **Adapter Prefixes**: Every physical implementation must start with `adapter_` (e.g., `adapter_storage_nvs.c`).
+- **Documentation**: Doxygen comments on all public interface functions (`@brief`, `@param`, `@return`).
+- **Ports**: Every port complies with rule §4.1.D (v-table + handle + `static inline` validated wrappers). A port without validated wrappers is rejected in review.
+- **v-table Access**: `handle->api->...` is only allowed in the adapter implementing the port and in the Composition Root.
+- **Stack Definition**: Prohibited to embed `k_thread_stack_t` inside structs in `.bss`. Use exclusively `K_THREAD_STACK_DEFINE` or `K_THREAD_STACK_ARRAY_DEFINE` at file scope to preserve MPU alignment and stack guards.

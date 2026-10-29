@@ -1,81 +1,81 @@
-# Arquitectura de Indicadores de Sistema (LED + Buzzer)
+# System Indicators Architecture (LED + Buzzer)
 
-- **Estado**: Especificación Técnica de Arquitectura
-- **Plataforma**: DAECGE BrightC Controller V3 (STM32H743ZIT6, Cortex-M7 @ 480 MHz)
-- **Entorno de Ejecución**: Zephyr RTOS (Topología West T2)
-- **Autor**: Equipo de Firmware BrightC
-- **Idioma del documento**: Español (documentación de arquitectura); código en inglés
-
----
-
-## 1. Visión General
-
-### 1.1 ¿Para qué existe este subsistema?
-
-El BrightC Controller V3 dispone de dos dispositivos de señalización física:
-
-| Dispositivo | Medio | Nodo DTS | Alias / Label |
-|-------------|-------|----------|---------------|
-| **LED de usuario** | GPIO (compat `gpio-leds`) | `user_led: led_0` en `leds` | `led0 = &user_led` |
-| **Buzzer** | PWM (compat `pwm-leds`) | `buzzer_pwm: buzzer` en `buzzer` | PWM15, canal 1 |
-
-El subsistema de indicadores de sistema tiene como propósito **comunicar al operador el estado del dispositivo mediante señales visuales y acústicas**, sin que los subsistemas emisores conozcan cómo se implementa físicamente el LED o el buzzer.
-
-Se utiliza para:
-
-- **Estado de salud del sistema** (sano, degradado, fallo)
-- **Alarmas activas** (informativa, advertencia, crítica)
-- **Eventos transitorios** (inicio del firmware, configuración guardada, error de comunicación)
-- **Identificación del dispositivo** (parpadeo forzado para localizar la unidad físicamente)
-
-### 1.2 ¿Qué NO hace este subsistema?
-
-- No detecta sensores ni toma decisiones de control por sí mismo.
-- No persiste estados de alarma en EEPROM (las alarmas son transitorias).
-- No implementa el motor de alarmas completo (pendiente de definición futura). Se limita a consumir eventos de alarma y salud publicados por otros subsistemas.
-- No reemplaza a Zbus como transporte de datos de telemetría; solo consume eventos de estado.
+- **Status**: Technical Architecture Specification
+- **Platform**: DAECGE BrightC Controller V3 (STM32H743ZIT6, Cortex-M7 @ 480 MHz)
+- **Execution Environment**: Zephyr RTOS (West T2 Topology)
+- **Author**: BrightC Firmware Team
+- **Document language**: Spanish (architecture documentation); code in English
 
 ---
 
-## 2. Decisiones de Diseño (Cerradas)
+## 1. General Overview
 
-| # | Decisión | Justificación |
+### 1.1 What is this subsystem for?
+
+The BrightC Controller V3 has two physical signaling devices:
+
+| Device | Medium | DTS Node | Alias / Label |
+|--------|--------|----------|---------------|
+| **User LED** | GPIO (compat `gpio-leds`) | `user_led: led_0` in `leds` | `led0 = &user_led` |
+| **Buzzer** | PWM (compat `pwm-leds`) | `buzzer_pwm: buzzer` in `buzzer` | PWM15, channel 1 |
+
+The system indicators subsystem exists to **communicate device status to the operator through visual and acoustic signals**, without the emitting subsystems knowing how the LED or buzzer is physically implemented.
+
+It is used for:
+
+- **System health status** (healthy, degraded, failure)
+- **Active alarms** (informative, warning, critical)
+- **Transient events** (firmware startup, configuration saved, communication error)
+- **Device identification** (forced blinking to physically locate the unit)
+
+### 1.2 What this subsystem does NOT do
+
+- Does not detect sensors or make control decisions by itself.
+- Does not persist alarm states in EEPROM (alarms are transient).
+- Does not implement the complete alarm engine (pending future definition). It is limited to consuming alarm and health events published by other subsystems.
+- Does not replace Zbus as telemetry data transport; it only consumes status events.
+
+---
+
+## 2. Design Decisions (Closed)
+
+| # | Decision | Justification |
 |---|----------|---------------|
-| D1 | **Un solo Active Object `ao_system_indicator`** que coordina LED y buzzer | Evita dos hilos, dos stacks (riesgo MPU en Cortex-M7 con `CONFIG_HW_STACK_PROTECTION`) y condiciones de carrera al actuar sobre dispositivos físicos compartidos. |
-| D2 | **Dos puertos separados**: `i_led.h` y `i_buzzer.h` | Son dispositivos físicos distintos con APIs distintas (GPIO vs PWM). Un puerto común forzaría abstracciones artificiales. |
-| D3 | **Máquina de estados con prioridad de alarma** | CRITICAL > WARNING > INFO > HEALTHY. Cuando hay varias alarmas activas, se muestra la de mayor prioridad. |
-| D4 | **Zbus como canal de entrada** | `ao_system_indicator` se suscribe a `chan_system_alarm` y `chan_system_health`. Cualquier componente publica ahí sin conocer al indicador. |
-| D5 | **Comandos manuales vía `chan_indicator_command`** | Permite al Shell o HMI forzar un estado (ej. parpadeo para identificar dispositivo) independientemente de alarmas. |
-| D6 | **Temporización por software dentro del AO** | El AO usa ticks del sistema (`k_uptime_get_32()` o `k_timer`) para manejar parpadeo del LED y tonos del buzzer sin bloquear el hilo. |
-| D7 | **Buzzer con frecuencia configurable por PWM** | Permite generar tonos distintos según el tipo de alarma o evento. |
+| D1 | **A single `ao_system_indicator` Active Object** coordinating LED and buzzer | Avoids two threads, two stacks (MPU risk on Cortex-M7 with `CONFIG_HW_STACK_PROTECTION`) and race conditions acting on shared physical devices. |
+| D2 | **Two separate ports**: `i_led.h` and `i_buzzer.h` | They are physically distinct devices with different APIs (GPIO vs PWM). A common port would force artificial abstractions. |
+| D3 | **State machine with alarm priority** | CRITICAL > WARNING > INFO > HEALTHY. When multiple alarms are active, the highest priority one is shown. |
+| D4 | **Zbus as input channel** | `ao_system_indicator` subscribes to `chan_system_alarm` and `chan_system_health`. Any component publishes there without knowing the indicator. |
+| D5 | **Manual commands via `chan_indicator_command`** | Allows Shell or HMI to force a state (e.g., blinking to identify device) independently of alarms. |
+| D6 | **Software timing within the AO** | The AO uses system ticks (`k_uptime_get_32()` or `k_timer`) to handle LED blinking and buzzer tones without blocking the thread. |
+| D7 | **Buzzer with configurable frequency via PWM** | Allows generating different tones according to alarm type or event. |
 
 ---
 
-## 3. Arquitectura por Capas (Clean Architecture)
+## 3. Layered Architecture (Clean Architecture)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  EMISORES DE EVENTOS (cualquier subsistema)                        │
+│  EVENT EMITTERS (any subsystem)                                    │
 │  - modbus_registry, ao_network, ao_storage, slave_scheduler, etc. │
-│  - Publican en chan_system_alarm / chan_system_health              │
+│  - Publish on chan_system_alarm / chan_system_health              │
 └─────────────────────────────────────────────────────────────────────┘
                               │ Zbus
 ┌─────────────────────────────────────────────────────────────────────┐
-│  CAPA DE APLICACIÓN — ao_system_indicator (Active Object único)    │
-│  - Máquina de estados con prioridad de alarma                      │
-│  - Temporización por software para parpadeo LED y tonos buzzer     │
-│  - Orquesta LED y buzzer según estado actual                       │
-│  - Aplica comandos manuales desde Shell/HMI                        │
+│  APPLICATION LAYER — ao_system_indicator (single Active Object)    │
+│  - Alarm priority state machine                                    │
+│  - Software timing for LED blinking and buzzer tones               │
+│  - Orchestrates LED and buzzer according to current state          │
+│  - Applies manual commands from Shell/HMI                          │
 └─────────────────────────────────────────────────────────────────────┘
-                              │ i_led_t / i_buzzer_t (puertos)
+                              │ i_led_t / i_buzzer_t (ports)
 ┌─────────────────────────────────────────────────────────────────────┐
-│  PUERTOS — i_led.h  y  i_buzzer.h                                  │
-│  - V-tables y handles independientes                               │
-│  - Wrappers static inline validados                                │
+│  PORTS — i_led.h  and  i_buzzer.h                                  │
+│  - Independent v-tables and handles                                │
+│  - static inline validated wrappers                                │
 └─────────────────────────────────────────────────────────────────────┘
-                              │ implementa
+                              │ implements
 ┌─────────────────────────────────────────────────────────────────────┐
-│  CAPA DE INFRAESTRUCTURA — Adaptadores                             │
+│  INFRASTRUCTURE LAYER — Adapters                                   │
 │  - adapter_led_gpio.c     → <zephyr/drivers/gpio.h>                │
 │  - adapter_buzzer_pwm.c   → <zephyr/drivers/pwm.h>                 │
 └─────────────────────────────────────────────────────────────────────┘
@@ -83,76 +83,76 @@ Se utiliza para:
 ┌─────────────────────────────────────────────────────────────────────┐
 │  HARDWARE / DEVICETREE                                              │
 │  - user_led: led_0 (gpio-leds)                                     │
-│  - buzzer_pwm: buzzer (pwm-leds, PWM15 canal 1)                   │
+│  - buzzer_pwm: buzzer (pwm-leds, PWM15 channel 1)                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Nivel de Dominio — Tipos de Datos (Puro C99)
+## 4. Domain Level — Data Types (Pure C99)
 
-Archivo: `app/include/common/indicator_types.h` (por crear)
+File: `app/include/common/indicator_types.h` (to be created)
 
-### 4.1 Estados del LED
+### 4.1 LED States
 
 ```c
 typedef enum {
-    LED_STATE_OFF = 0,           /**< LED apagado */
-    LED_STATE_ON,                /**< LED encendido fijo */
-    LED_STATE_BLINK_SLOW,        /**< Parpadeo lento (~1 Hz) */
-    LED_STATE_BLINK_FAST,        /**< Parpadeo rápido (~5 Hz) */
-    LED_STATE_BLINK_HEARTBEAT,   /**< Latido suave (indica vida del sistema) */
+    LED_STATE_OFF = 0,           /**< LED off */
+    LED_STATE_ON,                /**< LED steady on */
+    LED_STATE_BLINK_SLOW,        /**< Slow blinking (~1 Hz) */
+    LED_STATE_BLINK_FAST,        /**< Fast blinking (~5 Hz) */
+    LED_STATE_BLINK_HEARTBEAT,   /**< Soft heartbeat (indicates system alive) */
 } led_state_t;
 ```
 
-### 4.2 Patrones del buzzer
+### 4.2 Buzzer Patterns
 
 ```c
 typedef enum {
-    BUZZER_PATTERN_SILENT = 0,           /**< Sin sonido */
-    BUZZER_PATTERN_BEEP_SHORT,           /**< Un beep corto */
-    BUZZER_PATTERN_BEEP_LONG,            /**< Un beep largo */
-    BUZZER_PATTERN_ALARM_INTERMITTENT,   /**< Beeps repetidos con pausa */
-    BUZZER_PATTERN_ALARM_CONTINUOUS,     /**< Sonido continuo */
+    BUZZER_PATTERN_SILENT = 0,           /**< No sound */
+    BUZZER_PATTERN_BEEP_SHORT,           /**< A short beep */
+    BUZZER_PATTERN_BEEP_LONG,            /**< A long beep */
+    BUZZER_PATTERN_ALARM_INTERMITTENT,   /**< Repeated beeps with pause */
+    BUZZER_PATTERN_ALARM_CONTINUOUS,     /**< Continuous sound */
 } buzzer_pattern_t;
 ```
 
-### 4.3 Niveles de alarma y salud
+### 4.3 Alarm Levels and Health
 
 ```c
 typedef enum {
-    ALARM_LEVEL_NONE = 0,        /**< Sin alarma activa */
-    ALARM_LEVEL_INFO,            /**< Informativa (solo LED suave) */
-    ALARM_LEVEL_WARNING,         /**< Advertencia (LED + beep intermitente) */
-    ALARM_LEVEL_CRITICAL,        /**< Crítica (LED rápido + sonido continuo o intermitente rápido) */
+    ALARM_LEVEL_NONE = 0,        /**< No active alarm */
+    ALARM_LEVEL_INFO,            /**< Informative (soft LED only) */
+    ALARM_LEVEL_WARNING,         /**< Warning (LED + intermittent beep) */
+    ALARM_LEVEL_CRITICAL,        /**< Critical (fast LED + continuous or fast intermittent sound) */
 } alarm_level_t;
 
 typedef enum {
-    SYSTEM_HEALTH_HEALTHY = 0,   /**< Sistema sano */
-    SYSTEM_HEALTH_DEGRADED,      /**< Degradado (algún subsistema con problemas) */
-    SYSTEM_HEALTH_FAULT,         /**< Fallo (sistema no operativo plenamente) */
+    SYSTEM_HEALTH_HEALTHY = 0,   /**< Healthy system */
+    SYSTEM_HEALTH_DEGRADED,      /**< Degraded (some subsystem with problems) */
+    SYSTEM_HEALTH_FAULT,         /**< Fault (system not fully operational) */
 } system_health_t;
 ```
 
-### 4.4 Comando manual (desde Shell/CLI/HMI)
+### 4.4 Manual Command (from Shell/CLI/HMI)
 
 ```c
 typedef enum {
-    INDICATOR_CMD_AUTO = 0,      /**< Volver a control automático por alarma/health */
-    INDICATOR_CMD_FORCE_LED,     /**< Forzar estado del LED */
-    INDICATOR_CMD_FORCE_BUZZER,  /**< Forzar patrón del buzzer */
-    INDICATOR_CMD_TEST,          /**< Test: secuencia completa LED+buzzer */
+    INDICATOR_CMD_AUTO = 0,      /**< Return to automatic control by alarm/health */
+    INDICATOR_CMD_FORCE_LED,     /**< Force LED state */
+    INDICATOR_CMD_FORCE_BUZZER,  /**< Force buzzer pattern */
+    INDICATOR_CMD_TEST,          /**< Test: full LED+buzzer sequence */
 } indicator_cmd_t;
 
 typedef struct {
     indicator_cmd_t      cmd;
-    led_state_t          led_state;           /* usado si cmd == FORCE_LED */
-    buzzer_pattern_t     buzzer_pattern;      /* usado si cmd == FORCE_BUZZER */
-    uint32_t             duration_ms;         /* duración del forzado (0 = permanente) */
+    led_state_t          led_state;           /* used if cmd == FORCE_LED */
+    buzzer_pattern_t     buzzer_pattern;      /* used if cmd == FORCE_BUZZER */
+    uint32_t             duration_ms;         /* forced duration (0 = permanent) */
 } indicator_cmd_msg_t;
 ```
 
-### 4.5 Estado actual de indicadores (para consulta)
+### 4.5 Current Indicator Status (for query)
 
 ```c
 typedef struct {
@@ -160,19 +160,19 @@ typedef struct {
     buzzer_pattern_t    buzzer_pattern;
     alarm_level_t       active_alarm_level;
     system_health_t     system_health;
-    bool                manual_override;  /* true si hay comando FORCE activo */
+    bool                manual_override;  /* true if a FORCE command is active */
 } indicator_status_t;
 ```
 
-**Invariantes del dominio:**
-- Solo headers de libc (`stdint.h`, `stdbool.h`, `stddef.h`). Cero `<zephyr/...>`.
-- Structs planos, sin punteros.
+**Domain invariants:**
+- Only libc headers (`stdint.h`, `stdbool.h`, `stddef.h`). Zero `<zephyr/...>`.
+- Flat structs, no pointers.
 
 ---
 
-## 5. Nivel de Puerto — `i_led.h` y `i_buzzer.h`
+## 5. Port Level — `i_led.h` and `i_buzzer.h`
 
-Siguiendo la regla obligatoria de `doc/STRUCTURE.md §4.1.D` (v-table + handle + wrappers `static inline`).
+Following the mandatory rule of `doc/STRUCTURE.md §4.1.D` (v-table + handle + `static inline` wrappers).
 
 ### 5.1 `app/include/interfaces/i_led.h`
 
@@ -218,28 +218,28 @@ static inline int i_buzzer_get_active_pattern(const i_buzzer_t *buzzer,
                                               buzzer_pattern_t *out);
 ```
 
-**Nota:** El parámetro `frequency_hz` en `play_pattern` permite generar tonos distintos según la alarma (ej. tono grave para CRITICAL, tono agudo para INFO).
+**Note:** The `frequency_hz` parameter in `play_pattern` allows generating different tones according to the alarm (e.g. low tone for CRITICAL, high tone for INFO).
 
-**Invariante:** `handle->api->...` solo se invoca dentro del adaptador y en `composition_root.c`.
+**Invariant:** `handle->api->...` is only invoked within the adapter and in `composition_root.c`.
 
 ---
 
-## 6. Nivel de Adaptadores (Infraestructura)
+## 6. Adapter Level (Infrastructure)
 
 ### 6.1 `adapter_led_gpio.c`
 
-Archivos: `app/src/infrastructure/adapters/adapter_led_gpio.c/.h`
+Files: `app/src/infrastructure/adapters/adapter_led_gpio.c/.h`
 
-Convención de nomenclatura: `adapter_led_gpio_init()`, `adapter_led_gpio_port()`.
+Naming convention: `adapter_led_gpio_init()`, `adapter_led_gpio_port()`.
 
-| Operación | Implementación Zephyr |
+| Operation | Zephyr Implementation |
 |-----------|----------------------|
-| `init` | `GPIO_DT_SPEC_GET_OR(DT_NODELABEL(user_led), gpios, {0})`, `device_is_ready()`, `gpio_pin_configure_dt()` como salida |
-| `set_state` | `gpio_pin_set_dt()` con valor según `led_state_t` (ON/OFF). Para estados BLINK, el adaptador solo guarda el estado solicitado; el parpadeo real lo ejecuta `ao_system_indicator` alternando `set_state` |
-| `get_state` | Leer estado actual guardado en contexto del adaptador |
-| `set_blink_rate` | Guardar parámetros de parpadeo (periodo y duty cycle) en el contexto del adaptador |
+| `init` | `GPIO_DT_SPEC_GET_OR(DT_NODELABEL(user_led), gpios, {0})`, `device_is_ready()`, `gpio_pin_configure_dt()` as output |
+| `set_state` | `gpio_pin_set_dt()` with value according to `led_state_t` (ON/OFF). For BLINK states, the adapter only saves the requested state; actual blinking is executed by `ao_system_indicator` alternating `set_state` |
+| `get_state` | Read current state saved in adapter context |
+| `set_blink_rate` | Save blink parameters (period and duty cycle) in adapter context |
 
-Contexto del adaptador (`impl`):
+Adapter context (`impl`):
 
 ```c
 struct adapter_led_gpio_ctx {
@@ -253,18 +253,18 @@ struct adapter_led_gpio_ctx {
 
 ### 6.2 `adapter_buzzer_pwm.c`
 
-Archivos: `app/src/infrastructure/adapters/adapter_buzzer_pwm.c/.h`
+Files: `app/src/infrastructure/adapters/adapter_buzzer_pwm.c/.h`
 
-Convención: `adapter_buzzer_pwm_init()`, `adapter_buzzer_pwm_port()`.
+Convention: `adapter_buzzer_pwm_init()`, `adapter_buzzer_pwm_port()`.
 
-| Operación | Implementación Zephyr |
+| Operation | Zephyr Implementation |
 |-----------|----------------------|
-| `init` | Obtener dispositivo PWM desde DTS (`buzzer_pwm`), `pwm_configure()` |
-| `play_pattern` | Configurar PWM con frecuencia y duty cycle según `buzzer_pattern_t` y `frequency_hz`. Para patrones intermitentes, `ao_system_indicator` enciende/apaga el buzzer periódicamente |
-| `stop` | `pwm_set_cycles(dev, chan, 0, 0)` o duty cycle a 0 |
-| `get_active_pattern` | Devolver patrón actual guardado en contexto |
+| `init` | Get PWM device from DTS (`buzzer_pwm`), `pwm_configure()` |
+| `play_pattern` | Configure PWM with frequency and duty cycle according to `buzzer_pattern_t` and `frequency_hz`. For intermittent patterns, `ao_system_indicator` turns the buzzer on/off periodically |
+| `stop` | `pwm_set_cycles(dev, chan, 0, 0)` or duty cycle to 0 |
+| `get_active_pattern` | Return current pattern saved in context |
 
-Contexto del adaptador:
+Adapter context:
 
 ```c
 struct adapter_buzzer_pwm_ctx {
@@ -278,67 +278,67 @@ struct adapter_buzzer_pwm_ctx {
 
 ---
 
-## 7. Nivel de Aplicación — `ao_system_indicator` (Active Object único)
+## 7. Application Level — `ao_system_indicator` (single Active Object)
 
-Archivos: `app/src/application/active_objects/ao_system_indicator.c/.h`
+Files: `app/src/application/active_objects/ao_system_indicator.c/.h`
 
-### 7.1 Responsabilidades
+### 7.1 Responsibilities
 
-1. **Máquina de estados con prioridad:** Determinar qué mostrar en LED y buzzer según la alarma de mayor prioridad activa.
-2. **Temporización por software:** Usar ticks del sistema (`k_uptime_get_32()` o `k_timer`) para alternar estados de LED y buzzer sin bloquear el hilo.
-3. **Comandos manuales:** Procesar `chan_indicator_command` (forzar LED/buzzer, test).
-4. **Publicación de estado:** Publicar `indicator_status_t` en `chan_indicator_status` para consulta de otros subsistemas.
+1. **Priority state machine**: Determine what to show on LED and buzzer according to the highest priority active alarm.
+2. **Software timing**: Use system ticks (`k_uptime_get_32()` or `k_timer`) to alternate LED and buzzer states without blocking the thread.
+3. **Manual commands**: Process `chan_indicator_command` (force LED/buzzer, test).
+4. **Status publication**: Publish `indicator_status_t` on `chan_indicator_status` for query by other subsystems.
 
-### 7.2 Máquina de Estados — Prioridad de Alarma
+### 7.2 State Machine — Alarm Priority
 
 ```
-Entrada: alarma_level + system_health + comando manual + ticks del sistema
+Input: alarm_level + system_health + manual command + system ticks
 
-Prioridad (de mayor a menor):
-1. Comando manual FORCE (si activo y dentro de duración)
-2. ALARM_LEVEL_CRITICAL      → LED BLINK_FAST + Buzzer ALARM_CONTINUOUS (tono bajo)
-3. ALARM_LEVEL_WARNING       → LED BLINK_SLOW  + Buzzer ALARM_INTERMITTENT (tono medio)
+Priority (highest to lowest):
+1. Manual FORCE command (if active and within duration)
+2. ALARM_LEVEL_CRITICAL      → LED BLINK_FAST + Buzzer ALARM_CONTINUOUS (low tone)
+3. ALARM_LEVEL_WARNING       → LED BLINK_SLOW  + Buzzer ALARM_INTERMITTENT (medium tone)
 4. ALARM_LEVEL_INFO          → LED BLINK_HEARTBEAT + Buzzer SILENT
 5. SYSTEM_HEALTH_DEGRADED    → LED BLINK_SLOW + Buzzer SILENT
-6. SYSTEM_HEALTH_HEALTHY     → LED ON (fijo) + Buzzer SILENT
+6. SYSTEM_HEALTH_HEALTHY     → LED ON (steady) + Buzzer SILENT
 7. Default                   → LED OFF + Buzzer SILENT
 ```
 
-El AO mantiene una tabla interna de alarmas activas (alarm_id → level). Cuando llega un evento de alarma, actualiza la tabla y recalcula el nivel máximo activo.
+The AO maintains an internal table of active alarms (alarm_id → level). When an alarm event arrives, it updates the table and recalculates the maximum active level.
 
-### 7.3 Temporización por Software
+### 7.3 Software Timing
 
-El AO ejecuta un bucle principal que:
+The AO executes a main loop that:
 
-1. Espera eventos en su cola de mensajes (`k_msgq`) con timeout corto.
-2. Al despertar (por evento o por timeout), calcula el tiempo transcurrido desde la última actualización.
-3. Si el estado actual requiere parpadeo (LED BLINK_* o buzzer intermitente), alterna el estado según el tiempo transcurrido.
-4. Llama a `i_led_set_state()` o `i_buzzer_play_pattern()`/`i_buzzer_stop()` según corresponda.
+1. Waits for events in its message queue (`k_msgq`) with a short timeout.
+2. Upon waking (by event or timeout), calculates elapsed time since last update.
+3. If current state requires blinking (LED BLINK_* or intermittent buzzer), alternates state according to elapsed time.
+4. Calls `i_led_set_state()` or `i_buzzer_play_pattern()`/`i_buzzer_stop()` as appropriate.
 
-Esto evita bloqueos y permite que el hilo responda rápidamente a nuevos eventos Zbus.
+This avoids blocking and allows the thread to respond quickly to new Zbus events.
 
-### 7.4 Eventos de Entrada (Zbus)
+### 7.4 Input Events (Zbus)
 
-| Canal | Mensaje | Origen típico |
-|-------|---------|---------------|
+| Channel | Message | Typical Origin |
+|---------|---------|----------------|
 | `chan_system_alarm` | `alarm_msg_t { alarm_id, level, is_active, timestamp }` | modbus_registry, slave_scheduler, ao_network, etc. |
-| `chan_system_health` | `system_health_t { health, timestamp }` | Orquestador de health global (futuro) |
+| `chan_system_health` | `system_health_t { health, timestamp }` | Global health orchestrator (future) |
 | `chan_indicator_command` | `indicator_cmd_msg_t` | Shell, HMI, CLI |
 
-### 7.5 Salidas (Zbus)
+### 7.5 Outputs (Zbus)
 
-| Canal | Mensaje | Propósito |
-|-------|---------|-----------|
-| `chan_indicator_status` | `indicator_status_t` | Consulta externa de qué se está mostrando |
+| Channel | Message | Purpose |
+|---------|---------|---------|
+| `chan_indicator_status` | `indicator_status_t` | External query of what is being displayed |
 
 ---
 
-## 8. Canales Zbus
+## 8. Zbus Channels
 
-Archivos: `app/src/application/zbus/indicator_channels.{c,h}` (por crear)
+Files: `app/src/application/zbus/indicator_channels.{c,h}` (to be created)
 
 ```c
-/* Mensaje de alarma (publicado por cualquier subsistema) */
+/* Alarm message (published by any subsystem) */
 typedef struct {
     uint16_t      alarm_id;
     alarm_level_t level;
@@ -346,30 +346,30 @@ typedef struct {
     uint32_t      timestamp_ms;
 } alarm_msg_t;
 
-/* Mensaje de health del sistema */
+/* System health message */
 typedef struct {
     system_health_t health;
     uint32_t        timestamp_ms;
 } system_health_msg_t;
 
-/* Canales */
+/* Channels */
 ZBUS_CHAN_DECLARE(chan_system_alarm);
 ZBUS_CHAN_DECLARE(chan_system_health);
 ZBUS_CHAN_DECLARE(chan_indicator_command);
 ZBUS_CHAN_DECLARE(chan_indicator_status);
 ```
 
-Suscriptores de `chan_system_alarm` y `chan_system_health`: `ao_system_indicator`.
-Publicadores: cualquier subsistema que detecte una condición de alarma (ej. `slave_scheduler` si un esclavo Modbus se desconecta, `ao_network` si Ethernet pierde enlace).
+Subscribers of `chan_system_alarm` and `chan_system_health`: `ao_system_indicator`.
+Publishers: any subsystem detecting an alarm condition (e.g. `slave_scheduler` if a Modbus slave disconnects, `ao_network` if Ethernet loses link).
 
 ---
 
-## 9. Ejemplos de Uso
+## 9. Usage Examples
 
-### 9.1 Esclavo Modbus desconectado
+### 9.1 Modbus slave disconnected
 
 ```c
-/* En slave_scheduler.c o modbus_registry.c */
+/* In slave_scheduler.c or modbus_registry.c */
 alarm_msg_t msg = {
     .alarm_id = ALARM_ID_MODBUS_SLAVE_OFFLINE,
     .level = ALARM_LEVEL_WARNING,
@@ -379,12 +379,12 @@ alarm_msg_t msg = {
 zbus_chan_pub(&chan_system_alarm, &msg, K_MSEC(10));
 ```
 
-`ao_system_indicator` recibe el mensaje, actualiza su tabla de alarmas activas, determina que WARNING es la prioridad más alta, y activa LED BLINK_SLOW + buzzer ALARM_INTERMITTENT.
+`ao_system_indicator` receives the message, updates its active alarms table, determines that WARNING is the highest priority, and activates LED BLINK_SLOW + buzzer ALARM_INTERMITTENT.
 
-### 9.2 Ethernet recupera conexión
+### 9.2 Ethernet recovers connection
 
 ```c
-/* En ao_network.c */
+/* In ao_network.c */
 alarm_msg_t msg = {
     .alarm_id = ALARM_ID_ETHERNET_LINK,
     .level = ALARM_LEVEL_NONE,
@@ -394,28 +394,28 @@ alarm_msg_t msg = {
 zbus_chan_pub(&chan_system_alarm, &msg, K_MSEC(10));
 ```
 
-Si no hay otras alarmas activas, `ao_system_indicator` vuelve a estado HEALTHY: LED ON fijo, buzzer SILENT.
+If there are no other active alarms, `ao_system_indicator` returns to HEALTHY state: LED ON steady, buzzer SILENT.
 
-### 9.3 Shell fuerza parpadeo para identificar dispositivo
+### 9.3 Shell forces blinking to identify device
 
 ```c
-/* En telemetry_shell.c o comando dedicado */
+/* In telemetry_shell.c or dedicated command */
 indicator_cmd_msg_t cmd = {
     .cmd = INDICATOR_CMD_FORCE_LED,
     .led_state = LED_STATE_BLINK_FAST,
     .buzzer_pattern = BUZZER_PATTERN_SILENT,
-    .duration_ms = 10000,  /* 10 segundos */
+    .duration_ms = 10000,  /* 10 seconds */
 };
 zbus_chan_pub(&chan_indicator_command, &cmd, K_MSEC(10));
 ```
 
 ---
 
-## 10. Composición Root — Inicialización
+## 10. Composition Root — Initialization
 
-Archivo: `app/src/infrastructure/di/composition_root.c` (modificar)
+File: `app/src/infrastructure/di/composition_root.c` (modify)
 
-Único lugar con `DEVICE_DT_GET()` para LED y buzzer:
+Only place with `DEVICE_DT_GET()` for LED and buzzer:
 
 ```c
 static struct adapter_led_gpio_ctx s_led_ctx;
@@ -442,66 +442,66 @@ static int init_indicators(app_container_t *self)
 }
 ```
 
-En `composition_root_init()` se llama a `init_indicators()` y luego se inicia `ao_system_indicator`.
+In `composition_root_init()`, `init_indicators()` is called and then `ao_system_indicator` is started.
 
 ---
 
-## 11. Secuencia de Arranque
+## 11. Startup Sequence
 
 ```
 power-on
   │
   ▼
 composition_root_init(&g_app)
-  ├─ ... (inicializaciones existentes: modbus, red, storage)
-  ├─ adapter_led_gpio_init()     ← NUEVO: DEVICE_DT_GET(user_led)
-  ├─ adapter_buzzer_pwm_init()   ← NUEVO: DEVICE_DT_GET(buzzer_pwm)
-  ├─ adapter_led_gpio_port()     ← NUEVO: bind i_led_t
-  ├─ adapter_buzzer_pwm_port()   ← NUEVO: bind i_buzzer_t
-  └─ ao_system_indicator_init()  ← NUEVO: crear hilo AO, suscribirse a Zbus
+  ├─ ... (existing initializations: modbus, network, storage)
+  ├─ adapter_led_gpio_init()     ← NEW: DEVICE_DT_GET(user_led)
+  ├─ adapter_buzzer_pwm_init()   ← NEW: DEVICE_DT_GET(buzzer_pwm)
+  ├─ adapter_led_gpio_port()     ← NEW: bind i_led_t
+  ├─ adapter_buzzer_pwm_port()   ← NEW: bind i_buzzer_t
+  └─ ao_system_indicator_init()  ← NEW: create AO thread, subscribe to Zbus
   │
   ▼
 composition_root_start(&g_app)
-  └─ ao_system_indicator_start() ← NUEVO: lanzar hilo de indicadores
+  └─ ao_system_indicator_start() ← NEW: launch indicator thread
   │
   ▼
-bucle principal (sleep)
+main loop (sleep)
 ```
 
-Estado inicial tras arranque: LED ON (sistema sano), buzzer SILENT, hasta que llegue el primer evento de alarma o health.
+Initial state after boot: LED ON (system healthy), buzzer SILENT, until the first alarm or health event arrives.
 
 ---
 
-## 12. Stacks (Invariante MPU)
+## 12. Stacks (MPU Invariant)
 
-La stack del hilo `ao_system_indicator` se define a **file scope** con `K_THREAD_STACK_DEFINE`, nunca dentro de `app_container_t`, para preservar el alineamiento MPU en Cortex-M7 con `CONFIG_HW_STACK_PROTECTION`.
-
----
-
-## 13. Brechas por Implementar
-
-| # | Elemento | Archivo destino | Estado |
-|---|----------|-----------------|--------|
-| 1 | `indicator_types.h` | `app/include/common/indicator_types.h` | Faltante |
-| 2 | `i_led.h` | `app/include/interfaces/i_led.h` | Faltante |
-| 3 | `i_buzzer.h` | `app/include/interfaces/i_buzzer.h` | Faltante |
-| 4 | `adapter_led_gpio.c/.h` | `app/src/infrastructure/adapters/` | Faltante |
-| 5 | `adapter_buzzer_pwm.c/.h` | `app/src/infrastructure/adapters/` | Faltante |
-| 6 | `ao_system_indicator.c/.h` | `app/src/application/active_objects/` | Faltante |
-| 7 | `indicator_channels.{c,h}` (Zbus) | `app/src/application/zbus/` | Faltante |
-| 8 | Integración en `composition_root.c` | `app/src/infrastructure/di/` | Por modificar |
-| 9 | Publicadores de alarma en subsistemas existentes | modbus, network, etc. | Por agregar (pendiente motor de alarmas) |
-| 10 | Pruebas unitarias (fakes LED/buzzer) | `tests/unit/` | Faltante |
+The stack of the `ao_system_indicator` thread is defined at **file scope** with `K_THREAD_STACK_DEFINE`, never inside `app_container_t`, to preserve MPU alignment on Cortex-M7 with `CONFIG_HW_STACK_PROTECTION`.
 
 ---
 
-## 14. Decisiones Pendientes (para futuro)
+## 13. Gaps to Implement
 
-1. **Motor de alarmas completo:** Aún no definido. Queda pendiente definir `alarm_id_t` completo y qué subsistemas publican en `chan_system_alarm`.
-2. **Persistencia de configuración de indicadores:** Opcional. Podría agregarse un dominio `CONFIG_DOMAIN_INDICATORS` en storage para guardar patrones por defecto.
-3. **Integración con Shell:** Comandos de CLI para consultar estado de indicadores y forzar pruebas manuales.
+| # | Element | Destination File | Status |
+|---|---------|-----------------|--------|
+| 1 | `indicator_types.h` | `app/include/common/indicator_types.h` | Missing |
+| 2 | `i_led.h` | `app/include/interfaces/i_led.h` | Missing |
+| 3 | `i_buzzer.h` | `app/include/interfaces/i_buzzer.h` | Missing |
+| 4 | `adapter_led_gpio.c/.h` | `app/src/infrastructure/adapters/` | Missing |
+| 5 | `adapter_buzzer_pwm.c/.h` | `app/src/infrastructure/adapters/` | Missing |
+| 6 | `ao_system_indicator.c/.h` | `app/src/application/active_objects/` | Missing |
+| 7 | `indicator_channels.{c,h}` (Zbus) | `app/src/application/zbus/` | Missing |
+| 8 | Integration in `composition_root.c` | `app/src/infrastructure/di/` | To modify |
+| 9 | Alarm publishers in existing subsystems | modbus, network, etc. | To add (pending alarm engine) |
+| 10 | Unit tests (LED/buzzer fakes) | `tests/unit/` | Missing |
 
 ---
 
-**Estado del documento**: Especificación técnica lista para implementación futura.  
-**Estado del código**: Ningún archivo ha sido modificado aún. Todo está por construir sobre las bases definidas (DTS con `user_led` y `buzzer_pwm`, arquitectura limpia, patrón de puertos y adaptadores).
+## 14. Pending Decisions (for future)
+
+1. **Complete alarm engine**: Not yet defined. Pending definition of full `alarm_id_t` and which subsystems publish on `chan_system_alarm`.
+2. **Persistence of indicator configuration**: Optional. A `CONFIG_DOMAIN_INDICATORS` domain could be added in storage to save default patterns.
+3. **Shell integration**: CLI commands to query indicator status and force manual tests.
+
+---
+
+**Document status**: Technical specification ready for future implementation.  
+**Code status**: No file has been modified yet. Everything is to be built on the defined foundations (DTS with `user_led` and `buzzer_pwm`, clean architecture, ports and adapters pattern).

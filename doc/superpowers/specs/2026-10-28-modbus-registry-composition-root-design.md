@@ -1,158 +1,145 @@
-# Diseño: registro Modbus y Composition Root (primera puesta en marcha)
+# Design: Modbus Registry and Composition Root (First Bring-Up)
 
-- **Fecha**: 2026-10-28
-- **Estado**: aprobado
-- **Alcance**: subsistema Modbus RTU (RS485-1 / RS485-2) y raíz de composición de la aplicación
+- **Date**: 2026-10-28
+- **Status**: Approved
+- **Scope**: Modbus RTU subsystem (RS485-1 / RS485-2) and application composition root
 
-## 1. Intención y porqué
+## 1. Intention and Rationale
 
-La capa `app/` tiene hoy tres problemas que bloquean cualquier crecimiento:
+The `app/` layer currently has three problems blocking any growth:
 
-1. **Estado global suelto**: `modbus_slave_manager.c` guarda la tabla de esclavos en un
-   `static` de fichero y expone funciones libres sin instancia. Es un *singleton implícito*:
-   no se puede sustituir en pruebas ni tener dos buses independientes.
-2. **Sin raíz de composición**: `app/src/infrastructure/di/` contiene un `.h` vacío y un `.c`
-   con texto de cabecera. `main.c` no arranca nada. Cada módulo nuevo acabaría declarando
-   su propio `static`.
-3. **Sin aislamiento entre buses**: el gestor actual no distingue el resultado de una
-   transacción (timeout vs CRC vs excepción Modbus) y no guarda la configuración eléctrica
-   de cada bus.
+1. **Loose global state**: `modbus_slave_manager.c` keeps the slave table in a file-scope `static` and exposes free functions without an instance. It is an *implicit singleton*: it cannot be substituted in tests nor support two independent buses.
+2. **No composition root**: `app/src/infrastructure/di/` contains an empty `.h` and a `.c` with header text. `main.c` starts nothing. Each new module would end up declaring its own `static`.
+3. **No isolation between buses**: the current manager does not distinguish the result of a transaction (timeout vs CRC vs Modbus exception) and does not store the electrical configuration of each bus.
 
-El objetivo es dejar el subsistema Modbus funcionando sobre una raíz de composición única,
-con dos Active Objects independientes, de forma que cualquier componente futuro
-(telemetría, HMI, almacenamiento) se añada sin introducir variables globales nuevas.
+The goal is to leave the Modbus subsystem running on a single composition root, with two independent Active Objects, so that any future component (telemetry, HMI, storage) can be added without introducing new global variables.
 
-## 2. Objetivos
+## 2. Objectives
 
-- Un **único objeto estático de datos** en todo el firmware: `static app_container_t g_app`.
-- El registro de esclavos pasa a ser una **instancia inyectada**, no un singleton.
-- Dos **Active Objects** independientes, uno por bus físico, con stack y cola propios.
-- El registro soporta **dos buses con configuración eléctrica distinta** (baud/paridad/stop).
-- El resultado de cada transacción se clasifica (`OK`/`TIMEOUT`/`CRC`/`EXCEPTION`) y alimenta
-  contadores separados.
-- La lógica de planificación de sondeo y de salud es **C puro** y se prueba en `native_sim`
-  sin hardware ni nanoMODBUS.
-- `import`/`export` de configuración es **versionado y portable** (sin depender de
-  `__attribute__((packed))` ni del endianness de la CPU).
+- A **single static data object** in the entire firmware: `static app_container_t g_app`.
+- The slave registry becomes an **injected instance**, not a singleton.
+- Two **independent Active Objects**, one per physical bus, with their own stack and queue.
+- The registry supports **two buses with different electrical configuration** (baud/parity/stop).
+- The result of each transaction is classified (`OK`/`TIMEOUT`/`CRC`/`EXCEPTION`) and feeds separate counters.
+- The polling planning and health logic is **pure C** and tested on `native_sim` without hardware or nanoMODBUS.
+- `import`/`export` of configuration is **versioned and portable** (without relying on `__attribute__((packed))` or CPU endianness).
 
-## 3. No objetivos
+## 3. Non-Objectives
 
-- No se implementa el HMI, la telemetría por red ni el almacenamiento persistente.
-- No se cambia el DTS del board (ya es correcto) ni el overlay salvo lo indicado en la fase 5.
-- No se toca CI, linker scripts ni código de arranque.
-- No se introduce `malloc`: todo el estado se asigna estáticamente en el contenedor.
-- No se implementa todavía el failover automático (solo la operación `set_bus` manual).
+- HMI, network telemetry, or persistent storage are not implemented.
+- Board DTS is not changed (it is already correct) nor the overlay except as indicated in phase 5.
+- CI, linker scripts, or startup code are not touched.
+- `malloc` is not introduced: all state is allocated statically in the container.
+- Automatic failover is not implemented yet (only the manual `set_bus` operation).
 
-## 4. Anti-objetivos (cómo sabríamos que salió mal)
+## 4. Anti-Objectives (How We Know It Went Wrong)
 
-- Aparece un segundo `static` de datos fuera de `composition_root.c` y `main.c`.
-- El registro necesita que el llamante mantenga el lock (lock expuesto en la API).
-- El AO llama directamente a `nmbs_z_*` en lugar de a `i_modbus_client`.
-- Los tests de la lógica de salud necesitan un UART o `native_posix` con emulación.
-- Un bus caído degrada la cadencia del otro.
+- A second static data object appears outside `composition_root.c` and `main.c`.
+- The registry requires the caller to hold the lock (lock exposed in the API).
+- The AO calls `nmbs_z_*` directly instead of `i_modbus_client`.
+- Health logic tests require a UART or `native_posix` with emulation.
+- A dead bus degrades the cadence of the other bus.
 
-## 5. Restricciones
+## 5. Constraints
 
-| Restricción | Origen |
+| Constraint | Source |
 |---|---|
-| C99/C11, sin C++ | `AGENTS.md` |
-| Dominio sin `<zephyr/...>` | `doc/STRUCTURE.md` §3 |
-| Sin heap (`CONFIG_HEAP_MEM_POOL_SIZE=0`) | build actual |
-| `CONFIG_DCACHE=y` → RX por IRQ, no async | `.config` + `known_limitations.md` de nanoMODBUS |
-| DE por hardware (RE y DE unidos físicamente) | DTS + confirmación del usuario |
-| 512 KB RAM, ~22 KB de `.bss` en uso | board yaml + `size` del ELF |
+| C99/C11, no C++ | `AGENTS.md` |
+| Domain without `<zephyr/...>` | `doc/STRUCTURE.md` §3 |
+| No heap (`CONFIG_HEAP_MEM_POOL_SIZE=0`) | current build |
+| `CONFIG_DCACHE=y` → RX via IRQ, not async | `.config` + nanoMODBUS `known_limitations.md` |
+| Hardware DE (RE and DE physically tied) | DTS + user confirmation |
+| 512 KB RAM, ~22 KB `.bss` in use | board yaml + ELF `size` |
 | DCO sign-off, Conventional Commits | `AGENTS.md` |
 
-## 6. Enfoques considerados
+## 6. Approaches Considered
 
-### 6.1 Active Object: un hilo vs dos
+### 6.1 Active Object: One Thread vs Two
 
-| Criterio | 1 hilo round-robin | **2 hilos (elegido)** |
+| Criterion | 1 round-robin thread | **2 threads (chosen)** |
 |---|---|---|
-| Inanición del bus sano | 16 esclavos caídos × 300 ms = 4,8 s de parada cada 10 s (~50 % del tiempo) | acotada al ciclo propio del bus (~1 s) |
-| Aislamiento de fallos | un UART colgado detiene ambos buses | independiente |
-| Estado compartido | un solo escritor → sin lock | 2 escritores → `k_mutex` |
-| RAM | 1 stack | 2 stacks (~4 KB = 0,8 % de 512 KB) |
-| CPU | idéntica (ambos bloqueados en espera de RX) | idéntica |
+| Healthy bus starvation | 16 fallen slaves × 300 ms = 4.8 s stop per 10 s (~50 % of time) | bounded to the bus's own cycle (~1 s) |
+| Fault isolation | a hung UART stops both buses | independent |
+| Shared state | single writer → no lock | 2 writers → `k_mutex` |
+| RAM | 1 stack | 2 stacks (~4 KB = 0.8 % of 512 KB) |
+| CPU | identical (both blocked waiting for RX) | identical |
 
-Descartado: un hilo con máquina de estados no bloqueante. `nmbs_z_client_*()` es bloqueante
-con timeout; habría que reimplementar el *framing* RTU sobre el transporte.
+Discarded: one thread with a non-blocking state machine. `nmbs_z_client_*()` is blocking with timeout; RTU framing would have to be reimplemented over the transport.
 
-**Decisión: dos `k_thread` preemptivas, una instancia `ao_modbus_t` por bus.**
+**Decision: two preemptive `k_thread`s, one `ao_modbus_t` instance per bus.**
 
-### 6.2 Dónde vive la lógica de planificación
+### 6.2 Where the Planning Logic Lives
 
-| Opción | Veredicto |
+| Option | Verdict |
 |---|---|
-| Todo en `modbus_registry.c` (con lock) | la lógica de salud quedaría acoplada a Zephyr y no se podría probar sola |
-| **`slave_scheduler` puro + `modbus_registry` con lock (elegido)** | la decisión (`is_due`, transición de salud) es 100 % testeable; el registro solo aporta almacenamiento y exclusión mutua |
-| Servicio de dominio con vtable inyectada | sobreingeniería: son funciones puras sin estado |
+| Everything in `modbus_registry.c` (with lock) | health logic would be coupled to Zephyr and not testable alone |
+| **`slave_scheduler` pure + `modbus_registry` with lock (chosen)** | the decision (`is_due`, health transition) is 100 % testable; the registry only contributes storage and mutual exclusion |
+| Domain service with injected vtable | overengineering: pure stateless functions |
 
-### 6.3 Serialización de configuración
+### 6.3 Configuration Serialization
 
-| Opción | Veredicto |
+| Option | Verdict |
 |---|---|
-| `memcpy` de structs `packed` | no portable (endianness, padding del compilador, sin versión) |
-| **Campo a campo a un buffer little-endian con cabecera de versión (elegido)** | testeable, portable, permite migrar el formato |
-| microconf / Zephyr Settings | se integrará más adelante; el formato del buffer es el contrato |
+| `memcpy` of `packed` structs | not portable (endianness, compiler padding, no version) |
+| **Field-by-field to a little-endian buffer with version header (chosen)** | testable, portable, allows format migration |
+| microconf / Zephyr Settings | will be integrated later; the buffer format is the contract |
 
-## 7. Estructura decidida
+## 7. Decided Structure
 
-### 7.1 Capas y ficheros
+### 7.1 Layers and Files
 
 ```
-app/include/common/modbus_types.h            DTOs y enums (puro)
-app/include/interfaces/i_slave_registry.h    Puerto del registro (vtable + void *impl)
-app/include/interfaces/i_modbus_client.h     Puerto del cliente Modbus (vtable + void *impl)
+app/include/common/modbus_types.h            DTOs and enums (pure)
+app/include/interfaces/i_slave_registry.h    Registry port (vtable + void *impl)
+app/include/interfaces/i_modbus_client.h     Modbus client port (vtable + void *impl)
 
-app/src/domain/services/slave_scheduler.{c,h}   C puro: due / salud / backoff
-app/src/application/modbus/modbus_registry.{c,h} tabla + k_mutex + import/export
+app/src/domain/services/slave_scheduler.{c,h}   Pure C: due / health / backoff
+app/src/application/modbus/modbus_registry.{c,h} table + k_mutex + import/export
 
-app/src/infrastructure/adapters/adapter_modbus_nmbs.{c,h}   envuelve nmbs_z_client_t
-app/src/infrastructure/di/composition_root.{c,h}             raíz de composición
-app/src/application/active_objects/ao_modbus.{c,h}           un AO por bus
+app/src/infrastructure/adapters/adapter_modbus_nmbs.{c,h}   wraps nmbs_z_client_t
+app/src/infrastructure/di/composition_root.{c,h}             composition root
+app/src/application/active_objects/ao_modbus.{c,h}           one AO per bus
 
-app/src/main.c                               único static: static app_container_t g_app
+app/src/main.c                               single static: static app_container_t g_app
 ```
 
-### 7.2 Forma del contenedor
+### 7.2 Container Shape
 
 ```c
 typedef struct {
-    /* Puertos */
-    i_slave_registry_t      registry;          /* vtable + impl apuntando a modbus_registry */
+    /* Ports */
+    i_slave_registry_t      registry;          /* vtable + impl pointing to modbus_registry */
     i_modbus_client_t       client[MODBUS_BUS_MAX];
 
-    /* Adaptadores por valor */
+    /* Adapters by value */
     modbus_registry_t       registry_impl;
     adapter_modbus_nmbs_t   nmbs[MODBUS_BUS_MAX];
 
-    /* Active Objects + recursos estáticos */
+    /* Active Objects + static resources */
     ao_modbus_t             ao[MODBUS_BUS_MAX];
     uint8_t                 ao_stack[MODBUS_BUS_MAX][AO_MODBUS_STACK_SIZE];
     struct k_msgq           ao_queue[MODBUS_BUS_MAX];
     uint8_t                 ao_queue_buf[MODBUS_BUS_MAX][AO_MODBUS_QUEUE_DEPTH * sizeof(modbus_event_t)];
 
-    /* Configuración de buses (deja de estar huérfana) */
+    /* Bus configuration (no longer orphaned) */
     modbus_bus_cfg_t        bus_cfg[MODBUS_BUS_MAX];
 
-    uint8_t                 init_mask;         /* bit por subsistema */
+    uint8_t                 init_mask;         /* bit per subsystem */
 } app_container_t;
 ```
 
-### 7.3 Semántica de resultados
+### 7.3 Result Semantics
 
-| Resultado | ¿El esclavo respondió? | `consecutive_fails` | Salud |
+| Result | Did the slave respond? | `consecutive_fails` | Health |
 |---|---|---|---|
-| `MODBUS_RESULT_OK` | sí | se resetea | `ONLINE` |
+| `MODBUS_RESULT_OK` | yes | reset | `ONLINE` |
 | `MODBUS_RESULT_TIMEOUT` | no | +1 | `DEGRADED` (1-2) / `OFFLINE_BACKOFF` (≥3) |
-| `MODBUS_RESULT_CRC` | no (trama corrupta) | +1 | igual que timeout |
-| `MODBUS_RESULT_EXCEPTION` | **sí** (código de excepción Modbus) | no cambia | se mantiene `ONLINE` |
+| `MODBUS_RESULT_CRC` | no (corrupt frame) | +1 | same as timeout |
+| `MODBUS_RESULT_EXCEPTION` | **yes** (Modbus exception code) | no change | stays `ONLINE` |
 
-`EXCEPTION` cuenta en su propio contador: el dispositivo está vivo pero la petición es
-inválida. Marcarlo como caído ocultaría un error de configuración.
+`EXCEPTION` counts in its own counter: the device is alive but the request is invalid. Marking it as down would hide a configuration error.
 
-### 7.4 API del registro (resumen)
+### 7.4 Registry API (Summary)
 
 ```c
 int  modbus_registry_init(modbus_registry_t *self,
@@ -171,39 +158,34 @@ int  modbus_registry_export(const modbus_registry_t *self, void *buf, size_t max
 int  modbus_registry_import(modbus_registry_t *self, const void *buf, size_t size);
 ```
 
-Reglas:
-- Todo el locking es **interno**; ninguna función expone el mutex.
-- `claim_next_due` es una sola operación atómica (sustituye a `is_ready_to_poll` +
-  `record_result`), con cursor round-robin por bus y recuperación de *claims* obsoletos
-  (si un AO muere entre claim y record, el esclavo vuelve a estar disponible pasado
-  `AO_MODBUS_CLAIM_STALE_MS`).
-- `register` rechaza `bus_id` inválido, `slave_addr` fuera de 1..247, `device_id` duplicado,
-  dirección duplicada en el mismo bus y desbordamiento de `MODBUS_MAX_SLAVES_PER_BUS`.
-- `import` valida todo lo anterior **antes** de mutar la tabla (se aplica sobre una copia).
+Rules:
+- All locking is **internal**; no function exposes the mutex.
+- `claim_next_due` is a single atomic operation (replaces `is_ready_to_poll` + `record_result`), with a per-bus round-robin cursor and stale claim recovery (if an AO dies between claim and record, the slave becomes available again after `AO_MODBUS_CLAIM_STALE_MS`).
+- `register` rejects invalid `bus_id`, `slave_addr` outside 1..247, duplicate `device_id`, duplicate address on the same bus, and `MODBUS_MAX_SLAVES_PER_BUS` overflow.
+- `import` validates everything above **before** mutating the table (applied on a copy).
 
-### 7.5 Hilos
+### 7.5 Threads
 
-| Parámetro | Valor | Razón |
+| Parameter | Value | Reason |
 |---|---|---|
-| Prioridad | `AO_MODBUS_PRIORITY` (7, preemptiva) | nunca cooperativa: un AO en bucle no debe bloquear el sistema |
-| Stack | `AO_MODBUS_STACK_SIZE` (2048 B) | `LOG_*` es el mayor consumidor; se medirá con `CONFIG_THREAD_ANALYZER` |
-| Cola | `AO_MODBUS_QUEUE_DEPTH` (8) eventos `modbus_event_t` | comandos (forzar sondeo, reconfigurar, parar) |
-| Cadencia | `k_msgq_get(..., timeout = próximo vencimiento)` | sin `k_sleep` fijo: el AO duerme hasta el siguiente esclavo *due* |
+| Priority | `AO_MODBUS_PRIORITY` (7, preemptive) | never cooperative: an AO in a loop must not block the system |
+| Stack | `AO_MODBUS_STACK_SIZE` (2048 B) | `LOG_*` is the largest consumer; will be measured with `CONFIG_THREAD_ANALYZER` |
+| Queue | `AO_MODBUS_QUEUE_DEPTH` (8) `modbus_event_t` events | commands (force poll, reconfigure, stop) |
+| Cadence | `k_msgq_get(..., timeout = next expiration)` | no fixed `k_sleep`: the AO sleeps until the next slave is *due* |
 
-## 8. Qué queda a criterio del implementador
+## 8. Left to the Implementer's Discretion
 
-- Nombres exactos de los campos de `modbus_poll_target_t` y `modbus_event_t`.
-- Tamaño definitivo de `AO_MODBUS_STACK_SIZE` (se ajusta tras medir).
-- Si el AO publica en `zbus` (fase posterior) o solo actualiza el registro.
-- Formato concreto del buffer versionado (orden de campos), respetando: versión + contador +
-  registros de tamaño fijo + configuración de bus.
+- Exact field names of `modbus_poll_target_t` and `modbus_event_t`.
+- Final `AO_MODBUS_STACK_SIZE` (adjusted after measurement).
+- Whether the AO publishes on `zbus` (later phase) or only updates the registry.
+- Exact field order of the versioned buffer, respecting: version + counter + fixed-size records + bus configuration.
 
-## 9. Riesgos y mitigaciones
+## 9. Risks and Mitigations
 
-| Riesgo | Mitigación |
+| Risk | Mitigation |
 |---|---|
-| El AO y el shell acceden al registro a la vez | locking interno; `snapshot()` copia y suelta |
-| Un AO se cuelga con un claim tomado | recuperación por `AO_MODBUS_CLAIM_STALE_MS` |
-| `import` de config corrupta deja el sistema inoperante | aplicar sobre copia y validar antes de commit |
-| Reconfiguración de UART en caliente rompe el DE | se usa `nmbs_z_serial_transport_reconfigure()`, nunca `uart_configure()` con `FLOW_CTRL_NONE` |
-| Regresión silenciosa: alguien añade un `static` | script `tools/check_no_globals.sh` como target de CMake opcional |
+| AO and shell access the registry at the same time | internal locking; `snapshot()` copies and releases |
+| AO hangs with a claim taken | recovery via `AO_MODBUS_CLAIM_STALE_MS` |
+| Corrupt config import leaves system inoperative | apply on a copy and validate before commit |
+| Hot UART reconfiguration breaks DE | uses `nmbs_z_serial_transport_reconfigure()`, never `uart_configure()` with `FLOW_CTRL_NONE` |
+| Silent regression: someone adds a `static` | `tools/check_no_globals.sh` script as optional CMake target |
