@@ -114,12 +114,20 @@ BrightC_TelemetryWorkspace/                  # Raíz del Workspace West
     │   ├── include/                         # Puertos e Interfaces (Contratos puros)
     │   │   ├── interfaces/                  # Interfaces abstractas (V-Tables / contratos C)
     │   │   │   ├── i_telemetry_port.h       # Contrato de envío/recepción de telemetría
-    │   │   │   ├── i_modbus_port.h          # Contrato de comunicación Modbus RTU/TCP
-    │   │   │   ├── i_storage_port.h         # Contrato para NVS / Configuración
-    │   │   │   ├── i_sensor_port.h          # Contrato de adquisición de mediciones
-    │   │   │   ├── i_relay_port.h           # Contrato de salidas discretas / control
+    │   │   │   ├── i_modbus_client.h        # Contrato de transporte Modbus (FC03, FC06, etc.)
+    │   │   │   ├── i_slave_registry.h       # Contrato del gestor y planificación de esclavos
+    │   │   │   ├── i_config_storage.h       # Contrato modular de persistencia en EEPROM / NVS
+    │   │   │   ├── i_network.h              # Contrato de interfaz de red (Ethernet / WiFi)
+    │   │   │   ├── i_led.h                  # Contrato de LED de usuario
+    │   │   │   ├── i_buzzer.h               # Contrato de buzzer de señalización
+    │   │   │   ├── i_relay.h                # Contrato de salidas discretas / relés de control
+    │   │   │   ├── i_sensor_port.h          # Contrato de adquisición de mediciones analógicas
+    │   │   │   ├── i_temperature_bank.h     # Contrato de lectura multi-canal de temperatura
     │   │   │   └── i_display_port.h         # Contrato para interfaz HMI DWIN
     │   │   └── common/                      # Tipos de datos primitivos agnósticos
+    │   │       ├── config_types.h           # Dominios y eventos de configuración persistente
+    │   │       ├── indicator_types.h        # Tipos de indicadores (LED, buzzer, alarmas)
+    │   │       ├── modbus_types.h           # Structs de buses, descriptores, resultados
     │   │       ├── telemetry_types.h        # Structs de mediciones, alarmas, timestamps
     │   │       └── error_codes.h            # Códigos de error unificados
     │   │
@@ -133,20 +141,26 @@ BrightC_TelemetryWorkspace/                  # Raíz del Workspace West
     │       │   ├── active_objects/          # Hilos de ejecución asíncronos (Actors)
     │       │   │   ├── ao_telemetry.c       # Hilo coordinador de adquisición y muestreo
     │       │   │   ├── ao_modbus.c          # Hilo de servicio Modbus (RS485-1 / RS485-2)
+    │       │   │   ├── ao_storage.c         # Hilo coordinador de persistencia asíncrona EEPROM
     │       │   │   ├── ao_network.c         # Hilo de conectividad (Ethernet / WiFi ESP32)
+    │   │   │   ├── ao_system_indicator.c    # Hilo de indicadores (LED / Buzzer)
     │       │   │   └── ao_hmi.c             # Hilo de atención a pantalla LCD DWIN
     │       │   ├── zbus/                    # Canales de eventos Zephyr Zbus
     │       │   │   ├── telemetry_channels.h # Definición de zbus_channel (muestras, alarmas)
     │       │   │   └── telemetry_channels.c # Instanciación ZBUS_CHAN_DEFINE
+    │   │   │   ├── indicator_channels.h   # Canales de eventos de indicadores
+    │   │   │   └── indicator_channels.c # Instanciación ZBUS_CHAN_DEFINE para indicadores
     │       │   └── use_cases/               # Flujos (ProcessTelemetrySample, PublishMqttReport)
     │       │
     │       ├── infrastructure/              # Adaptadores a Zephyr y composición
     │       │   ├── adapters/                # Implementación de los puertos con APIs de Zephyr
-    │       │   │   ├── adapter_modbus_zephyr.c    # nanoMODBUS montado sobre UART/RS485 Zephyr
-    │       │   │   ├── adapter_storage_nvs.c      # Persistencia con Zephyr Settings / NVS
+    │       │   │   ├── adapter_modbus_nmbs.c      # nanoMODBUS montado sobre UART/RS485 Zephyr
+    │       │   │   ├── adapter_storage_microconf.c# Persistencia microconf sobre EEPROM AT24C256C
     │       │   │   ├── adapter_sensor_zephyr.c    # Lectura de sensores usando <zephyr/drivers/sensor.h>
     │       │   │   ├── adapter_relay_gpio.c       # Manejo de relés usando <zephyr/drivers/gpio.h>
     │       │   │   ├── adapter_wifi_esp_hosted.c  # Driver de red ESP-Hosted (WiFi / BLE)
+    │   │   │   ├── adapter_led_gpio.c         # Control de LED de usuario por GPIO
+    │   │   │   ├── adapter_buzzer_pwm.c       # Control de buzzer por PWM
     │       │   │   └── adapter_display_dwin.c     # Parser serial DWIN sobre UART3 de Zephyr
     │       │   └── di/                      # Composition Root (Inyección de Dependencias)
     │       │       ├── composition_root.h   # API de arranque del grafo de dependencias
@@ -185,6 +199,11 @@ BrightC_TelemetryWorkspace/                  # Raíz del Workspace West
     │
     └── doc/                                 # Documentación de Arquitectura y Referencia
         ├── STRUCTURE.md                     # Este documento maestro de arquitectura
+        ├── architecture/                    # Especificaciones técnicas maestras por subsistema
+        │   ├── modbus_subsystem.md          # Arquitectura completa del subsistema Modbus
+        │   ├── network_subsystem.md         # Arquitectura del subsistema de red (Ethernet / WiFi)
+        │   ├── storage_subsystem.md         # Arquitectura del subsistema de persistencia EEPROM
+        │   └── system_indicators.md         # Arquitectura de indicadores de sistema (LED / Buzzer)
         ├── brightcV3.md                     # Referencia esquemática y pinctrl del HW
         └── Doxyfile                         # Generador de documentación API
 ```
@@ -605,6 +624,8 @@ west twister -T tests/unit -p native_sim --coverage -v
 
 ## 6. Arquitectura del Subsistema Modbus Industrial (nanoMODBUS)
 
+> **Documento Maestro**: Para el detalle exhaustivo de diagramas de secuencia, recuperación de claims obsoletos y guía paso a paso para añadir nuevos actuadores (ej. expansores de relés), consultar [**doc/architecture/modbus_subsystem.md**](architecture/modbus_subsystem.md).
+
 El subsistema Modbus de BrightC Controller V3 está diseñado para alta disponibilidad, tolerancia a fallas de cableado y desacoplamiento físico total entre puertos RS485 y dispositivos de campo.
 
 ```
@@ -667,7 +688,30 @@ E/S); la lectura de registros la realiza el Active Object a través del puerto
 
 ---
 
-## 7. Flujo de Trabajo para Añadir un Nuevo Módulo
+## 7. Arquitectura del Subsistema de Almacenamiento Persistente (microconf)
+
+> **Documento Maestro**: Para el mapa completo de particionamiento de la EEPROM AT24C256C, políticas de debounce y guía para registrar nuevos dominios de configuración, consultar [**doc/architecture/storage_subsystem.md**](architecture/storage_subsystem.md).
+
+### 7.1 El Desafío de Concurrencia y la Solución con Active Object
+La EEPROM física externa AT24C256C (I2C2) requiere entre 5 ms y 10 ms por ciclo de escritura de página. Si un hilo de control o de comunicación serie escribe de forma directa y síncrona en la EEPROM, se congelaría provocando pérdidas de tramas y jitter severo. Además, `microconf` no posee primitivas de sincronización multihilo internas.
+
+Por ello, la arquitectura desacopla el almacenamiento en tres niveles:
+1. **Memoria RAM**: Los subsistemas leen y mutan su configuración en memoria de forma instantánea bajo mutex internos (`modbus_registry`, `ao_network`).
+2. **Notificación en Bus Zbus**: Al mutar una configuración, se emite un evento en el canal `chan_system_config`.
+3. **Coordinador Asíncrono (`ao_storage`)**: Un Active Object dedicado recibe los eventos, aplica una ventana de retardo (*debounce* de 500 ms) para amortiguar ráfagas de cambios, y ejecuta de forma atómica y en segundo plano `mconf_save()`.
+
+### 7.2 Particionamiento Modular de la EEPROM
+Para evitar que un cambio en la configuración de red o de telemetría invalide los datos de Modbus o de calibración, la EEPROM de 32 KB se divide en regiones virtuales independientes mediante `mconf_zephyr_eeprom_init()`:
+- `0x0000` (1 KB): Identidad del Dispositivo (`CONFIG_DOMAIN_DEVICE`)
+- `0x0400` (2 KB): Registro Modbus y Buses (`CONFIG_DOMAIN_MODBUS`)
+- `0x0C00` (1 KB): Parámetros de Red Ethernet (`CONFIG_DOMAIN_NET_ETH`)
+- `0x1000` (1 KB): Parámetros de Red Wi-Fi (`CONFIG_DOMAIN_NET_WIFI`)
+- `0x1400` (3 KB): Calibraciones y Offsets Analógicos (`CONFIG_DOMAIN_CALIBRATION`)
+- `0x4000` (16 KB): Registro circular de auditoría (*Event Log*)
+
+---
+
+## 8. Flujo de Trabajo para Añadir un Nuevo Módulo
 
 Cuando el equipo desarrolle una nueva característica (ej: Lectura de Energía por I2C / SPI):
 
@@ -690,7 +734,7 @@ Cuando el equipo desarrolle una nueva característica (ej: Lectura de Energía p
 
 ---
 
-## 8. Gobernanza de Código y Estándares
+## 9. Gobernanza de Código y Estándares
 
 - **Estándar C**: ISO C99 o C11.
 - **Tipos de Enteros**: Usar siempre `<stdint.h>` (`uint8_t`, `int32_t`, etc.). Prohibido usar `unsigned int`, `long` o `short` desnudos.
