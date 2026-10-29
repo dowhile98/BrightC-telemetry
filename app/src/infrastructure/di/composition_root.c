@@ -75,23 +75,27 @@ static const modbus_slave_descriptor_t k_default_slaves[] = {
  */
 static int init_transport(app_container_t *self)
 {
-    (void) memcpy(self->bus_cfg, k_fallback_bus_cfg, sizeof(self->bus_cfg));
+    (void)memcpy(self->bus_cfg, k_fallback_bus_cfg, sizeof(self->bus_cfg));
 
 #ifdef CONFIG_NANOMODBUS
     size_t bound_buses = 0U;
 
-    for (uint8_t bus = 0U; bus < (uint8_t) MODBUS_BUS_MAX; bus++) {
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
         int err = adapter_modbus_nmbs_init(&self->nmbs[bus], &k_bus_transport_cfg[bus]);
 
-        if (err == 0) {
+        if (err == 0)
+        {
             err = adapter_modbus_nmbs_port(&self->nmbs[bus], &self->client[bus]);
         }
 
-        if (err == 0) {
+        if (err == 0)
+        {
             err = i_modbus_client_get_bus_cfg(&self->client[bus], &self->bus_cfg[bus]);
         }
 
-        if (err != 0) {
+        if (err != 0)
+        {
             LOG_ERR("bus %u: transport unavailable (%d), continuing without it", bus, err);
             self->client[bus].api = NULL;
             self->client[bus].impl = NULL;
@@ -101,7 +105,8 @@ static int init_transport(app_container_t *self)
         bound_buses++;
     }
 
-    if (bound_buses == 0U) {
+    if (bound_buses == 0U)
+    {
         LOG_ERR("no Modbus transport could be brought up");
         return -ENODEV;
     }
@@ -116,20 +121,24 @@ static int init_registry(app_container_t *self)
 {
     int err = modbus_registry_init(&self->registry_impl, self->bus_cfg);
 
-    if (err != 0) {
+    if (err != 0)
+    {
         LOG_ERR("registry init failed (%d)", err);
         return err;
     }
 
     err = modbus_registry_port(&self->registry_impl, &self->registry);
-    if (err != 0) {
+    if (err != 0)
+    {
         LOG_ERR("registry port binding failed (%d)", err);
         return err;
     }
 
-    for (size_t i = 0U; i < ARRAY_SIZE(k_default_slaves); i++) {
+    for (size_t i = 0U; i < ARRAY_SIZE(k_default_slaves); i++)
+    {
         err = modbus_registry_register(&self->registry_impl, &k_default_slaves[i]);
-        if (err != 0) {
+        if (err != 0)
+        {
             LOG_ERR("registering device %u failed (%d)", k_default_slaves[i].device_id, err);
             return err;
         }
@@ -144,14 +153,16 @@ static K_THREAD_STACK_ARRAY_DEFINE(g_ao_stacks, MODBUS_BUS_MAX, AO_MODBUS_STACK_
 
 static int init_active_objects(app_container_t *self)
 {
-    for (uint8_t bus = 0U; bus < (uint8_t) MODBUS_BUS_MAX; bus++) {
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
         k_msgq_init(&self->ao_queue[bus], self->ao_queue_buf[bus], sizeof(modbus_event_t),
                     AO_MODBUS_QUEUE_DEPTH);
 
         int err = ao_modbus_init(&self->ao[bus], bus, &self->registry, &self->client[bus],
                                  &self->ao_queue[bus], g_ao_stacks[bus], AO_MODBUS_STACK_SIZE);
 
-        if (err != 0) {
+        if (err != 0)
+        {
             LOG_ERR("bus %u: active object init failed (%d)", bus, err);
             return err;
         }
@@ -164,7 +175,8 @@ static int init_active_objects(app_container_t *self)
 
 int composition_root_init(app_container_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL)
+    {
         return -EINVAL;
     }
 
@@ -173,20 +185,23 @@ int composition_root_init(app_container_t *self)
      * being mistaken for a finished one. */
     const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO;
 
-    if ((self->init_mask & done) == done) {
+    if ((self->init_mask & done) == done)
+    {
         return 0;
     }
 
-    (void) memset(self, 0, sizeof(*self));
+    (void)memset(self, 0, sizeof(*self));
 
     int err = init_transport(self);
 
-    if (err != 0) {
+    if (err != 0)
+    {
         return err;
     }
 
     err = init_registry(self);
-    if (err != 0) {
+    if (err != 0)
+    {
         return err;
     }
 
@@ -195,14 +210,17 @@ int composition_root_init(app_container_t *self)
 
 int composition_root_start(app_container_t *self)
 {
-    if (self == NULL || (self->init_mask & APP_CONTAINER_INIT_AO) == 0U) {
+    if (self == NULL || (self->init_mask & APP_CONTAINER_INIT_AO) == 0U)
+    {
         return -EINVAL;
     }
 
-    for (uint8_t bus = 0U; bus < (uint8_t) MODBUS_BUS_MAX; bus++) {
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
         int err = ao_modbus_start(&self->ao[bus]);
 
-        if (err != 0 && err != -EALREADY) {
+        if (err != 0 && err != -EALREADY)
+        {
             LOG_ERR("bus %u: active object start failed (%d)", bus, err);
             return err;
         }
