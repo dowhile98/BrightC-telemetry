@@ -4,7 +4,7 @@
 
 | Item | Value |
 | --- | --- |
-| Reviewed baseline | [`Especificacion-modelo-matematicoREVB.md`](Especificacion-modelo-matematicoREVB.md) — **Revision C** (maintained in the `REVB` file for link stability) |
+| Reviewed baseline | [`Mathematical Model Specification REVC`](Mathematical Model Specification REVC.md) — **Revision C** (maintained in the `REVB` file for link stability) |
 | Initial client delivery | `client reference/` (three `.docx` files, unmodified, original language) |
 | Target platform | DAECGE BrightC Controller V3 — STM32H743ZIT6, Cortex-M7 @ 480 MHz, Zephyr RTOS |
 | Review date | 2026-10-30 |
@@ -21,7 +21,7 @@ HVAC-capacity project. It holds two different kinds of material:
 1. **`client reference/`** — the documents Entel delivered at the start of the project. They define the
    business objective, the field installation concept, an early two-sensor deployment and a prototype
    algorithm. They are historical input, kept verbatim.
-2. **`Especificacion-modelo-matematicoREVB.md`** — the specification produced from that input. It
+2. **`Mathematical Model Specification REVC.md`** — the specification produced from that input. It
    generalises the sensor topology to `(N + N) + M`, defines the pilot as `6 + 6 + 2 = 14` PT100
    probes, fixes the operating-state machine, the thermodynamic and psychrometric model, the
    predictive diagnostics, the hybrid storage layout and the northbound interfaces.
@@ -30,7 +30,7 @@ This README is the English review of that material: what was asked, what Revisio
 was verified against the actual board and firmware, what remains to resolve, and what will be built.
 
 In short: `client reference/` is the material **as received**; the specification in
-`Especificacion-modelo-matematicoREVB.md`, now at **Revision C**, is the version that was **reviewed
+`Mathematical Model Specification REVC.md`, now at **Revision C**, is the version that was **reviewed
 and retained for implementation**.
 
 > The source `.docx` files and Revision C are in Spanish. This README is the English interpretation.
@@ -43,7 +43,7 @@ and retained for implementation**.
 
 | Document | Role | Content and reliability |
 | --- | --- | --- |
-| [`Especificacion-modelo-matematicoREVB.md`](Especificacion-modelo-matematicoREVB.md) | **Authoritative technical baseline — Revision C** | Complete and internally structured: configurable topology, pilot sizing, acquisition paths, compressor state machine, equations, diagnostics, storage, interfaces. Includes the B → C change log (C-01…C-05). This is the reviewed version retained for implementation. |
+| [`Mathematical Model Specification REVC.md`](Mathematical Model Specification REVC.md) | **Authoritative technical baseline — Revision C** | Complete and internally structured: configurable topology, pilot sizing, acquisition paths, compressor state machine, equations, diagnostics, storage, interfaces. Includes the B → C change log (C-01…C-05). This is the reviewed version retained for implementation. |
 | [`client reference/ESPECIFICACIONES TÉCNICAS Y FUNCIONALES.docx`](<client reference/ESPECIFICACIONES TÉCNICAS Y FUNCIONALES.docx>) | Commercial and functional intent | Business case, edge-computing positioning, predictive alert matrix, `GET /api/v1/hvac/status` JSON sample, security narrative, dashboard expectations. Uses the wording “Machine Learning” and “internal three-phase measurement”, both resolved in Revision C. |
 | [`client reference/Modelo Matematico.docx`](<client reference/Modelo Matematico.docx>) | Early model presentation | Three page images of prose only (no editable text, no equations). Restates the two-probe concept, the OLS/SD approach and the diagnostic matrix. Superseded by Revision C. |
 | [`client reference/Telemetria predictiva de capacidad Climatica.docx`](<client reference/Telemetria predictiva de capacidad Climatica.docx>) | Initial field and algorithm proposal | Two PT100 per room on `RTD4`/`RTD5`, sample register map (`0x001D/0x001E`, `0x001B`, `0x0028`, `0x0033`), a Python reference implementation with fixed 3400/6800 m³/h airflow, HMI layout and dashboard widgets. |
@@ -51,7 +51,7 @@ and retained for implementation**.
 ### 2.1 Source precedence
 
 1. Approved site electrical, mechanical and cybersecurity requirements (not yet delivered).
-2. `Especificacion-modelo-matematicoREVB.md` at Revision C, as amended by the findings still open in §5.2.
+2. `Mathematical Model Specification REVC.md` at Revision C, as amended by the findings still open in §5.2.
 3. `client reference/*.docx` for commercial intent and field assumptions only.
 4. This README for the engineering interpretation and the implementation plan.
 
@@ -432,7 +432,7 @@ introduce a version-2 record without ambiguity.
 
 ## 9. Change control and next actions
 
-1. **Done — Revision C issued** in `Especificacion-modelo-matematicoREVB.md`, closing F-01, F-02, F-06,
+1. **Done — Revision C issued** in `Mathematical Model Specification REVC`, closing F-01, F-02, F-06,
    F-13 and F-14 (C-01…C-05). Thirteen findings remain open (§5.2) and drive the next steps.
 2. Publish the interface annexes (Modbus TCP map, MIB, REST schemas, alarm codes) — closes F-03 and F-17.
 3. Obtain the approved site drawing, the meter data sheet with the CT ratio, and the answers to
