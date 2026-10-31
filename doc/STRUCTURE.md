@@ -204,6 +204,7 @@ BrightC_TelemetryWorkspace/                  # Root of the West Workspace
         │   ├── modbus_subsystem.md          # Complete Modbus subsystem architecture
         │   ├── network_subsystem.md         # Network subsystem architecture (Ethernet / WiFi)
         │   ├── storage_subsystem.md         # EEPROM persistence subsystem architecture
+        │   ├── sensor_subsystem.md          # Sensor ingestion & hardware-agnostic routing architecture
         │   └── system_indicators.md         # System indicators architecture (LED / Buzzer)
         ├── brightcV3.md                     # HW schematic and pinctrl reference
         └── Doxyfile                         # API documentation generator
@@ -699,7 +700,10 @@ To avoid a change in network or telemetry configuration invalidating Modbus or c
 - `0x0400` (2 KB): Modbus Register and Buses (`CONFIG_DOMAIN_MODBUS`)
 - `0x0C00` (1 KB): Ethernet Network Parameters (`CONFIG_DOMAIN_NET_ETH`)
 - `0x1000` (1 KB): Wi-Fi Network Parameters (`CONFIG_DOMAIN_NET_WIFI`)
-- `0x1400` (3 KB): Calibrations and Analog Offsets (`CONFIG_DOMAIN_CALIBRATION`)
+- `0x1400` (1 KB): Calibrations and Analog Offsets (`CONFIG_DOMAIN_CALIBRATION`)
+- `0x1800` (2 KB): Sensor Routing and Roles (`CONFIG_DOMAIN_SENSOR_CFG`)
+- `0x2000` (2 KB): OLS Betas and Thermal Baseline (`CONFIG_DOMAIN_BASELINE`)
+- `0x2800` (6 KB): Reserved for future security/SNMP extensions
 - `0x4000` (16 KB): Circular audit log (*Event Log*)
 
 ---

@@ -14,6 +14,8 @@ target_sources(app PRIVATE
     src/application/active_objects/ao_modbus.c
     src/application/modbus/modbus_registry.c
     src/domain/services/cwt_tm16pt_codec.c
+    src/domain/services/jsy_mk339_codec.c
+    src/domain/services/sensor_matrix_mapper.c
     src/domain/services/slave_scheduler.c
     src/infrastructure/di/composition_root.c
 )

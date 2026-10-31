@@ -10,6 +10,7 @@
 #include <zephyr/logging/log.h>
 
 #include "domain/services/cwt_tm16pt_codec.h"
+#include "domain/services/jsy_mk339_codec.h"
 
 LOG_MODULE_REGISTER(ao_modbus, LOG_LEVEL_INF);
 
@@ -17,7 +18,7 @@ LOG_MODULE_REGISTER(ao_modbus, LOG_LEVEL_INF);
 static modbus_transaction_result_t poll_target(ao_modbus_t *self,
                                                const modbus_poll_target_t *target)
 {
-    uint16_t registers[CWT_TM16PT_SCALED_REG_COUNT];
+    uint16_t registers[JSY_MK339_ELECTRICAL_FULL_REG_COUNT];
 
     switch (target->dev_type) {
     case MODBUS_DEV_TYPE_CWT_TM16PT:
@@ -26,6 +27,26 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
         return i_modbus_client_read_holding_registers(
             self->client, target->slave_addr, CWT_TM16PT_REG_TEMP_SCALED_BASE,
             CWT_TM16PT_SCALED_REG_COUNT, registers, (int32_t) target->timeout_ms);
+
+    case MODBUS_DEV_TYPE_JSY_MK339: {
+        modbus_transaction_result_t res = i_modbus_client_read_holding_registers(
+            self->client, target->slave_addr, JSY_MK339_REG_ELECTRICAL_BASE,
+            JSY_MK339_ELECTRICAL_FULL_REG_COUNT, registers, (int32_t) target->timeout_ms);
+        if (res == MODBUS_RESULT_OK) {
+            energy_reading_t reading;
+            if (jsy_mk339_parse_electrical_parameters(registers,
+                                                      JSY_MK339_ELECTRICAL_FULL_REG_COUNT,
+                                                      &reading) == 0) {
+                reading.device_id = target->device_id;
+                reading.timestamp_us = (uint64_t) k_ticks_to_us_near64(k_uptime_ticks());
+                LOG_DBG("bus %u: dev %u P_total=%.2f kW, E_total=%.2f kWh",
+                        self->bus_id, target->device_id,
+                        (double)reading.total_active_power_kw,
+                        reading.total_active_energy_kwh);
+            }
+        }
+        return res;
+    }
 
     default:
         LOG_WRN("bus %u: device %u has unsupported type %u", self->bus_id, target->device_id,

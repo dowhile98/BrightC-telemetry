@@ -1,0 +1,12 @@
+common:
+  tags:
+    - unit
+    - sensor
+    - clean_architecture
+  platform_allow:
+    - native_sim
+    - qemu_cortex_m3
+tests:
+  unit.sensor.all:
+    integration_platforms:
+      - native_sim

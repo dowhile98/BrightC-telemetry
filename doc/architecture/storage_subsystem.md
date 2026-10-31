@@ -40,15 +40,17 @@ To solve these problems without violating Dependency Inversion (DIP):
 The physical EEPROM has 32,768 bytes (32 KB, addresses `0x0000` to `0x7FFF`). Through the `base_offset` and `total_size` parameters of `mconf_zephyr_eeprom_init()`, memory is partitioned into independent logical regions:
 
 ```text
-Base Offset   Total Size    Logical Domain         Structure and Purpose
+Base Offset   Total Size    Logical Domain             Structure and Purpose
 ───────────────────────────────────────────────────────────────────────────────────────────
-0x0000        1024 B (1 KB)  CONFIG_DOMAIN_DEVICE   2 slots of 512 B (Serial, HW Ver, Alias)
-0x0400        2048 B (2 KB)  CONFIG_DOMAIN_MODBUS   2 slots of 1 KB (Buses + 32 Slaves)
-0x0C00        1024 B (1 KB)  CONFIG_DOMAIN_NET_ETH  2 slots of 512 B (Static IP/DHCP, MAC, gateway)
-0x1000        1024 B (1 KB)  CONFIG_DOMAIN_NET_WIFI 2 slots of 512 B (STA/AP/STA+AP mode, SSID, credentials, soft-AP IP)
-0x1400        3072 B (3 KB)  CONFIG_DOMAIN_CALIB    2 slots of 1.5 KB (Offsets and ADC Factors)
-0x2000        8192 B (8 KB)  RESERVED               Future expansions (SNMP, Certificates)
-0x4000       16384 B (16 KB) EVENT LOG / HISTORY    Circular storage for auditing
+0x0000        1024 B (1 KB)  CONFIG_DOMAIN_DEVICE       2 slots of 512 B (Serial, HW Ver, Alias)
+0x0400        2048 B (2 KB)  CONFIG_DOMAIN_MODBUS       2 slots of 1 KB (Buses + 32 Slaves)
+0x0C00        1024 B (1 KB)  CONFIG_DOMAIN_NET_ETH      2 slots of 512 B (Static IP/DHCP, MAC, gateway)
+0x1000        1024 B (1 KB)  CONFIG_DOMAIN_NET_WIFI     2 slots of 512 B (STA/AP/STA+AP mode, SSID, credentials, soft-AP IP)
+0x1400        1024 B (1 KB)  CONFIG_DOMAIN_CALIBRATION  2 slots of 512 B (Offsets and ADC Factors)
+0x1800        2048 B (2 KB)  CONFIG_DOMAIN_SENSOR_CFG   2 slots of 1 KB (Sensor Channel Routing & Roles)
+0x2000        2048 B (2 KB)  CONFIG_DOMAIN_BASELINE     2 slots of 1 KB (OLS 64-bit Betas & Baseline Signatures)
+0x2800        6144 B (6 KB)  RESERVED                   Future expansions (SNMP, Certificates)
+0x4000       16384 B (16 KB) EVENT LOG / HISTORY        Circular storage for auditing
 ───────────────────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -123,6 +125,8 @@ typedef enum {
     CONFIG_DOMAIN_NET_ETH,       /**< Ethernet interface configuration (IP, DHCP, MAC) */
     CONFIG_DOMAIN_NET_WIFI,      /**< Wi-Fi interface configuration (mode, SSID, credentials) */
     CONFIG_DOMAIN_CALIBRATION,   /**< Analog input calibration constants */
+    CONFIG_DOMAIN_SENSOR_CFG,    /**< Physical to semantic sensor routing table */
+    CONFIG_DOMAIN_BASELINE,      /**< 7-day learned OLS coefficients and thermal baseline */
     CONFIG_DOMAIN_MAX            /**< Upper limit of domains */
 } config_domain_t;
 ```
