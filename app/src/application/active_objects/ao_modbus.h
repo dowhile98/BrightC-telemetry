@@ -48,6 +48,7 @@ extern "C" {
 /** Commands accepted by a polling thread. */
 typedef enum {
     AO_MODBUS_EVENT_POLL_NOW = 0, /**< Break the current wait and poll immediately */
+    AO_MODBUS_EVENT_WRITE_COIL,   /**< Asynchronous write to a relay coil (FC05/FC0F) */
     AO_MODBUS_EVENT_STOP          /**< Leave the polling loop */
 } modbus_event_type_t;
 
@@ -56,6 +57,13 @@ typedef enum {
  */
 typedef struct {
     uint8_t type; /**< modbus_event_type_t */
+
+    /* Valid when type == AO_MODBUS_EVENT_WRITE_COIL */
+    uint8_t device_id;      /**< Logical device id (from the registry) */
+    uint8_t slave_addr;     /**< Modbus unit identifier */
+    uint16_t coil_addr;     /**< Coil address (0x0000-0x001F for Waveshare 32CH) */
+    uint16_t coil_value;    /**< 0xFF00=ON, 0x0000=OFF, 0x5500=toggle */
+    int32_t timeout_ms;     /**< Response timeout */
 } modbus_event_t;
 
 /**

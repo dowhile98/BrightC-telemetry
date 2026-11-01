@@ -21,7 +21,7 @@ LOG_MODULE_REGISTER(modbus_bus_probe, LOG_LEVEL_INF);
 
 /** Address range walked when looking for a silent slave. */
 #define PROBE_ADDR_FIRST 1U
-#define PROBE_ADDR_LAST  2U
+#define PROBE_ADDR_LAST  4U
 
 /** Addresses the walk can remember. One per address in the range above. */
 #define PROBE_ADDR_SLOTS (PROBE_ADDR_LAST - PROBE_ADDR_FIRST + 1U)

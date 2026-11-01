@@ -11,6 +11,7 @@
 
 #include "domain/services/cwt_tm16pt_codec.h"
 #include "domain/services/jsy_mk339_codec.h"
+#include "domain/services/waveshare_relay_codec.h"
 #include "domain/services/mbsl32di_codec.h"
 
 LOG_MODULE_REGISTER(ao_modbus, LOG_LEVEL_INF);
@@ -63,6 +64,27 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
         return res;
     }
 
+    case MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH: {
+        /* FC01: read all 32 coils at once (addresses 0x0000-0x001F).
+         * The response is a 4-byte little-endian bitmask. */
+        uint8_t coil_bytes[WAVESHARE_RELAY_COIL_BYTES];
+        modbus_transaction_result_t res = i_modbus_client_read_coils(
+            self->client, target->slave_addr, WAVESHARE_RELAY_COIL_ADDR_BASE,
+            WAVESHARE_RELAY_32CH_CHANNEL_COUNT, coil_bytes, (int32_t) target->timeout_ms);
+        if (res == MODBUS_RESULT_OK) {
+            relay_state_t states[WAVESHARE_RELAY_32CH_CHANNEL_COUNT];
+            if (waveshare_relay_parse_coils_response(coil_bytes,
+                                                     WAVESHARE_RELAY_COIL_BYTES,
+                                                     states) == 0) {
+                LOG_DBG("bus %u: dev %u relay states parsed (%u channels)",
+                        self->bus_id, target->device_id,
+                        WAVESHARE_RELAY_32CH_CHANNEL_COUNT);
+                /* TODO: publish relay states on a Zbus channel when one exists. */
+            }
+        }
+        return res;
+    }
+
     default:
         LOG_WRN("bus %u: device %u has unsupported type %u", self->bus_id, target->device_id,
                 target->dev_type);
@@ -106,9 +128,26 @@ static void ao_modbus_thread(void *p1, void *p2, void *p3)
 
         modbus_event_t event;
 
-        if (k_msgq_get(self->queue, &event, K_MSEC(idle_wait_ms(self, now_ms))) == 0 &&
-            event.type == AO_MODBUS_EVENT_STOP) {
-            break;
+        if (k_msgq_get(self->queue, &event, K_MSEC(idle_wait_ms(self, now_ms))) == 0) {
+            if (event.type == AO_MODBUS_EVENT_STOP) {
+                break;
+            }
+
+            if (event.type == AO_MODBUS_EVENT_WRITE_COIL) {
+                /* Asynchronous relay write: half-duplex bus is owned by this
+                 * thread, so no other context may transmit on the UART. */
+                modbus_transaction_result_t res = i_modbus_client_write_single_coil(
+                    self->client, event.slave_addr, event.coil_addr, event.coil_value,
+                    event.timeout_ms);
+
+                (void) i_slave_registry_record(self->registry, event.device_id, res,
+                                               (uint64_t) k_uptime_get());
+
+                LOG_DBG("bus %u: write coil dev=%u addr=0x%04X value=0x%04X -> %d",
+                        self->bus_id, event.device_id, event.coil_addr, event.coil_value, res);
+            }
+
+            continue;
         }
     }
 

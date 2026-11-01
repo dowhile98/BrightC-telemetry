@@ -17,7 +17,7 @@ source "subsys/logging/Kconfig.template.log_config"
 config APP_MODBUS_BUS_PROBE
 	bool "Modbus bring-up diagnostic"
 	depends on NANOMODBUS
-	default n
+	default y
 	help
 	  Sweep the Modbus slave addresses and the energy-meter register window
 	  once at boot, before the polling threads claim the bus, and log every

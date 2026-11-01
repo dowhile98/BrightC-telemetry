@@ -123,6 +123,101 @@ static modbus_transaction_result_t write_single_register(void *impl, uint8_t sla
     return classify(nmbs_z_client_get_last_error(&self->client));
 }
 
+static modbus_transaction_result_t read_coils(void *impl, uint8_t slave_addr,
+                                              uint16_t coil_addr, uint16_t quantity,
+                                              uint8_t *out, int32_t timeout_ms)
+{
+    adapter_modbus_nmbs_t *self = (adapter_modbus_nmbs_t *) impl;
+
+    if (self == NULL || !self->is_ready || out == NULL) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    int err = nmbs_z_client_set_timeouts(&self->client, timeout_ms, byte_timeout_ms(self));
+
+    if (err != 0) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    nmbs_bitfield coils_buf = {0};
+
+    err = nmbs_z_client_read_coils_addr(&self->client, slave_addr, coil_addr, quantity,
+                                        coils_buf, K_FOREVER);
+
+    if (err == 0) {
+        size_t byte_count = ((size_t) quantity + 7U) / 8U;
+        (void) memcpy(out, coils_buf, byte_count);
+        return MODBUS_RESULT_OK;
+    }
+
+    return classify(nmbs_z_client_get_last_error(&self->client));
+}
+
+static modbus_transaction_result_t write_single_coil(void *impl, uint8_t slave_addr,
+                                                     uint16_t coil_addr, uint16_t value,
+                                                     int32_t timeout_ms)
+{
+    adapter_modbus_nmbs_t *self = (adapter_modbus_nmbs_t *) impl;
+
+    if (self == NULL || !self->is_ready) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    int err = nmbs_z_client_set_timeouts(&self->client, timeout_ms, byte_timeout_ms(self));
+
+    if (err != 0) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    /* Modbus FC05 specifies 0xFF00 = ON, 0x0000 = OFF.
+     * Also accept boolean 1 for ON. */
+    bool coil_value = (value == 0xFF00U) || (value == 1U);
+
+    err = nmbs_z_client_write_single_coil_addr(&self->client, slave_addr, coil_addr,
+                                               coil_value, K_FOREVER);
+
+    if (err == 0) {
+        return MODBUS_RESULT_OK;
+    }
+
+    return classify(nmbs_z_client_get_last_error(&self->client));
+}
+
+static modbus_transaction_result_t write_multiple_coils(void *impl, uint8_t slave_addr,
+                                                        uint16_t coil_addr, uint16_t quantity,
+                                                        const uint8_t *values, int32_t timeout_ms)
+{
+    adapter_modbus_nmbs_t *self = (adapter_modbus_nmbs_t *) impl;
+
+    if (self == NULL || !self->is_ready || values == NULL) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    int err = nmbs_z_client_set_timeouts(&self->client, timeout_ms, byte_timeout_ms(self));
+
+    if (err != 0) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    nmbs_bitfield coils_buf = {0};
+    size_t byte_count = ((size_t) quantity + 7U) / 8U;
+
+    if (byte_count > sizeof(coils_buf)) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    (void) memcpy(coils_buf, values, byte_count);
+
+    err = nmbs_z_client_write_multiple_coils_addr(&self->client, slave_addr, coil_addr,
+                                                  quantity, coils_buf, K_FOREVER);
+
+    if (err == 0) {
+        return MODBUS_RESULT_OK;
+    }
+
+    return classify(nmbs_z_client_get_last_error(&self->client));
+}
+
 static int set_bus_cfg(void *impl, const modbus_bus_cfg_t *cfg)
 {
     adapter_modbus_nmbs_t *self = (adapter_modbus_nmbs_t *) impl;
@@ -170,6 +265,9 @@ static int get_bus_cfg(void *impl, modbus_bus_cfg_t *out)
 static const i_modbus_client_api_t k_adapter_api = {
     .read_holding_registers = read_holding_registers,
     .write_single_register = write_single_register,
+    .read_coils = read_coils,
+    .write_single_coil = write_single_coil,
+    .write_multiple_coils = write_multiple_coils,
     .set_bus_cfg = set_bus_cfg,
     .get_bus_cfg = get_bus_cfg,
 };

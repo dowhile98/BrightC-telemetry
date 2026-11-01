@@ -64,6 +64,54 @@ typedef struct {
                                                          int32_t timeout_ms);
 
     /**
+     * @brief Read a contiguous block of coils (discrete outputs) (FC01).
+     *
+     * @param[in]  impl       Implementation.
+     * @param[in]  slave_addr Modbus unit identifier (1..247).
+     * @param[in]  coil_addr  First coil address.
+     * @param[in]  quantity   Number of coils (1..2000).
+     * @param[out] out        Destination buffer, bit-packed LSB-first (one bit
+     *                        per coil), at least ceil(quantity / 8) bytes.
+     * @param[in]  timeout_ms Response timeout in milliseconds.
+     *
+     * @return Same classification as @ref read_holding_registers.
+     */
+    modbus_transaction_result_t (*read_coils)(void *impl, uint8_t slave_addr,
+                                              uint16_t coil_addr, uint16_t quantity,
+                                              uint8_t *out, int32_t timeout_ms);
+
+    /**
+     * @brief Write a single coil (FC05).
+     *
+     * @param[in] impl       Implementation.
+     * @param[in] slave_addr Modbus unit identifier (1..247).
+     * @param[in] coil_addr  Coil address.
+     * @param[in] value      0xFF00 = ON, 0x0000 = OFF, 0x5500 = toggle.
+     * @param[in] timeout_ms Response timeout in milliseconds.
+     *
+     * @return Same classification as @ref read_holding_registers.
+     */
+    modbus_transaction_result_t (*write_single_coil)(void *impl, uint8_t slave_addr,
+                                                     uint16_t coil_addr, uint16_t value,
+                                                     int32_t timeout_ms);
+
+    /**
+     * @brief Write multiple coils (FC0F).
+     *
+     * @param[in]  impl       Implementation.
+     * @param[in]  slave_addr Modbus unit identifier (1..247).
+     * @param[in]  coil_addr  First coil address.
+     * @param[in]  quantity   Number of coils (1..2000).
+     * @param[in]  values     Bit-packed values, LSB-first, one bit per coil.
+     * @param[in]  timeout_ms Response timeout in milliseconds.
+     *
+     * @return Same classification as @ref read_holding_registers.
+     */
+    modbus_transaction_result_t (*write_multiple_coils)(void *impl, uint8_t slave_addr,
+                                                        uint16_t coil_addr, uint16_t quantity,
+                                                        const uint8_t *values, int32_t timeout_ms);
+
+    /**
      * @brief Apply a new line configuration to the underlying UART.
      *
      * The implementation must preserve the RS-485 flow-control mode so that a
@@ -173,6 +221,87 @@ i_modbus_client_write_single_register(const i_modbus_client_t *client, uint8_t s
 
     return client->api->write_single_register(client->impl, slave_addr, reg_addr, value,
                                               timeout_ms);
+}
+
+/**
+ * @brief Read a contiguous block of coils (FC01).
+ *
+ * @param[in]  client     Bound client handle.
+ * @param[in]  slave_addr Modbus unit identifier (1..247).
+ * @param[in]  coil_addr  First coil address.
+ * @param[in]  quantity   Number of coils (1..2000).
+ * @param[out] out        Destination buffer, bit-packed LSB-first; must not be NULL.
+ * @param[in]  timeout_ms Response timeout in milliseconds; must be positive.
+ *
+ * @return MODBUS_RESULT_OK on success, MODBUS_RESULT_EXCEPTION when the slave
+ *         answered with a Modbus exception, MODBUS_RESULT_INVALID when the
+ *         request was rejected before transmission, or the wire-level failure
+ *         reported by the adapter.
+ */
+static inline modbus_transaction_result_t
+i_modbus_client_read_coils(const i_modbus_client_t *client, uint8_t slave_addr,
+                           uint16_t coil_addr, uint16_t quantity, uint8_t *out,
+                           int32_t timeout_ms)
+{
+    if (!i_modbus_client_is_bound(client) || out == NULL ||
+        !modbus_slave_addr_is_valid(slave_addr) || quantity == 0U ||
+        quantity > 2000U || timeout_ms <= 0) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    return client->api->read_coils(client->impl, slave_addr, coil_addr, quantity, out,
+                                   timeout_ms);
+}
+
+/**
+ * @brief Write a single coil (FC05).
+ *
+ * @param[in] client     Bound client handle.
+ * @param[in] slave_addr Modbus unit identifier (1..247).
+ * @param[in] coil_addr  Coil address.
+ * @param[in] value      0xFF00 = ON, 0x0000 = OFF, 0x5500 = toggle.
+ * @param[in] timeout_ms Response timeout in milliseconds; must be positive.
+ *
+ * @return Same classification as @ref i_modbus_client_read_coils.
+ */
+static inline modbus_transaction_result_t
+i_modbus_client_write_single_coil(const i_modbus_client_t *client, uint8_t slave_addr,
+                                  uint16_t coil_addr, uint16_t value, int32_t timeout_ms)
+{
+    if (!i_modbus_client_is_bound(client) || !modbus_slave_addr_is_valid(slave_addr) ||
+        timeout_ms <= 0) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    return client->api->write_single_coil(client->impl, slave_addr, coil_addr, value,
+                                          timeout_ms);
+}
+
+/**
+ * @brief Write multiple coils (FC0F).
+ *
+ * @param[in] client     Bound client handle.
+ * @param[in] slave_addr Modbus unit identifier (1..247).
+ * @param[in] coil_addr  First coil address.
+ * @param[in] quantity   Number of coils (1..2000).
+ * @param[in] values     Bit-packed values, LSB-first; must not be NULL.
+ * @param[in] timeout_ms Response timeout in milliseconds; must be positive.
+ *
+ * @return Same classification as @ref i_modbus_client_read_coils.
+ */
+static inline modbus_transaction_result_t
+i_modbus_client_write_multiple_coils(const i_modbus_client_t *client, uint8_t slave_addr,
+                                     uint16_t coil_addr, uint16_t quantity,
+                                     const uint8_t *values, int32_t timeout_ms)
+{
+    if (!i_modbus_client_is_bound(client) || values == NULL ||
+        !modbus_slave_addr_is_valid(slave_addr) || quantity == 0U ||
+        quantity > 2000U || timeout_ms <= 0) {
+        return MODBUS_RESULT_INVALID;
+    }
+
+    return client->api->write_multiple_coils(client->impl, slave_addr, coil_addr, quantity,
+                                             values, timeout_ms);
 }
 
 /**

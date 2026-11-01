@@ -65,6 +65,60 @@ static modbus_transaction_result_t fake_write_single(void *impl, uint8_t slave_a
     return MODBUS_RESULT_OK;
 }
 
+static modbus_transaction_result_t fake_read_coils(void *impl, uint8_t slave_addr,
+                                                   uint16_t coil_addr, uint16_t quantity,
+                                                   uint8_t *out, int32_t timeout_ms)
+{
+    fake_client_t *fake = (fake_client_t *) impl;
+
+    fake->calls++;
+    if (slave_addr < 16U) {
+        fake->calls_by_addr[slave_addr]++;
+    }
+    fake->last_addr = slave_addr;
+    fake->last_reg = coil_addr;
+    fake->quantity = quantity;
+    fake->last_timeout = timeout_ms;
+
+    if (fake->next_result == MODBUS_RESULT_OK) {
+        size_t bytes = ((size_t) quantity + 7U) / 8U;
+        (void) memset(out, 0, bytes);
+    }
+
+    return fake->next_result;
+}
+
+static modbus_transaction_result_t fake_write_single_coil(void *impl, uint8_t slave_addr,
+                                                          uint16_t coil_addr, uint16_t value,
+                                                          int32_t timeout_ms)
+{
+    fake_client_t *fake = (fake_client_t *) impl;
+
+    fake->calls++;
+    if (slave_addr < 16U) {
+        fake->calls_by_addr[slave_addr]++;
+    }
+    fake->last_addr = slave_addr;
+    fake->last_reg = coil_addr;
+    fake->last_timeout = timeout_ms;
+
+    return MODBUS_RESULT_OK;
+}
+
+static modbus_transaction_result_t fake_write_multiple_coils(void *impl, uint8_t slave_addr,
+                                                             uint16_t coil_addr, uint16_t quantity,
+                                                             const uint8_t *values, int32_t timeout_ms)
+{
+    ARG_UNUSED(impl);
+    ARG_UNUSED(slave_addr);
+    ARG_UNUSED(coil_addr);
+    ARG_UNUSED(quantity);
+    ARG_UNUSED(values);
+    ARG_UNUSED(timeout_ms);
+
+    return MODBUS_RESULT_OK;
+}
+
 static int fake_set_cfg(void *impl, const modbus_bus_cfg_t *cfg)
 {
     ARG_UNUSED(impl);
@@ -88,6 +142,9 @@ static int fake_get_cfg(void *impl, modbus_bus_cfg_t *out)
 static const i_modbus_client_api_t k_fake_api = {
     .read_holding_registers = fake_read_holding,
     .write_single_register = fake_write_single,
+    .read_coils = fake_read_coils,
+    .write_single_coil = fake_write_single_coil,
+    .write_multiple_coils = fake_write_multiple_coils,
     .set_bus_cfg = fake_set_cfg,
     .get_bus_cfg = fake_get_cfg,
 };
@@ -112,15 +169,28 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
                   APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO, "Init mask mismatch");
     zassert_true(i_slave_registry_is_bound(&s_app.registry), "Registry port must be bound");
 
-    modbus_slave_snapshot_t snap[4];
+    modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
 
-    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 4U, &count),
+    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 3U, "The default devices must be registered");
+    zassert_equal(count, 4U, "The default devices must be registered");
     zassert_equal(snap[0].descriptor.dev_type, MODBUS_DEV_TYPE_CWT_TM16PT, "Device 1 type mismatch");
     zassert_equal(snap[1].descriptor.dev_type, MODBUS_DEV_TYPE_JSY_MK339, "Device 2 type mismatch");
     zassert_equal(snap[2].descriptor.dev_type, MODBUS_DEV_TYPE_MBSL32DI, "Device 3 type mismatch");
+    zassert_equal(snap[3].descriptor.dev_type, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, "Device 4 type mismatch");
+
+    /* Relay ports verification */
+    zassert_true(i_relay_is_bound(&s_app.relay_ext), "relay_ext must be bound");
+    zassert_false(i_relay_is_bound(&s_app.relay_int), "relay_int placeholder must not be bound yet");
+
+    relay_state_t rstate = RELAY_STATE_CLOSED;
+    zassert_equal(i_relay_get_state(&s_app.relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
+    zassert_equal(rstate, RELAY_STATE_OPEN, "Initial state for relay 0 must be OPEN");
+
+    zassert_equal(i_relay_set_state(&s_app.relay_ext, RELAY_CHANNEL_0, RELAY_STATE_CLOSED), 0, "set_state failed");
+    zassert_equal(i_relay_get_state(&s_app.relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
+    zassert_equal(rstate, RELAY_STATE_CLOSED, "Relay 0 must now be CLOSED in cache");
 
     /* Idempotent. */
     zassert_equal(composition_root_init(&s_app), 0, "Second init must be a no-op");
@@ -143,18 +213,19 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     /* Let the polling threads run a few cycles. */
     k_msleep(100);
 
-    zassert_true(s_fake.calls >= 3U, "The polling thread never reached the client");
+    zassert_true(s_fake.calls >= 4U, "The polling thread never reached the client");
     zassert_true(s_fake.calls_by_addr[1] > 0U, "Slave 1 was never polled");
     zassert_true(s_fake.calls_by_addr[2] > 0U, "Slave 2 was never polled");
     zassert_true(s_fake.calls_by_addr[3] > 0U, "Slave 3 was never polled");
+    zassert_true(s_fake.calls_by_addr[4] > 0U, "Slave 4 was never polled");
     zassert_equal(s_fake.last_timeout, 300, "Timeout not taken from the descriptor");
 
-    modbus_slave_snapshot_t snap[4];
+    modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
 
-    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 4U, &count),
+    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 3U, "Snapshot count mismatch");
+    zassert_equal(count, 4U, "Snapshot count mismatch");
     zassert_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
     zassert_true(snap[0].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[0].runtime.in_flight, "The claim was not released");
@@ -167,19 +238,25 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     zassert_true(snap[2].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[2].runtime.in_flight, "The claim was not released");
 
+    zassert_equal(snap[3].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
+    zassert_true(snap[3].runtime.successful_polls > 0U, "Success counter not updated");
+    zassert_false(snap[3].runtime.in_flight, "The claim was not released");
+
     /* Failures must degrade the slave and reach the registry. */
     s_fake.next_result = MODBUS_RESULT_TIMEOUT;
     k_msleep(1200);
 
-    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 4U, &count),
+    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 3U, "Snapshot count mismatch after failure");
+    zassert_equal(count, 4U, "Snapshot count mismatch after failure");
     zassert_true(snap[0].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
     zassert_true(snap[1].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[1].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
     zassert_true(snap[2].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[2].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
+    zassert_true(snap[3].runtime.timeout_count > 0U, "Timeouts not recorded");
+    zassert_not_equal(snap[3].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
 
     zassert_equal(ao_modbus_stop(&s_app.ao[0]), 0, "Stop failed");
     zassert_equal(ao_modbus_stop(&s_app.ao[1]), 0, "Stop failed");

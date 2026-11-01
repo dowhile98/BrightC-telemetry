@@ -18,11 +18,13 @@
 #include "application/modbus/modbus_registry.h"
 #include "common/modbus_types.h"
 #include "interfaces/i_modbus_client.h"
+#include "interfaces/i_relay.h"
 #include "interfaces/i_slave_registry.h"
 
 #ifdef CONFIG_NANOMODBUS
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
 #endif
+#include "infrastructure/adapters/adapter_relay_modbus.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,12 +51,15 @@ typedef struct {
     /* Ports exposed to the rest of the application */
     i_slave_registry_t registry;              /**< Slave registry port */
     i_modbus_client_t client[MODBUS_BUS_MAX]; /**< One client port per bus */
+    i_relay_t relay_ext;                      /**< External relay port (Waveshare Modbus 32CH) */
+    i_relay_t relay_int;                      /**< Internal relay port (placeholder for onboard GPIO / MCP23S17) */
 
     /* Adapters, stored by value */
     modbus_registry_t registry_impl;          /**< Concrete registry */
 #ifdef CONFIG_NANOMODBUS
     adapter_modbus_nmbs_t nmbs[MODBUS_BUS_MAX]; /**< nanoMODBUS client per bus */
 #endif
+    adapter_relay_modbus_t waveshare_relay;   /**< Waveshare relay module adapter */
 
     /* Active objects and their static resources */
     ao_modbus_t ao[MODBUS_BUS_MAX];             /**< One polling thread per bus */

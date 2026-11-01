@@ -56,14 +56,14 @@ static const nmbs_z_serial_transport_config_t k_bus_transport_cfg[MODBUS_BUS_MAX
 static const modbus_slave_descriptor_t k_default_slaves[] = {
     {
         .device_id = 1U,
-        .bus_id = MODBUS_BUS_RS485_1,
+        .bus_id = MODBUS_BUS_RS485_2,
         .slave_addr = 1U,
         .dev_type = MODBUS_DEV_TYPE_CWT_TM16PT,
         .poll_interval_ms = 1000U,
         .timeout_ms = 300U,
         .is_enabled = true,
     },
-    {
+   /* {
         .device_id = 2U,
         .bus_id = MODBUS_BUS_RS485_1,
         .slave_addr = 2U,
@@ -81,6 +81,15 @@ static const modbus_slave_descriptor_t k_default_slaves[] = {
         .timeout_ms = 300U,
         .is_enabled = true,
     },
+    {
+        .device_id = 4U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 4U,
+        .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+        .poll_interval_ms = 1000U,
+        .timeout_ms = 300U,
+        .is_enabled = true,
+    },*/
 };
 
 /**
@@ -223,7 +232,28 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
-    return init_active_objects(self);
+    err = init_active_objects(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = adapter_relay_modbus_init(&self->waveshare_relay, &self->ao[MODBUS_BUS_RS485_1], 4U,
+                                    300U);
+    if (err != 0)
+    {
+        LOG_ERR("relay adapter init failed (%d)", err);
+        return err;
+    }
+
+    err = adapter_relay_modbus_port(&self->waveshare_relay, &self->relay_ext);
+    if (err != 0)
+    {
+        LOG_ERR("relay port binding failed (%d)", err);
+        return err;
+    }
+
+    return 0;
 }
 
 int composition_root_start(app_container_t *self)

@@ -105,12 +105,11 @@ typedef enum {
  * @brief Known field device types supported by the telemetry system.
  */
 typedef enum {
-    MODBUS_DEV_TYPE_UNKNOWN = 0,      /**< Not identified */
-    MODBUS_DEV_TYPE_CWT_TM16PT,       /**< 16-channel PT100 temperature transmitter */
-    MODBUS_DEV_TYPE_ENERGY_METER_SDM, /**< Industrial Eastron/Schneider energy meter */
-    MODBUS_DEV_TYPE_GPIO_EXPANDER,    /**< Discrete inputs and relay outputs */
-    MODBUS_DEV_TYPE_JSY_MK339,        /**< JSY-MK-339 3-phase AC electrical energy meter */
-    MODBUS_DEV_TYPE_MBSL32DI          /**< MBSL32DI 32-channel digital input module */
+    MODBUS_DEV_TYPE_UNKNOWN = 0,              /**< Not identified */
+    MODBUS_DEV_TYPE_CWT_TM16PT,               /**< 16-channel PT100 temperature transmitter */
+    MODBUS_DEV_TYPE_JSY_MK339,                /**< JSY-MK-339 3-phase AC electrical energy meter */
+    MODBUS_DEV_TYPE_MBSL32DI,                 /**< MBSL32DI 32-channel digital input module */
+    MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,     /**< Waveshare Modbus RTU 32-channel relay expander */
 } modbus_device_type_t;
 
 #define MODBUS_DEV_TYPE_ENERGY_METER_JSY MODBUS_DEV_TYPE_JSY_MK339

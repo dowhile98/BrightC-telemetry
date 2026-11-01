@@ -18,6 +18,7 @@ target_sources(app PRIVATE
     src/domain/services/mbsl32di_codec.c
     src/domain/services/sensor_matrix_mapper.c
     src/domain/services/slave_scheduler.c
+    src/domain/services/waveshare_relay_codec.c
     src/infrastructure/di/composition_root.c
 )
 target_include_directories(app PRIVATE
@@ -28,7 +29,10 @@ target_include_directories(app PRIVATE
 # The nanoMODBUS transport adapter is the only part that depends on the stack,
 # so it is only compiled when the stack is enabled.
 if(CONFIG_NANOMODBUS)
-    target_sources(app PRIVATE src/infrastructure/adapters/adapter_modbus_nmbs.c)
+    target_sources(app PRIVATE
+        src/infrastructure/adapters/adapter_modbus_nmbs.c
+        src/infrastructure/adapters/adapter_relay_modbus.c
+    )
 endif()
 
 # Bring-up diagnostic for a silent Modbus slave. Off unless the build asks for
