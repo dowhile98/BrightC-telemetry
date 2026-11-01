@@ -15,9 +15,12 @@
 #include <zephyr/kernel.h>
 
 #include "application/active_objects/ao_modbus.h"
+#include "application/active_objects/ao_network.h"
 #include "application/modbus/modbus_registry.h"
 #include "common/modbus_types.h"
+#include "common/network_types.h"
 #include "interfaces/i_modbus_client.h"
+#include "interfaces/i_network.h"
 #include "interfaces/i_relay.h"
 #include "interfaces/i_slave_registry.h"
 
@@ -25,6 +28,10 @@
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
 #endif
 #include "infrastructure/adapters/adapter_relay_modbus.h"
+#ifndef CONFIG_ZTEST
+#include "infrastructure/adapters/adapter_eth_stm32.h"
+#include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,6 +41,7 @@ extern "C" {
 #define APP_CONTAINER_INIT_REGISTRY 0x01U
 #define APP_CONTAINER_INIT_AO 0x02U
 #define APP_CONTAINER_INIT_TRANSPORT 0x04U
+#define APP_CONTAINER_INIT_NETWORK 0x08U
 
 /**
  * @brief Every object of the application, wired together.
@@ -53,6 +61,8 @@ typedef struct {
     i_modbus_client_t client[MODBUS_BUS_MAX]; /**< One client port per bus */
     i_relay_t relay_ext;                      /**< External relay port (Waveshare Modbus 32CH) */
     i_relay_t relay_int;                      /**< Internal relay port (placeholder for onboard GPIO / MCP23S17) */
+    i_network_t net_eth;                      /**< Ethernet network interface port */
+    i_network_t net_wifi;                     /**< WiFi network interface port */
 
     /* Adapters, stored by value */
     modbus_registry_t registry_impl;          /**< Concrete registry */
@@ -60,11 +70,19 @@ typedef struct {
     adapter_modbus_nmbs_t nmbs[MODBUS_BUS_MAX]; /**< nanoMODBUS client per bus */
 #endif
     adapter_relay_modbus_t waveshare_relay;   /**< Waveshare relay module adapter */
+#ifndef CONFIG_ZTEST
+    adapter_eth_stm32_t eth_adapter;          /**< STM32 Ethernet adapter */
+    adapter_wifi_esp_hosted_t wifi_adapter;   /**< ESP-Hosted-MCU WiFi adapter */
+#endif
 
     /* Active objects and their static resources */
     ao_modbus_t ao[MODBUS_BUS_MAX];             /**< One polling thread per bus */
     struct k_msgq ao_queue[MODBUS_BUS_MAX];     /**< Command queues */
     uint8_t ao_queue_buf[MODBUS_BUS_MAX][AO_MODBUS_QUEUE_DEPTH * sizeof(modbus_event_t)];
+
+    ao_network_t ao_net;                        /**< Network active object */
+    struct k_msgq ao_net_queue;                 /**< Network AO command queue */
+    uint8_t ao_net_queue_buf[AO_NETWORK_QUEUE_DEPTH * sizeof(ao_network_event_t)];
 
     /* Configuration of the physical buses */
     modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];

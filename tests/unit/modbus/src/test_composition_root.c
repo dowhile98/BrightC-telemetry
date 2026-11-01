@@ -166,7 +166,8 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
     zassert_equal(s_app.init_mask,
-                  APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO, "Init mask mismatch");
+                  APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO | APP_CONTAINER_INIT_NETWORK,
+                  "Init mask mismatch");
     zassert_true(i_slave_registry_is_bound(&s_app.registry), "Registry port must be bound");
 
     modbus_slave_snapshot_t snap[5];
@@ -191,6 +192,14 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_equal(i_relay_set_state(&s_app.relay_ext, RELAY_CHANNEL_0, RELAY_STATE_CLOSED), 0, "set_state failed");
     zassert_equal(i_relay_get_state(&s_app.relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
     zassert_equal(rstate, RELAY_STATE_CLOSED, "Relay 0 must now be CLOSED in cache");
+
+    /* Network ports and AO verification */
+    zassert_true(i_network_is_bound(&s_app.net_eth), "net_eth port must be bound");
+    zassert_true(i_network_is_bound(&s_app.net_wifi), "net_wifi port must be bound");
+    zassert_equal(s_app.ao_net.eth_cfg.ip_mode, NET_IP_MODE_DHCP, "ETH default ip_mode must be DHCP");
+    zassert_equal(s_app.ao_net.eth_cfg.ip_addr, 0xC0A80164, "ETH fallback IP mismatch");
+    zassert_equal(s_app.ao_net.wifi_cfg.mode, NET_WIFI_MODE_AP, "WiFi default mode must be AP");
+    zassert_str_equal(s_app.ao_net.wifi_cfg.ap.ssid, "BrightC-AP", "WiFi default SSID mismatch");
 
     /* Idempotent. */
     zassert_equal(composition_root_init(&s_app), 0, "Second init must be a no-op");
@@ -260,6 +269,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     zassert_equal(ao_modbus_stop(&s_app.ao[0]), 0, "Stop failed");
     zassert_equal(ao_modbus_stop(&s_app.ao[1]), 0, "Stop failed");
+    zassert_equal(ao_network_stop(&s_app.ao_net), 0, "Stop ao_network failed");
     k_msleep(50);
 }
 
@@ -279,6 +289,7 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
 
     zassert_equal(ao_modbus_stop(&s_app.ao[0]), 0, "Stop failed");
     zassert_equal(ao_modbus_stop(&s_app.ao[1]), 0, "Stop failed");
+    zassert_equal(ao_network_stop(&s_app.ao_net), 0, "Stop ao_network failed");
 
     /* A stopped thread must be silent. */
     const uint32_t calls_after_stop = s_fake.calls;
@@ -288,10 +299,12 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
 
     /* Restarting must not inherit a stale STOP from the previous run. */
     zassert_equal(ao_modbus_start(&s_app.ao[0]), 0, "Restart failed");
+    zassert_equal(ao_network_start(&s_app.ao_net), 0, "Restart ao_network failed");
 
     k_msleep(1200); /* The default slave polls every 1000 ms. */
 
     zassert_true(s_fake.calls > calls_after_stop, "A restarted thread must poll again");
 
     zassert_equal(ao_modbus_stop(&s_app.ao[0]), 0, "Stop failed");
+    zassert_equal(ao_network_stop(&s_app.ao_net), 0, "Stop ao_network failed");
 }

@@ -17,6 +17,7 @@ target_sources(app PRIVATE
     src/test_waveshare_relay_codec.c
     src/test_adapter_relay_modbus.c
     ${APP_DIR}/tests/fakes/src/fake_energy_meter.c
+    ${APP_DIR}/tests/fakes/src/fake_network.c
     ${APP_DIR}/app/src/domain/services/cwt_tm16pt_codec.c
     ${APP_DIR}/app/src/domain/services/jsy_mk339_codec.c
     ${APP_DIR}/app/src/domain/services/mbsl32di_codec.c
@@ -24,6 +25,8 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/domain/services/slave_scheduler.c
     ${APP_DIR}/app/src/application/modbus/modbus_registry.c
     ${APP_DIR}/app/src/application/active_objects/ao_modbus.c
+    ${APP_DIR}/app/src/application/active_objects/ao_network.c
+    ${APP_DIR}/app/src/application/zbus/network_channels.c
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_relay_modbus.c
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c
 )

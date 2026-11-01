@@ -209,6 +209,28 @@ static int init_registry(app_container_t *self)
 }
 
 static K_THREAD_STACK_ARRAY_DEFINE(g_ao_stacks, MODBUS_BUS_MAX, AO_MODBUS_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_net_stack, AO_NETWORK_STACK_SIZE);
+
+static const net_eth_config_t k_default_eth_cfg = {
+    .ip_mode = NET_IP_MODE_DHCP,
+    .auto_dhcpv4 = 1U,
+    .ip_addr = 0xC0A80164,     /* 192.168.1.100 */
+    .subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
+    .gateway = 0xC0A80101,     /* 192.168.1.1 */
+};
+
+static const net_wifi_config_t k_default_wifi_cfg = {
+    .mode = NET_WIFI_MODE_AP,
+    .ap = {
+        .ssid = "BrightC-AP",
+        .psk = "12345678",
+        .security = NET_WIFI_SEC_WPA2_PSK,
+        .channel = 9U,
+        .max_clients = 5U,
+        .ap_ip_addr = 0xC0A80401,     /* 192.168.4.1 */
+        .ap_subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
+    },
+};
 
 static int init_active_objects(app_container_t *self)
 {
@@ -232,6 +254,61 @@ static int init_active_objects(app_container_t *self)
     return 0;
 }
 
+#if defined(CONFIG_ZTEST)
+#include "fake_network.h"
+#endif
+
+static int init_network(app_container_t *self)
+{
+    k_msgq_init(&self->ao_net_queue, self->ao_net_queue_buf, sizeof(ao_network_event_t),
+                AO_NETWORK_QUEUE_DEPTH);
+
+#if defined(CONFIG_ZTEST)
+    if (!i_network_is_bound(&self->net_eth)) {
+        self->net_eth = fake_network_get_eth_port();
+    }
+    if (!i_network_is_bound(&self->net_wifi)) {
+        self->net_wifi = fake_network_get_wifi_port();
+    }
+#else
+    const struct device *eth_dev = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mac))
+    eth_dev = DEVICE_DT_GET(DT_NODELABEL(mac));
+#endif
+    int eth_err = adapter_eth_stm32_init(&self->eth_adapter, eth_dev);
+    if (eth_err == 0) {
+        self->net_eth = adapter_eth_stm32_port(&self->eth_adapter);
+    } else {
+        LOG_WRN("adapter_eth_stm32_init failed (%d)", eth_err);
+    }
+
+    const struct device *wifi_dev = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(esp_hosted_mcu_wifi))
+    wifi_dev = DEVICE_DT_GET(DT_NODELABEL(esp_hosted_mcu_wifi));
+#endif
+    int wifi_err = adapter_wifi_esp_hosted_init(&self->wifi_adapter, wifi_dev);
+    if (wifi_err == 0) {
+        self->net_wifi = adapter_wifi_esp_hosted_port(&self->wifi_adapter);
+    } else {
+        LOG_WRN("adapter_wifi_esp_hosted_init failed (%d)", wifi_err);
+    }
+#endif
+
+
+    int err = ao_network_init(&self->ao_net, &self->net_eth, &self->net_wifi,
+                              &k_default_eth_cfg, &k_default_wifi_cfg,
+                              &self->ao_net_queue, s_ao_net_stack,
+                              K_THREAD_STACK_SIZEOF(s_ao_net_stack));
+    if (err != 0)
+    {
+        LOG_ERR("network active object init failed (%d)", err);
+        return err;
+    }
+
+    self->init_mask |= APP_CONTAINER_INIT_NETWORK;
+    return 0;
+}
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)
@@ -239,10 +316,10 @@ int composition_root_init(app_container_t *self)
         return -EINVAL;
     }
 
-    /* Idempotent: only a fully wired container is left alone. Requiring both
+    /* Idempotent: only a fully wired container is left alone. Requiring all
      * bits also keeps a container whose transport/registry step failed from
      * being mistaken for a finished one. */
-    const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO;
+    const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO | APP_CONTAINER_INIT_NETWORK;
 
     if ((self->init_mask & done) == done)
     {
@@ -285,6 +362,12 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
+    err = init_network(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
     return 0;
 }
 
@@ -302,6 +385,16 @@ int composition_root_start(app_container_t *self)
         if (err != 0 && err != -EALREADY)
         {
             LOG_ERR("bus %u: active object start failed (%d)", bus, err);
+            return err;
+        }
+    }
+
+    if ((self->init_mask & APP_CONTAINER_INIT_NETWORK) != 0U)
+    {
+        int err = ao_network_start(&self->ao_net);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("network active object start failed (%d)", err);
             return err;
         }
     }

@@ -12,6 +12,8 @@ project(app LANGUAGES C)
 target_sources(app PRIVATE
     src/main.c
     src/application/active_objects/ao_modbus.c
+    src/application/active_objects/ao_network.c
+    src/application/zbus/network_channels.c
     src/application/modbus/modbus_registry.c
     src/domain/services/cwt_tm16pt_codec.c
     src/domain/services/jsy_mk339_codec.c
@@ -21,6 +23,14 @@ target_sources(app PRIVATE
     src/domain/services/waveshare_relay_codec.c
     src/infrastructure/di/composition_root.c
 )
+
+if(CONFIG_NETWORKING)
+    target_sources(app PRIVATE
+        src/infrastructure/adapters/adapter_eth_stm32.c
+        src/infrastructure/adapters/adapter_wifi_esp_hosted.c
+    )
+endif()
+
 target_include_directories(app PRIVATE
     include
     src
