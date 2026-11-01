@@ -123,6 +123,15 @@ static void ao_modbus_thread(void *p1, void *p2, void *p3)
 
             (void) i_slave_registry_record(self->registry, target.device_id, result,
                                            (uint64_t) k_uptime_get());
+
+            if (result != MODBUS_RESULT_OK) {
+                LOG_WRN("bus %u: dev %u (addr %u) poll failed: %d",
+                        self->bus_id, target.device_id, target.slave_addr, (int)result);
+            }
+
+            if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U) {
+                k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
+            }
             continue;
         }
 
@@ -145,6 +154,10 @@ static void ao_modbus_thread(void *p1, void *p2, void *p3)
 
                 LOG_DBG("bus %u: write coil dev=%u addr=0x%04X value=0x%04X -> %d",
                         self->bus_id, event.device_id, event.coil_addr, event.coil_value, res);
+
+                if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U) {
+                    k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
+                }
             }
 
             continue;

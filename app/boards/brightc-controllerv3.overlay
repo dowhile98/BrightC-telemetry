@@ -14,9 +14,9 @@
 	/*default baud rate */
 	current-speed = <9600>;
 	/*default de-assert time */
-	de-assert-time = <2>;
+	de-assert-time = <1>;
 	/*default de-deassert time */
-	de-deassert-time = <2>;
+	de-deassert-time = <16>;
 
 	/*nanomodbus*/
 	modbusRTU0: modbusRTU0 {
@@ -31,9 +31,9 @@
 	/*default baud rate */
 	current-speed = <9600>;
 	/*default de-assert time */
-	de-assert-time = <2>;
+	de-assert-time = <1>;
 	/*default de-deassert time */
-	de-deassert-time = <2>;
+	de-deassert-time = <16>;
 
 	/*nanomodbus*/
 	modbusRTU1: modbusRTU1 {

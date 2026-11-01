@@ -53,17 +53,18 @@ static const nmbs_z_serial_transport_config_t k_bus_transport_cfg[MODBUS_BUS_MAX
  * A compile-time table, not mutable state: it will be replaced by the
  * persisted configuration once the settings backend lands.
  */
+#ifdef CONFIG_ZTEST
 static const modbus_slave_descriptor_t k_default_slaves[] = {
     {
         .device_id = 1U,
-        .bus_id = MODBUS_BUS_RS485_2,
+        .bus_id = MODBUS_BUS_RS485_1,
         .slave_addr = 1U,
         .dev_type = MODBUS_DEV_TYPE_CWT_TM16PT,
         .poll_interval_ms = 1000U,
         .timeout_ms = 300U,
         .is_enabled = true,
     },
-   /* {
+    {
         .device_id = 2U,
         .bus_id = MODBUS_BUS_RS485_1,
         .slave_addr = 2U,
@@ -89,8 +90,39 @@ static const modbus_slave_descriptor_t k_default_slaves[] = {
         .poll_interval_ms = 1000U,
         .timeout_ms = 300U,
         .is_enabled = true,
-    },*/
+    },
 };
+#else
+static const modbus_slave_descriptor_t k_default_slaves[] = {
+    {
+        .device_id = 1U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 1U,
+        .dev_type = MODBUS_DEV_TYPE_CWT_TM16PT,
+        .poll_interval_ms = 1000U,
+        .timeout_ms = 300U,
+        .is_enabled = true,
+    },
+   {
+        .device_id = 2U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 2U,
+        .dev_type = MODBUS_DEV_TYPE_JSY_MK339,
+        .poll_interval_ms = 1000U,
+        .timeout_ms = 300U,
+        .is_enabled = true,
+    },
+    {
+        .device_id = 3U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 3U,
+        .dev_type = MODBUS_DEV_TYPE_MBSL32DI,
+        .poll_interval_ms = 1000U,
+        .timeout_ms = 300U,
+        .is_enabled = true,
+    },
+};
+#endif
 
 /**
  * Bring up the transport of every bus and bind its client port.

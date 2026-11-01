@@ -17,10 +17,20 @@ source "subsys/logging/Kconfig.template.log_config"
 config APP_MODBUS_BUS_PROBE
 	bool "Modbus bring-up diagnostic"
 	depends on NANOMODBUS
-	default y
+	default n
 	help
 	  Sweep the Modbus slave addresses and the energy-meter register window
 	  once at boot, before the polling threads claim the bus, and log every
 	  outcome. It separates an addressing problem from a register-map one on
 	  a slave that answers nothing. Diagnostic builds only: it costs one
 	  transaction per probe and delays startup.
+
+config APP_MODBUS_INTER_POLL_DELAY_MS
+	int "Inter-poll turnaround delay in milliseconds"
+	default 40
+	range 0 1000
+	help
+	  Turnaround delay between consecutive Modbus transactions on the same
+	  RS-485 bus. Gives slave transceivers time to release the bus and
+	  satisfies the Modbus RTU inter-frame silence interval (t3.5+).
+

@@ -45,6 +45,13 @@ extern "C" {
 /** How long ao_modbus_stop() waits for the thread to leave its loop. */
 #define AO_MODBUS_STOP_WAIT_MS 3000U
 
+#ifdef CONFIG_APP_MODBUS_INTER_POLL_DELAY_MS
+#define AO_MODBUS_INTER_POLL_DELAY_MS CONFIG_APP_MODBUS_INTER_POLL_DELAY_MS
+#else
+#define AO_MODBUS_INTER_POLL_DELAY_MS 30U
+#endif
+
+
 /** Commands accepted by a polling thread. */
 typedef enum {
     AO_MODBUS_EVENT_POLL_NOW = 0, /**< Break the current wait and poll immediately */
