@@ -72,6 +72,15 @@ static const modbus_slave_descriptor_t k_default_slaves[] = {
         .timeout_ms = 300U,
         .is_enabled = true,
     },
+    {
+        .device_id = 3U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 3U,
+        .dev_type = MODBUS_DEV_TYPE_MBSL32DI,
+        .poll_interval_ms = 1000U,
+        .timeout_ms = 300U,
+        .is_enabled = true,
+    },
 };
 
 /**

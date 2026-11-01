@@ -13,9 +13,11 @@ target_sources(app PRIVATE
     src/test_slave_scheduler.c
     src/test_modbus_registry.c
     src/test_composition_root.c
+    src/test_mbsl32di_codec.c
     ${APP_DIR}/tests/fakes/src/fake_energy_meter.c
     ${APP_DIR}/app/src/domain/services/cwt_tm16pt_codec.c
     ${APP_DIR}/app/src/domain/services/jsy_mk339_codec.c
+    ${APP_DIR}/app/src/domain/services/mbsl32di_codec.c
     ${APP_DIR}/app/src/domain/services/slave_scheduler.c
     ${APP_DIR}/app/src/application/modbus/modbus_registry.c
     ${APP_DIR}/app/src/application/active_objects/ao_modbus.c

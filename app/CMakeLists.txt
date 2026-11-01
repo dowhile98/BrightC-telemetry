@@ -15,6 +15,7 @@ target_sources(app PRIVATE
     src/application/modbus/modbus_registry.c
     src/domain/services/cwt_tm16pt_codec.c
     src/domain/services/jsy_mk339_codec.c
+    src/domain/services/mbsl32di_codec.c
     src/domain/services/sensor_matrix_mapper.c
     src/domain/services/slave_scheduler.c
     src/infrastructure/di/composition_root.c
@@ -28,6 +29,12 @@ target_include_directories(app PRIVATE
 # so it is only compiled when the stack is enabled.
 if(CONFIG_NANOMODBUS)
     target_sources(app PRIVATE src/infrastructure/adapters/adapter_modbus_nmbs.c)
+endif()
+
+# Bring-up diagnostic for a silent Modbus slave. Off unless the build asks for
+# it, so a normal image carries no probe code at all.
+if(CONFIG_APP_MODBUS_BUS_PROBE)
+    target_sources(app PRIVATE src/application/diagnostics/modbus_bus_probe.c)
 endif()
 
 # The code below locates the git index file for this repository and adds it as a dependency for

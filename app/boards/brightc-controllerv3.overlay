@@ -6,6 +6,9 @@
 		modbus-rtu-2 = &modbusRTU1;
 	};
 };
+&usart2_rx_pd6 {
+	bias-pull-up;
+};
 
 &usart2 {
 	/*default baud rate */

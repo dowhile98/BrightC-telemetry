@@ -1,0 +1,318 @@
+
+<!DOCTYPE html>
+<html lang="cn">
+<head>
+    <title>文件下载</title>
+  
+    <link rel="icon" href="https://nwzimg.wezhan.cn/Content/images/favicon.ico?_version=20250709232451"/><link rel="shortcut icon" href="https://nwzimg.wezhan.cn/Content/images/favicon.ico?_version=20250709232451"/><link rel="bookmark" href="https://nwzimg.wezhan.cn/Content/images/favicon.ico?_version=20250709232451"/>
+    
+    
+    
+
+    <script src="https://nwzimg.wezhan.cn/Scripts/JQuery/jquery.min.js?_version=20260303160456" type="text/javascript"></script>
+    <script type="text/javascript">
+        $.ajaxSetup({
+            cache: false,
+            beforeSend: function (jqXHR, settings) {
+                settings.data = settings.data && settings.data.length > 0 ? (settings.data + "&") : "";
+                settings.data = settings.data + "__RequestVerificationToken=" + $('input[name="__RequestVerificationToken"]').val()
+                return true;
+            }
+        });
+    </script>
+</head>
+<body>    
+    <input name="__RequestVerificationToken" type="hidden" value="qPJzbZU8dGZbqPRjhiUDTMxoNx-x7I1akp7axqvFzNAb8e5w9YTi7X61YxQgI6asK8Zr62mJLtA8Boyrg_KvW7PidhX5_GD5gFyJ4-HW8lo1" />
+    <div class="account-system-main">
+        <link href="https://nwzimg.wezhan.cn/static/iconfont/1.0.0/iconfont.css?_version=20250709232456" rel="stylesheet" type="text/css"/>
+<link href="https://nwzimg.wezhan.cn/Content/public/css/bootstrap.min.css?_version=20250709232451" rel="stylesheet" type="text/css"/>
+
+<style>
+    .ep-dialogue {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 1040;
+        overflow-y: auto;
+    }
+
+    .ep-mask {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        background: url('https://nwzimg.wezhan.cn/Content/images/Authentication_bg.png?_version=20250709232451');
+        z-index: 200;
+    }
+
+    .ep-box {
+        position: relative;
+        top: 0;
+        width: 480px;
+        margin: 10vh auto 30px;
+        background-color: #fff;
+        border-radius: 6px;
+        z-index: 1041;
+        box-shadow: 0 0 10px rgb(0, 0, 0, .1);
+    }
+
+        .ep-box .ep-title {
+            position: relative;
+            min-height: 16.43px;
+            line-height: 20px;
+            padding: 15px;
+            border-bottom: 1px solid #e5e5e5;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: left;
+            margin: 0;
+        }
+
+            .ep-box .ep-title a {
+                position: absolute;
+                right: 0;
+                top: 12px;
+                height: 44px;
+                line-height: 44px;
+                text-align: center;
+                color: #999;
+                font-size: 20px;
+                text-decoration: none;
+            }
+
+        .ep-box .form-item-block {
+            padding: 0;
+        }
+
+        .ep-box .form-item-body {
+            padding: 15px 24px 5px;
+            display: flex;
+        }
+
+        .ep-box .form-label {
+            float: right;
+            width: 22%;
+            text-align: right;
+            padding-right: 16px;
+            padding-top: 9px;
+            font-size: 12px;
+            color: #656D78;
+            line-height: 14px;
+        }
+
+
+        .ep-box .form-input {
+            width: 60%;
+            font-size: 12px;
+            border-radius: 4px;
+            padding: 7px 12px !important;
+            box-sizing: border-box;
+            border: 1px solid #CCD1D9;
+            outline: none
+        }
+
+        .ep-box .img-code {
+            display: inline-block;
+            width: 100px;
+            height: 34px;
+            margin-left: 20px;
+            background-color: #f9f9f9;
+        }
+
+            .ep-box .img-code img {
+                width: 100%;
+                height: 100%;
+                cursor: pointer;
+            }
+
+        .ep-box .form-input:hover {
+            border: 1px solid #609ee9;
+        }
+
+        .ep-box .form-item-body.has-error .form-input {
+            border: 1px solid #e75845;
+        }
+
+        .ep-box .form-item-body.has-error .form-explain {
+            display: block;
+        }
+
+        .ep-box .form-explain {
+            display: none;
+            padding-top: 5px;
+            line-height: 18px;
+            font-size: 12px;
+            color: #e75845;
+        }
+
+            .ep-box .form-explain::before {
+                content: '*'
+            }
+
+    .ep-dialogue .btn {
+        margin-left: 5px;
+        background-color: #609ee9 !important;
+        border-radius: 50px;
+        padding: 6px 24px;
+        border: 1px solid #609ee9;
+        color: #fff;
+        outline: none !important;
+    }
+
+        .ep-dialogue .btn.btn-gray {
+            color: #656D78;
+            background-color: #F5F7FA !important;
+            border: 1px solid #E6E9ED;
+        }
+
+    .ep-dialogue .form-item-footer {
+        text-align: right;
+        border-top: 1px solid #eef0f3;
+        padding: 8px 15px;
+    }
+</style>
+<!--panel-->
+<div class="ep-dialogue">
+    <div class="ep-mask"></div>
+    <!--panel-->
+    <div class="ep-box" id="allPwd">
+        <div class="ep-dialogue-cont">
+            <p class="ep-title">提示</p>
+            <form class="form">
+                <div class="form-item-block">
+                    <div class="form-item-body clearfix" id="pwd">
+                        
+                        <input type="password" id="FilePassword" name="FilePassword" class="form-input form-control" value="" placeholder="请输入密码">
+
+                    </div>
+                    <div class="form-item-body  clearfix">
+                        <input type="text" id="checkImgCode" class="form-input form-control" value="" placeholder="请输入正确的验证码">
+                        <span class="img-code"><img id="vpic0" onclick="replaceCode()" src="/"></span>
+                    </div>
+                    <div class="form-item-body  clearfix">
+                        <p class="form-explain"> 密码错误，请重新输入</p>
+                    </div>
+                    <div class="form-item-footer">
+                        <button type="button" class="btn btn-gray" onclick="pageClose()">返回</button>
+                        <button type="button" class="btn btn-info" onclick="submitImgCode0()">确定</button>
+                    </div>
+                </div>
+            </form>
+            <form id="ajaxdownfile"></form>
+        </div>
+    </div>
+    <!--/panel-->
+    <div class="ep-box" id="tips">
+        <div class="ep-dialogue-cont">
+            <p class="ep-title">提示</p>
+            <form class="form">
+                <div class="form-item-block">
+                    <div class="form-item-body  ">
+                        <label class="" style="font-size: 12px; padding: 10px 0;">无法加载，流量已达上限。</label>
+                    </div>
+                    <div class="form-item-footer">
+                        <button type="button" class="btn btn-gray" onclick="pageClose()">返回</button>
+                    </div>
+                </div>
+            </form>
+            <form id="ajaxdownfile"></form>
+        </div>
+    </div>
+
+
+</div>
+
+
+<!--/panel-->
+<script type="text/javascript">
+    var type = "img";
+    var randomToken = "";
+    function generateNewCaptcha() {
+        randomToken = Math.random().toString(32);
+        return '/FileUpload/Captcha?ran=' + randomToken;
+    }
+    var vpic0 = document.getElementById('vpic0');
+    if (type == "img") {
+        vpic0.src = generateNewCaptcha();
+        var pwd = document.getElementById('pwd');//选取id为test的div元素
+        pwd.style.display = 'none';// 隐藏选择的元素
+
+        var tips = document.getElementById('tips');//选取id为test的div元素
+        tips.style.display = 'none';// 隐藏选择的元素
+    }
+    if (type == 'pwd') {
+        vpic0.src = generateNewCaptcha();
+        var pwd = document.getElementById('tips')
+        pwd.style.display = 'none';
+
+    }
+    if (type == 'tips') {
+        var pwd = document.getElementById('pwd')
+        pwd.style.display = 'none';
+        var allPwd = document.getElementById('allPwd')
+        allPwd.style.display = 'none';
+
+    }
+    function submitImgCode0() {
+        var ValidateCode = $('#checkImgCode').val().trim();
+        if (ValidateCode.length == 0) {
+            alert('请输入验证码');
+            vpic0.src =  generateNewCaptcha();
+        }
+        else {
+            $.post('/FileUpload/CheckVerificationImgCode', {
+                code: ValidateCode,
+                newRandomToken: randomToken,
+                    fileId:749046,
+                    password: $("#FilePassword").val(),
+            }, function (result) {
+                if (result.result) {
+                    var aDOM = document.createElement('a');
+                    aDOM.setAttribute('href', result.message);
+                    document.body.appendChild(aDOM);
+                    aDOM.click();
+                    setTimeout(pageClose, 3000)
+                } else {
+                    alert(result.message);
+                    vpic0.src = generateNewCaptcha();
+                }
+            });
+        }
+    }
+
+
+    function replaceCode() {
+		vpic0.src =   generateNewCaptcha();;
+    };
+    //回退
+    function pageClose() {
+        if (window.history.length > 1) {
+            window.history.back();
+        } else {
+            window.close();
+        }
+    }
+
+
+    //回车事件
+    document.onkeydown = function (e) {
+        //// 兼容ff和ie和opera
+        //var theevent = window.event || e;
+        //var code = theevent.keycode || theevent.which || theevent.charcode;
+        //if (code == 13) {
+        //    filedownload();
+        //}
+    }
+
+
+
+</script>
+    </div>
+    
+    
+    
+</body>
+</html>

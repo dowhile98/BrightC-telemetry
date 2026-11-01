@@ -11,6 +11,7 @@
 
 #include "domain/services/cwt_tm16pt_codec.h"
 #include "domain/services/jsy_mk339_codec.h"
+#include "domain/services/mbsl32di_codec.h"
 
 LOG_MODULE_REGISTER(ao_modbus, LOG_LEVEL_INF);
 
@@ -43,6 +44,20 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
                         self->bus_id, target->device_id,
                         (double)reading.total_active_power_kw,
                         reading.total_active_energy_kwh);
+            }
+        }
+        return res;
+    }
+
+    case MODBUS_DEV_TYPE_MBSL32DI: {
+        modbus_transaction_result_t res = i_modbus_client_read_holding_registers(
+            self->client, target->slave_addr, MBSL32DI_REG_INPUTS_BASE,
+            MBSL32DI_INPUTS_REG_COUNT, registers, (int32_t) target->timeout_ms);
+        if (res == MODBUS_RESULT_OK) {
+            mbsl32di_reading_t reading;
+            if (mbsl32di_parse_inputs(registers, MBSL32DI_INPUTS_REG_COUNT, &reading) == 0) {
+                LOG_INF("bus %u: dev %u MBSL32DI inputs=0x%08X", self->bus_id, target->device_id,
+                        (unsigned int)reading.raw_inputs);
             }
         }
         return res;

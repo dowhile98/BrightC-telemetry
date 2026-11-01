@@ -117,9 +117,10 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 
     zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 4U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 2U, "The default devices must be registered");
+    zassert_equal(count, 3U, "The default devices must be registered");
     zassert_equal(snap[0].descriptor.dev_type, MODBUS_DEV_TYPE_CWT_TM16PT, "Device 1 type mismatch");
     zassert_equal(snap[1].descriptor.dev_type, MODBUS_DEV_TYPE_JSY_MK339, "Device 2 type mismatch");
+    zassert_equal(snap[2].descriptor.dev_type, MODBUS_DEV_TYPE_MBSL32DI, "Device 3 type mismatch");
 
     /* Idempotent. */
     zassert_equal(composition_root_init(&s_app), 0, "Second init must be a no-op");
@@ -142,9 +143,10 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     /* Let the polling threads run a few cycles. */
     k_msleep(100);
 
-    zassert_true(s_fake.calls >= 2U, "The polling thread never reached the client");
+    zassert_true(s_fake.calls >= 3U, "The polling thread never reached the client");
     zassert_true(s_fake.calls_by_addr[1] > 0U, "Slave 1 was never polled");
     zassert_true(s_fake.calls_by_addr[2] > 0U, "Slave 2 was never polled");
+    zassert_true(s_fake.calls_by_addr[3] > 0U, "Slave 3 was never polled");
     zassert_equal(s_fake.last_timeout, 300, "Timeout not taken from the descriptor");
 
     modbus_slave_snapshot_t snap[4];
@@ -152,7 +154,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 4U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 2U, "Snapshot count mismatch");
+    zassert_equal(count, 3U, "Snapshot count mismatch");
     zassert_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
     zassert_true(snap[0].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[0].runtime.in_flight, "The claim was not released");
@@ -161,17 +163,23 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     zassert_true(snap[1].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[1].runtime.in_flight, "The claim was not released");
 
+    zassert_equal(snap[2].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
+    zassert_true(snap[2].runtime.successful_polls > 0U, "Success counter not updated");
+    zassert_false(snap[2].runtime.in_flight, "The claim was not released");
+
     /* Failures must degrade the slave and reach the registry. */
     s_fake.next_result = MODBUS_RESULT_TIMEOUT;
     k_msleep(1200);
 
     zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 4U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 2U, "Snapshot count mismatch after failure");
+    zassert_equal(count, 3U, "Snapshot count mismatch after failure");
     zassert_true(snap[0].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
     zassert_true(snap[1].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[1].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
+    zassert_true(snap[2].runtime.timeout_count > 0U, "Timeouts not recorded");
+    zassert_not_equal(snap[2].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
 
     zassert_equal(ao_modbus_stop(&s_app.ao[0]), 0, "Stop failed");
     zassert_equal(ao_modbus_stop(&s_app.ao[1]), 0, "Stop failed");

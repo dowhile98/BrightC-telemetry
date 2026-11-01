@@ -6,6 +6,9 @@
 ## documents
 - All documents generated in English.
 
+## Hardware reference
+- /doc/hardware/: datasheets and more
+
 ## Environment & Toolchain
 - **Topology**: West T2 workspace. Workspace root contains `.west/`, `zephyr/`, `modules/`, and manifest application repo `BrightC-telemetry/`.
 - **Python / West venv**: Activate `/home/jeffry/.zephyr-venv/bin/activate` or invoke `/home/jeffry/.zephyr-venv/bin/west` directly.
