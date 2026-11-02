@@ -21,8 +21,16 @@ target_sources(app PRIVATE
     src/domain/services/sensor_matrix_mapper.c
     src/domain/services/slave_scheduler.c
     src/domain/services/waveshare_relay_codec.c
+    src/application/active_objects/ao_storage.c
+    src/application/zbus/config_channels.c
     src/infrastructure/di/composition_root.c
 )
+
+if(CONFIG_MICROCONF)
+    target_sources(app PRIVATE
+        src/infrastructure/adapters/adapter_storage_microconf.c
+    )
+endif()
 
 if(CONFIG_NETWORKING)
     target_sources(app PRIVATE

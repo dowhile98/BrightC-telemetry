@@ -16,9 +16,12 @@
 
 #include "application/active_objects/ao_modbus.h"
 #include "application/active_objects/ao_network.h"
+#include "application/active_objects/ao_storage.h"
 #include "application/modbus/modbus_registry.h"
+#include "common/config_types.h"
 #include "common/modbus_types.h"
 #include "common/network_types.h"
+#include "interfaces/i_config_storage.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_network.h"
 #include "interfaces/i_relay.h"
@@ -31,6 +34,7 @@
 #ifndef CONFIG_ZTEST
 #include "infrastructure/adapters/adapter_eth_stm32.h"
 #include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
+#include "infrastructure/adapters/adapter_storage_microconf.h"
 #endif
 
 #ifdef __cplusplus
@@ -42,6 +46,7 @@ extern "C" {
 #define APP_CONTAINER_INIT_AO 0x02U
 #define APP_CONTAINER_INIT_TRANSPORT 0x04U
 #define APP_CONTAINER_INIT_NETWORK 0x08U
+#define APP_CONTAINER_INIT_STORAGE 0x10U
 
 /**
  * @brief Every object of the application, wired together.
@@ -63,6 +68,7 @@ typedef struct {
     i_relay_t relay_int;                      /**< Internal relay port (placeholder for onboard GPIO / MCP23S17) */
     i_network_t net_eth;                      /**< Ethernet network interface port */
     i_network_t net_wifi;                     /**< WiFi network interface port */
+    i_config_storage_t storage;               /**< Persistent storage port */
 
     /* Adapters, stored by value */
     modbus_registry_t registry_impl;          /**< Concrete registry */
@@ -73,6 +79,7 @@ typedef struct {
 #ifndef CONFIG_ZTEST
     adapter_eth_stm32_t eth_adapter;          /**< STM32 Ethernet adapter */
     adapter_wifi_esp_hosted_t wifi_adapter;   /**< ESP-Hosted-MCU WiFi adapter */
+    adapter_storage_microconf_t storage_adapter; /**< microconf EEPROM storage adapter */
 #endif
 
     /* Active objects and their static resources */
@@ -83,6 +90,10 @@ typedef struct {
     ao_network_t ao_net;                        /**< Network active object */
     struct k_msgq ao_net_queue;                 /**< Network AO command queue */
     uint8_t ao_net_queue_buf[AO_NETWORK_QUEUE_DEPTH * sizeof(ao_network_event_t)];
+
+    ao_storage_t ao_store;                      /**< Storage active object coordinator */
+    struct k_msgq ao_store_queue;               /**< Storage command queue */
+    uint8_t ao_store_queue_buf[AO_STORAGE_QUEUE_DEPTH * sizeof(ao_storage_event_t)];
 
     /* Configuration of the physical buses */
     modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];
@@ -107,6 +118,15 @@ int composition_root_init(app_container_t *self);
  * @return 0 on success, -EINVAL when @p self is not initialised.
  */
 int composition_root_start(app_container_t *self);
+
+/**
+ * @brief Stop the Active Objects. Idempotent.
+ *
+ * @param[in,out] self Container previously initialised.
+ *
+ * @return 0 on success, -EINVAL when @p self is not initialised.
+ */
+int composition_root_stop(app_container_t *self);
 
 #ifdef __cplusplus
 }

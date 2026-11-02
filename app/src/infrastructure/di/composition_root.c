@@ -210,6 +210,7 @@ static int init_registry(app_container_t *self)
 
 static K_THREAD_STACK_ARRAY_DEFINE(g_ao_stacks, MODBUS_BUS_MAX, AO_MODBUS_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_net_stack, AO_NETWORK_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_store_stack, AO_STORAGE_STACK_SIZE);
 
 static const net_eth_config_t k_default_eth_cfg = {
     .ip_mode = NET_IP_MODE_DHCP,
@@ -231,6 +232,58 @@ static const net_wifi_config_t k_default_wifi_cfg = {
         .ap_subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
     },
 };
+
+static int storage_provider_eth(void *ctx, config_domain_t domain,
+                                void *out_buf, size_t max_size, size_t *out_size)
+{
+    app_container_t *app = (app_container_t *)ctx;
+    if (app == NULL || domain != CONFIG_DOMAIN_NET_ETH || out_buf == NULL) {
+        return -EINVAL;
+    }
+    if (i_network_is_bound(&app->net_eth)) {
+        return i_network_get_config(&app->net_eth, NETWORK_INTERFACE_ETHERNET,
+                                    out_buf, max_size, out_size);
+    }
+    if (max_size < sizeof(net_eth_config_t)) {
+        return -ENOMEM;
+    }
+    (void)memcpy(out_buf, &app->ao_net.eth_cfg, sizeof(net_eth_config_t));
+    if (out_size != NULL) {
+        *out_size = sizeof(net_eth_config_t);
+    }
+    return 0;
+}
+
+static int storage_provider_wifi(void *ctx, config_domain_t domain,
+                                 void *out_buf, size_t max_size, size_t *out_size)
+{
+    app_container_t *app = (app_container_t *)ctx;
+    if (app == NULL || domain != CONFIG_DOMAIN_NET_WIFI || out_buf == NULL) {
+        return -EINVAL;
+    }
+    if (i_network_is_bound(&app->net_wifi)) {
+        return i_network_get_config(&app->net_wifi, NETWORK_INTERFACE_WIFI,
+                                    out_buf, max_size, out_size);
+    }
+    if (max_size < sizeof(net_wifi_config_t)) {
+        return -ENOMEM;
+    }
+    (void)memcpy(out_buf, &app->ao_net.wifi_cfg, sizeof(net_wifi_config_t));
+    if (out_size != NULL) {
+        *out_size = sizeof(net_wifi_config_t);
+    }
+    return 0;
+}
+
+static int storage_provider_modbus(void *ctx, config_domain_t domain,
+                                   void *out_buf, size_t max_size, size_t *out_size)
+{
+    app_container_t *app = (app_container_t *)ctx;
+    if (app == NULL || domain != CONFIG_DOMAIN_MODBUS || out_buf == NULL) {
+        return -EINVAL;
+    }
+    return modbus_registry_export(&app->registry_impl, out_buf, max_size, out_size);
+}
 
 static int init_active_objects(app_container_t *self)
 {
@@ -256,7 +309,57 @@ static int init_active_objects(app_container_t *self)
 
 #if defined(CONFIG_ZTEST)
 #include "fake_network.h"
+#include "fake_config_storage.h"
 #endif
+
+static int init_storage(app_container_t *self)
+{
+#if defined(CONFIG_ZTEST)
+    if (!i_config_storage_is_bound(&self->storage)) {
+        self->storage = fake_config_storage_get_port();
+    }
+#else
+    const struct device *eeprom_dev = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(eeprom0))
+    eeprom_dev = DEVICE_DT_GET(DT_NODELABEL(eeprom0));
+#endif
+    if (eeprom_dev != NULL) {
+        int store_err = adapter_storage_microconf_init(&self->storage_adapter, eeprom_dev);
+        if (store_err == 0) {
+            self->storage = adapter_storage_microconf_port(&self->storage_adapter);
+        } else {
+            LOG_WRN("adapter_storage_microconf_init failed (%d)", store_err);
+        }
+    } else {
+        LOG_WRN("eeprom0 devicetree node not found");
+    }
+#endif
+
+    if (!i_config_storage_is_bound(&self->storage)) {
+        LOG_WRN("Persistent storage is not bound; storage subsystem operating in degraded mode");
+    }
+
+    k_msgq_init(&self->ao_store_queue, self->ao_store_queue_buf,
+                sizeof(ao_storage_event_t), AO_STORAGE_QUEUE_DEPTH);
+
+    int err = ao_storage_init(&self->ao_store, &self->storage,
+                              &self->ao_store_queue, s_ao_store_stack,
+                              K_THREAD_STACK_SIZEOF(s_ao_store_stack));
+    if (err != 0) {
+        LOG_ERR("storage active object init failed (%d)", err);
+        return err;
+    }
+
+    (void)ao_storage_register_provider(&self->ao_store, CONFIG_DOMAIN_NET_ETH,
+                                       storage_provider_eth, self);
+    (void)ao_storage_register_provider(&self->ao_store, CONFIG_DOMAIN_NET_WIFI,
+                                       storage_provider_wifi, self);
+    (void)ao_storage_register_provider(&self->ao_store, CONFIG_DOMAIN_MODBUS,
+                                       storage_provider_modbus, self);
+
+    self->init_mask |= APP_CONTAINER_INIT_STORAGE;
+    return 0;
+}
 
 static int init_network(app_container_t *self)
 {
@@ -294,9 +397,49 @@ static int init_network(app_container_t *self)
     }
 #endif
 
+    /* Synchronous boot read from storage for network configurations */
+    net_eth_config_t loaded_eth_cfg;
+    const net_eth_config_t *eth_cfg_ptr = &k_default_eth_cfg;
+    size_t loaded_eth_size = 0;
+    int eth_load_res = -1;
+
+    if (i_config_storage_is_bound(&self->storage)) {
+        eth_load_res = i_config_storage_load(&self->storage, CONFIG_DOMAIN_NET_ETH,
+                                             &loaded_eth_cfg, sizeof(loaded_eth_cfg),
+                                             &loaded_eth_size);
+        if (eth_load_res == 0 && loaded_eth_size == sizeof(net_eth_config_t) &&
+            net_eth_config_is_valid(&loaded_eth_cfg)) {
+            LOG_INF("Loaded Ethernet config from storage");
+            eth_cfg_ptr = &loaded_eth_cfg;
+        } else {
+            LOG_INF("No valid Ethernet config in storage (%d), applying defaults", eth_load_res);
+            (void)i_config_storage_save(&self->storage, CONFIG_DOMAIN_NET_ETH,
+                                        &k_default_eth_cfg, sizeof(k_default_eth_cfg));
+        }
+    }
+
+    net_wifi_config_t loaded_wifi_cfg;
+    const net_wifi_config_t *wifi_cfg_ptr = &k_default_wifi_cfg;
+    size_t loaded_wifi_size = 0;
+    int wifi_load_res = -1;
+
+    if (i_config_storage_is_bound(&self->storage)) {
+        wifi_load_res = i_config_storage_load(&self->storage, CONFIG_DOMAIN_NET_WIFI,
+                                              &loaded_wifi_cfg, sizeof(loaded_wifi_cfg),
+                                              &loaded_wifi_size);
+        if (wifi_load_res == 0 && loaded_wifi_size == sizeof(net_wifi_config_t) &&
+            net_wifi_config_is_valid(&loaded_wifi_cfg)) {
+            LOG_INF("Loaded Wi-Fi config from storage");
+            wifi_cfg_ptr = &loaded_wifi_cfg;
+        } else {
+            LOG_INF("No valid Wi-Fi config in storage (%d), applying defaults", wifi_load_res);
+            (void)i_config_storage_save(&self->storage, CONFIG_DOMAIN_NET_WIFI,
+                                        &k_default_wifi_cfg, sizeof(k_default_wifi_cfg));
+        }
+    }
 
     int err = ao_network_init(&self->ao_net, &self->net_eth, &self->net_wifi,
-                              &k_default_eth_cfg, &k_default_wifi_cfg,
+                              eth_cfg_ptr, wifi_cfg_ptr,
                               &self->ao_net_queue, s_ao_net_stack,
                               K_THREAD_STACK_SIZEOF(s_ao_net_stack));
     if (err != 0)
@@ -319,7 +462,8 @@ int composition_root_init(app_container_t *self)
     /* Idempotent: only a fully wired container is left alone. Requiring all
      * bits also keeps a container whose transport/registry step failed from
      * being mistaken for a finished one. */
-    const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO | APP_CONTAINER_INIT_NETWORK;
+    const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO |
+                         APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK;
 
     if ((self->init_mask & done) == done)
     {
@@ -362,6 +506,12 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
+    err = init_storage(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
     err = init_network(self);
     if (err != 0)
     {
@@ -389,6 +539,16 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+    if ((self->init_mask & APP_CONTAINER_INIT_STORAGE) != 0U)
+    {
+        int err = ao_storage_start(&self->ao_store);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("storage active object start failed (%d)", err);
+            return err;
+        }
+    }
+
     if ((self->init_mask & APP_CONTAINER_INIT_NETWORK) != 0U)
     {
         int err = ao_network_start(&self->ao_net);
@@ -401,3 +561,29 @@ int composition_root_start(app_container_t *self)
 
     return 0;
 }
+
+int composition_root_stop(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
+        (void)ao_modbus_stop(&self->ao[bus]);
+    }
+
+    if ((self->init_mask & APP_CONTAINER_INIT_STORAGE) != 0U)
+    {
+        (void)ao_storage_stop(&self->ao_store);
+    }
+
+    if ((self->init_mask & APP_CONTAINER_INIT_NETWORK) != 0U)
+    {
+        (void)ao_network_stop(&self->ao_net);
+    }
+
+    return 0;
+}
+
