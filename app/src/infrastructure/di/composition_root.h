@@ -17,11 +17,15 @@
 #include "application/active_objects/ao_modbus.h"
 #include "application/active_objects/ao_network.h"
 #include "application/active_objects/ao_storage.h"
+#include "application/active_objects/ao_system_indicator.h"
 #include "application/modbus/modbus_registry.h"
 #include "common/config_types.h"
+#include "common/indicator_types.h"
 #include "common/modbus_types.h"
 #include "common/network_types.h"
+#include "interfaces/i_buzzer.h"
 #include "interfaces/i_config_storage.h"
+#include "interfaces/i_led.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_network.h"
 #include "interfaces/i_relay.h"
@@ -35,6 +39,8 @@
 #include "infrastructure/adapters/adapter_eth_stm32.h"
 #include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
 #include "infrastructure/adapters/adapter_storage_microconf.h"
+#include "infrastructure/adapters/adapter_led_gpio.h"
+#include "infrastructure/adapters/adapter_buzzer_pwm.h"
 #endif
 
 #ifdef __cplusplus
@@ -47,6 +53,7 @@ extern "C" {
 #define APP_CONTAINER_INIT_TRANSPORT 0x04U
 #define APP_CONTAINER_INIT_NETWORK 0x08U
 #define APP_CONTAINER_INIT_STORAGE 0x10U
+#define APP_CONTAINER_INIT_INDICATORS 0x20U
 
 /**
  * @brief Every object of the application, wired together.
@@ -69,6 +76,8 @@ typedef struct {
     i_network_t net_eth;                      /**< Ethernet network interface port */
     i_network_t net_wifi;                     /**< WiFi network interface port */
     i_config_storage_t storage;               /**< Persistent storage port */
+    i_led_t led;                              /**< Status LED port */
+    i_buzzer_t buzzer;                        /**< Buzzer acoustic port */
 
     /* Adapters, stored by value */
     modbus_registry_t registry_impl;          /**< Concrete registry */
@@ -80,6 +89,8 @@ typedef struct {
     adapter_eth_stm32_t eth_adapter;          /**< STM32 Ethernet adapter */
     adapter_wifi_esp_hosted_t wifi_adapter;   /**< ESP-Hosted-MCU WiFi adapter */
     adapter_storage_microconf_t storage_adapter; /**< microconf EEPROM storage adapter */
+    adapter_led_gpio_t led_adapter;           /**< GPIO Status LED adapter */
+    adapter_buzzer_pwm_t buzzer_adapter;      /**< PWM Buzzer adapter */
 #endif
 
     /* Active objects and their static resources */
@@ -94,6 +105,10 @@ typedef struct {
     ao_storage_t ao_store;                      /**< Storage active object coordinator */
     struct k_msgq ao_store_queue;               /**< Storage command queue */
     uint8_t ao_store_queue_buf[AO_STORAGE_QUEUE_DEPTH * sizeof(ao_storage_event_t)];
+
+    ao_system_indicator_t ao_indicator;         /**< System indicator active object */
+    struct k_msgq ao_indicator_queue;           /**< Indicator AO command queue */
+    uint8_t ao_indicator_queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
 
     /* Configuration of the physical buses */
     modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];

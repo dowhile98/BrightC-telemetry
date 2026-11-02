@@ -15,6 +15,8 @@
 - **Zephyr SDK**: `/home/jeffry/zephyr-sdk-1.0.1` (set `export ZEPHYR_SDK_INSTALL_DIR=/home/jeffry/zephyr-sdk-1.0.1` if not inherited).
 - **Working directory**: Execute build and test commands from `BrightC-telemetry/` (e.g., `cd BrightC-telemetry`).
 
+## Rules
+- do not modify source code of: `/../zephyr`, `/../modules/` (If you find an error, please report it so the code or repository can be reviewed.)
 ## Build Commands
 - **Target board**: `brightc-controllerv3` (STM32H743ZIT6, Cortex-M7 @ 480 MHz).
 - **Firmware build**:

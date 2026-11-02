@@ -22,25 +22,29 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
 {
     uint16_t registers[JSY_MK339_ELECTRICAL_FULL_REG_COUNT];
 
-    switch (target->dev_type) {
+    switch (target->dev_type)
+    {
     case MODBUS_DEV_TYPE_CWT_TM16PT:
         /* The wrapper rejects an unbound client (reporting INVALID) instead of
          * waiting for a timeout that can never expire. */
         return i_modbus_client_read_holding_registers(
             self->client, target->slave_addr, CWT_TM16PT_REG_TEMP_SCALED_BASE,
-            CWT_TM16PT_SCALED_REG_COUNT, registers, (int32_t) target->timeout_ms);
+            CWT_TM16PT_SCALED_REG_COUNT, registers, (int32_t)target->timeout_ms);
 
-    case MODBUS_DEV_TYPE_JSY_MK339: {
+    case MODBUS_DEV_TYPE_JSY_MK339:
+    {
         modbus_transaction_result_t res = i_modbus_client_read_holding_registers(
             self->client, target->slave_addr, JSY_MK339_REG_ELECTRICAL_BASE,
-            JSY_MK339_ELECTRICAL_FULL_REG_COUNT, registers, (int32_t) target->timeout_ms);
-        if (res == MODBUS_RESULT_OK) {
+            JSY_MK339_ELECTRICAL_FULL_REG_COUNT, registers, (int32_t)target->timeout_ms);
+        if (res == MODBUS_RESULT_OK)
+        {
             energy_reading_t reading;
             if (jsy_mk339_parse_electrical_parameters(registers,
                                                       JSY_MK339_ELECTRICAL_FULL_REG_COUNT,
-                                                      &reading) == 0) {
+                                                      &reading) == 0)
+            {
                 reading.device_id = target->device_id;
-                reading.timestamp_us = (uint64_t) k_ticks_to_us_near64(k_uptime_ticks());
+                reading.timestamp_us = (uint64_t)k_ticks_to_us_near64(k_uptime_ticks());
                 LOG_DBG("bus %u: dev %u P_total=%.2f kW, E_total=%.2f kWh",
                         self->bus_id, target->device_id,
                         (double)reading.total_active_power_kw,
@@ -50,32 +54,38 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
         return res;
     }
 
-    case MODBUS_DEV_TYPE_MBSL32DI: {
+    case MODBUS_DEV_TYPE_MBSL32DI:
+    {
         modbus_transaction_result_t res = i_modbus_client_read_holding_registers(
             self->client, target->slave_addr, MBSL32DI_REG_INPUTS_BASE,
-            MBSL32DI_INPUTS_REG_COUNT, registers, (int32_t) target->timeout_ms);
-        if (res == MODBUS_RESULT_OK) {
+            MBSL32DI_INPUTS_REG_COUNT, registers, (int32_t)target->timeout_ms);
+        if (res == MODBUS_RESULT_OK)
+        {
             mbsl32di_reading_t reading;
-            if (mbsl32di_parse_inputs(registers, MBSL32DI_INPUTS_REG_COUNT, &reading) == 0) {
-                LOG_INF("bus %u: dev %u MBSL32DI inputs=0x%08X", self->bus_id, target->device_id,
-                        (unsigned int)reading.raw_inputs);
+            if (mbsl32di_parse_inputs(registers, MBSL32DI_INPUTS_REG_COUNT, &reading) == 0)
+            {
+                /*LOG_INF("bus %u: dev %u MBSL32DI inputs=0x%08X", self->bus_id, target->device_id,
+                        (unsigned int)reading.raw_inputs);*/
             }
         }
         return res;
     }
 
-    case MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH: {
+    case MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH:
+    {
         /* FC01: read all 32 coils at once (addresses 0x0000-0x001F).
          * The response is a 4-byte little-endian bitmask. */
         uint8_t coil_bytes[WAVESHARE_RELAY_COIL_BYTES];
         modbus_transaction_result_t res = i_modbus_client_read_coils(
             self->client, target->slave_addr, WAVESHARE_RELAY_COIL_ADDR_BASE,
-            WAVESHARE_RELAY_32CH_CHANNEL_COUNT, coil_bytes, (int32_t) target->timeout_ms);
-        if (res == MODBUS_RESULT_OK) {
+            WAVESHARE_RELAY_32CH_CHANNEL_COUNT, coil_bytes, (int32_t)target->timeout_ms);
+        if (res == MODBUS_RESULT_OK)
+        {
             relay_state_t states[WAVESHARE_RELAY_32CH_CHANNEL_COUNT];
             if (waveshare_relay_parse_coils_response(coil_bytes,
                                                      WAVESHARE_RELAY_COIL_BYTES,
-                                                     states) == 0) {
+                                                     states) == 0)
+            {
                 LOG_DBG("bus %u: dev %u relay states parsed (%u channels)",
                         self->bus_id, target->device_id,
                         WAVESHARE_RELAY_32CH_CHANNEL_COUNT);
@@ -98,7 +108,8 @@ static uint32_t idle_wait_ms(ao_modbus_t *self, uint64_t now_ms)
     uint32_t next_due_ms = 0U;
 
     if (i_slave_registry_next_due_in(self->registry, self->bus_id, now_ms, &next_due_ms) == 0 &&
-        next_due_ms > 0U && next_due_ms < AO_MODBUS_MAX_IDLE_WAIT_MS) {
+        next_due_ms > 0U && next_due_ms < AO_MODBUS_MAX_IDLE_WAIT_MS)
+    {
         return next_due_ms;
     }
 
@@ -107,29 +118,33 @@ static uint32_t idle_wait_ms(ao_modbus_t *self, uint64_t now_ms)
 
 static void ao_modbus_thread(void *p1, void *p2, void *p3)
 {
-    ao_modbus_t *self = (ao_modbus_t *) p1;
+    ao_modbus_t *self = (ao_modbus_t *)p1;
 
     ARG_UNUSED(p2);
     ARG_UNUSED(p3);
 
     LOG_INF("bus %u: polling thread started", self->bus_id);
 
-    while (self->is_running) {
-        uint64_t now_ms = (uint64_t) k_uptime_get();
+    while (self->is_running)
+    {
+        uint64_t now_ms = (uint64_t)k_uptime_get();
         modbus_poll_target_t target;
 
-        if (i_slave_registry_claim_next_due(self->registry, self->bus_id, now_ms, &target) == 0) {
+        if (i_slave_registry_claim_next_due(self->registry, self->bus_id, now_ms, &target) == 0)
+        {
             modbus_transaction_result_t result = poll_target(self, &target);
 
-            (void) i_slave_registry_record(self->registry, target.device_id, result,
-                                           (uint64_t) k_uptime_get());
+            (void)i_slave_registry_record(self->registry, target.device_id, result,
+                                          (uint64_t)k_uptime_get());
 
-            if (result != MODBUS_RESULT_OK) {
+            if (result != MODBUS_RESULT_OK)
+            {
                 LOG_WRN("bus %u: dev %u (addr %u) poll failed: %d",
                         self->bus_id, target.device_id, target.slave_addr, (int)result);
             }
 
-            if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U) {
+            if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U)
+            {
                 k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
             }
             continue;
@@ -137,25 +152,29 @@ static void ao_modbus_thread(void *p1, void *p2, void *p3)
 
         modbus_event_t event;
 
-        if (k_msgq_get(self->queue, &event, K_MSEC(idle_wait_ms(self, now_ms))) == 0) {
-            if (event.type == AO_MODBUS_EVENT_STOP) {
+        if (k_msgq_get(self->queue, &event, K_MSEC(idle_wait_ms(self, now_ms))) == 0)
+        {
+            if (event.type == AO_MODBUS_EVENT_STOP)
+            {
                 break;
             }
 
-            if (event.type == AO_MODBUS_EVENT_WRITE_COIL) {
+            if (event.type == AO_MODBUS_EVENT_WRITE_COIL)
+            {
                 /* Asynchronous relay write: half-duplex bus is owned by this
                  * thread, so no other context may transmit on the UART. */
                 modbus_transaction_result_t res = i_modbus_client_write_single_coil(
                     self->client, event.slave_addr, event.coil_addr, event.coil_value,
                     event.timeout_ms);
 
-                (void) i_slave_registry_record(self->registry, event.device_id, res,
-                                               (uint64_t) k_uptime_get());
+                (void)i_slave_registry_record(self->registry, event.device_id, res,
+                                              (uint64_t)k_uptime_get());
 
                 LOG_DBG("bus %u: write coil dev=%u addr=0x%04X value=0x%04X -> %d",
                         self->bus_id, event.device_id, event.coil_addr, event.coil_value, res);
 
-                if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U) {
+                if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U)
+                {
                     k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
                 }
             }
@@ -172,7 +191,8 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
                    size_t stack_size)
 {
     if (self == NULL || registry == NULL || client == NULL || queue == NULL || stack == NULL ||
-        stack_size == 0U) {
+        stack_size == 0U)
+    {
         return -EINVAL;
     }
 
@@ -189,11 +209,13 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
 
 int ao_modbus_start(ao_modbus_t *self)
 {
-    if (self == NULL || self->queue == NULL || self->stack == NULL) {
+    if (self == NULL || self->queue == NULL || self->stack == NULL)
+    {
         return -EINVAL;
     }
 
-    if (self->is_running) {
+    if (self->is_running)
+    {
         return -EALREADY;
     }
 
@@ -202,22 +224,24 @@ int ao_modbus_start(ao_modbus_t *self)
 
     self->is_running = true;
 
-    (void) k_thread_create(&self->thread, self->stack, self->stack_size, ao_modbus_thread, self,
-                           NULL, NULL, K_PRIO_PREEMPT(AO_MODBUS_PRIORITY), 0, K_NO_WAIT);
-    (void) k_thread_name_set(&self->thread, (self->bus_id == (uint8_t) MODBUS_BUS_RS485_1)
-                                                  ? "ao_modbus_1"
-                                                  : "ao_modbus_2");
+    (void)k_thread_create(&self->thread, self->stack, self->stack_size, ao_modbus_thread, self,
+                          NULL, NULL, K_PRIO_PREEMPT(AO_MODBUS_PRIORITY), 0, K_NO_WAIT);
+    (void)k_thread_name_set(&self->thread, (self->bus_id == (uint8_t)MODBUS_BUS_RS485_1)
+                                               ? "ao_modbus_1"
+                                               : "ao_modbus_2");
 
     return 0;
 }
 
 int ao_modbus_post(ao_modbus_t *self, const modbus_event_t *event)
 {
-    if (self == NULL || event == NULL || self->queue == NULL) {
+    if (self == NULL || event == NULL || self->queue == NULL)
+    {
         return -EINVAL;
     }
 
-    if (k_msgq_put(self->queue, event, K_NO_WAIT) != 0) {
+    if (k_msgq_put(self->queue, event, K_NO_WAIT) != 0)
+    {
         return -ENOMSG;
     }
 
@@ -226,7 +250,8 @@ int ao_modbus_post(ao_modbus_t *self, const modbus_event_t *event)
 
 int ao_modbus_stop(ao_modbus_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL)
+    {
         return -EINVAL;
     }
 
@@ -234,18 +259,20 @@ int ao_modbus_stop(ao_modbus_t *self)
 
     /* The loop re-checks is_running, so a full queue still stops it. */
     self->is_running = false;
-    (void) ao_modbus_post(self, &stop);
+    (void)ao_modbus_post(self, &stop);
 
     /* Waiting here is what makes a later start() safe: recreating the thread
      * over a thread control block that is still in use is undefined. */
     int err = k_thread_join(&self->thread, K_MSEC(AO_MODBUS_STOP_WAIT_MS));
 
-    if (err == -EDEADLK) {
+    if (err == -EDEADLK)
+    {
         /* Never started: nothing to wait for. */
         return 0;
     }
 
-    if (err != 0) {
+    if (err != 0)
+    {
         LOG_ERR("bus %u: polling thread did not stop (%d)", self->bus_id, err);
         return -EBUSY;
     }

@@ -211,6 +211,7 @@ static int init_registry(app_container_t *self)
 static K_THREAD_STACK_ARRAY_DEFINE(g_ao_stacks, MODBUS_BUS_MAX, AO_MODBUS_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_net_stack, AO_NETWORK_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_store_stack, AO_STORAGE_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_indicator_stack, AO_INDICATOR_STACK_SIZE);
 
 static const net_eth_config_t k_default_eth_cfg = {
     .ip_mode = NET_IP_MODE_DHCP,
@@ -310,6 +311,8 @@ static int init_active_objects(app_container_t *self)
 #if defined(CONFIG_ZTEST)
 #include "fake_network.h"
 #include "fake_config_storage.h"
+#include "fake_led.h"
+#include "fake_buzzer.h"
 #endif
 
 static int init_storage(app_container_t *self)
@@ -452,6 +455,60 @@ static int init_network(app_container_t *self)
     return 0;
 }
 
+static int init_indicators(app_container_t *self)
+{
+    k_msgq_init(&self->ao_indicator_queue, self->ao_indicator_queue_buf,
+                sizeof(ao_indicator_event_t), AO_INDICATOR_QUEUE_DEPTH);
+
+#if defined(CONFIG_ZTEST)
+    if (!i_led_is_bound(&self->led)) {
+        self->led = fake_led_get_port();
+    }
+    if (!i_buzzer_is_bound(&self->buzzer)) {
+        self->buzzer = fake_buzzer_get_port();
+    }
+#else
+#if DT_NODE_EXISTS(DT_ALIAS(led0))
+    static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+#elif DT_NODE_EXISTS(DT_NODELABEL(user_led))
+    static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_NODELABEL(user_led), gpios);
+#else
+    static const struct gpio_dt_spec s_led_spec = {0};
+#endif
+
+    int led_err = adapter_led_gpio_init(&self->led_adapter, &s_led_spec);
+    if (led_err == 0) {
+        (void)adapter_led_gpio_port(&self->led_adapter, &self->led);
+    } else {
+        LOG_WRN("adapter_led_gpio_init failed (%d)", led_err);
+    }
+
+#if DT_NODE_EXISTS(DT_NODELABEL(buzzer_pwm))
+    static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_NODELABEL(buzzer_pwm));
+#else
+    static const struct pwm_dt_spec s_buzzer_spec = {0};
+#endif
+
+    int buzzer_err = adapter_buzzer_pwm_init(&self->buzzer_adapter, &s_buzzer_spec);
+    if (buzzer_err == 0) {
+        (void)adapter_buzzer_pwm_port(&self->buzzer_adapter, &self->buzzer);
+    } else {
+        LOG_WRN("adapter_buzzer_pwm_init failed (%d)", buzzer_err);
+    }
+#endif
+
+    int err = ao_system_indicator_init(&self->ao_indicator, &self->led, &self->buzzer,
+                                       &self->ao_indicator_queue, s_ao_indicator_stack,
+                                       K_THREAD_STACK_SIZEOF(s_ao_indicator_stack));
+    if (err != 0) {
+        LOG_ERR("ao_system_indicator_init failed (%d)", err);
+        return err;
+    }
+
+    self->init_mask |= APP_CONTAINER_INIT_INDICATORS;
+    return 0;
+}
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)
@@ -463,7 +520,8 @@ int composition_root_init(app_container_t *self)
      * bits also keeps a container whose transport/registry step failed from
      * being mistaken for a finished one. */
     const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO |
-                         APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK;
+                         APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK |
+                         APP_CONTAINER_INIT_INDICATORS;
 
     if ((self->init_mask & done) == done)
     {
@@ -518,6 +576,12 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
+    err = init_indicators(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
     return 0;
 }
 
@@ -559,6 +623,19 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+    if ((self->init_mask & APP_CONTAINER_INIT_INDICATORS) != 0U)
+    {
+        int err = ao_system_indicator_start(&self->ao_indicator);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("indicator active object start failed (%d)", err);
+            return err;
+        }
+
+        /* Trigger startup chime on system boot */
+        (void)ao_system_indicator_trigger_startup_chime(&self->ao_indicator);
+    }
+
     return 0;
 }
 
@@ -582,6 +659,11 @@ int composition_root_stop(app_container_t *self)
     if ((self->init_mask & APP_CONTAINER_INIT_NETWORK) != 0U)
     {
         (void)ao_network_stop(&self->ao_net);
+    }
+
+    if ((self->init_mask & APP_CONTAINER_INIT_INDICATORS) != 0U)
+    {
+        (void)ao_system_indicator_stop(&self->ao_indicator);
     }
 
     return 0;

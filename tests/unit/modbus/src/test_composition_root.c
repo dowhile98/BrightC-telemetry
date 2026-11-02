@@ -167,10 +167,13 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
     zassert_equal(s_app.init_mask,
                   APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO |
-                  APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK,
+                  APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK |
+                  APP_CONTAINER_INIT_INDICATORS,
                   "Init mask mismatch");
     zassert_true(i_slave_registry_is_bound(&s_app.registry), "Registry port must be bound");
     zassert_true(i_config_storage_is_bound(&s_app.storage), "Storage port must be bound");
+    zassert_true(i_led_is_bound(&s_app.led), "LED port must be bound");
+    zassert_true(i_buzzer_is_bound(&s_app.buzzer), "Buzzer port must be bound");
 
     modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
@@ -273,6 +276,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     zassert_equal(ao_modbus_stop(&s_app.ao[1]), 0, "Stop failed");
     zassert_equal(ao_storage_stop(&s_app.ao_store), 0, "Stop ao_store failed");
     zassert_equal(ao_network_stop(&s_app.ao_net), 0, "Stop ao_network failed");
+    zassert_equal(ao_system_indicator_stop(&s_app.ao_indicator), 0, "Stop ao_indicator failed");
     k_msleep(50);
 }
 
@@ -302,6 +306,7 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
     zassert_equal(ao_modbus_start(&s_app.ao[0]), 0, "Restart failed");
     zassert_equal(ao_storage_start(&s_app.ao_store), 0, "Restart ao_store failed");
     zassert_equal(ao_network_start(&s_app.ao_net), 0, "Restart ao_network failed");
+    zassert_equal(ao_system_indicator_start(&s_app.ao_indicator), 0, "Restart ao_indicator failed");
 
     k_msleep(1200); /* The default slave polls every 1000 ms. */
 

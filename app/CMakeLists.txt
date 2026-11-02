@@ -22,7 +22,11 @@ target_sources(app PRIVATE
     src/domain/services/slave_scheduler.c
     src/domain/services/waveshare_relay_codec.c
     src/application/active_objects/ao_storage.c
+    src/application/active_objects/ao_system_indicator.c
     src/application/zbus/config_channels.c
+    src/application/zbus/indicator_channels.c
+    src/infrastructure/adapters/adapter_led_gpio.c
+    src/infrastructure/adapters/adapter_buzzer_pwm.c
     src/infrastructure/di/composition_root.c
 )
 
