@@ -124,6 +124,9 @@ static int start_ap(adapter_wifi_esp_hosted_t *ctx)
         return ret;
     }
 
+    /* Bring interface up */
+    net_if_up(target_iface);
+
     /* Configure AP static gateway IP */
     if (ctx->cfg.ap.ap_ip_addr != 0) {
         struct net_in_addr ip;
@@ -132,7 +135,10 @@ static int start_ap(adapter_wifi_esp_hosted_t *ctx)
         ip.s_addr = net_htonl(ctx->cfg.ap.ap_ip_addr);
         nm.s_addr = net_htonl(ctx->cfg.ap.ap_subnet_mask);
 
-        (void)net_if_ipv4_addr_add(target_iface, &ip, NET_ADDR_MANUAL, 0);
+        struct net_if_addr *ifaddr = net_if_ipv4_addr_add(target_iface, &ip, NET_ADDR_MANUAL, 0);
+        if (ifaddr == NULL) {
+            LOG_ERR("WiFi: failed to assign static IP to AP interface");
+        }
         (void)net_if_ipv4_set_netmask_by_addr(target_iface, &ip, &nm);
         net_if_ipv4_set_gw(target_iface, &ip);
 
@@ -457,7 +463,16 @@ int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct de
     /* Locate Soft-AP interface if supported */
 #if defined(CONFIG_WIFI_ESP_HOSTED_MCU_AP_STA_MODE)
     ctx->ap_iface = net_if_get_wifi_sap();
+    if (ctx->ap_iface == NULL) {
+        LOG_WRN("WiFi: Soft-AP net_if not found at init");
+    }
 #endif
+
+    LOG_INF("WiFi: interfaces initialized - STA net_if=%p (idx %d), AP net_if=%p (idx %d)",
+            (void *)ctx->sta_iface,
+            ctx->sta_iface != NULL ? net_if_get_by_iface(ctx->sta_iface) : -1,
+            (void *)ctx->ap_iface,
+            ctx->ap_iface != NULL ? net_if_get_by_iface(ctx->ap_iface) : -1);
 
     if (ctx->sta_iface != NULL) {
         struct net_linkaddr *link_addr = net_if_get_link_addr(ctx->sta_iface);
