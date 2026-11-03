@@ -47,6 +47,7 @@ The following decisions were agreed upon and define the architecture:
 | D4 | **WiFi defaults to AP mode** | Allows configuring network credentials the first time without needing Ethernet. |
 | D5 | **Ethernet defaults to DHCP** | Factory-ready configuration for use in wired network with DHCP server. Changeable to static IP at runtime. |
 | D6 | **High-level services out of scope** | MQTT, HTTP, SNMP, etc. are implemented as separate services consuming `i_network_t` and listening for state via Zbus. |
+| D7 | **Soft-AP includes integrated DHCPv4 Server** | Any external device (phone, laptop) connecting to BrightC Soft-AP automatically receives an IP address in the `192.168.4.x` subnet without requiring manual static IP configuration. |
 
 ---
 
@@ -322,6 +323,50 @@ struct adapter_wifi_esp_hosted_ctx {
 - `adapter_eth_stm32_port()`
 - `adapter_wifi_esp_hosted_init()`
 - `adapter_wifi_esp_hosted_port()`
+
+### 6.3 Soft-AP DHCPv4 Server & Client IP Allocation
+
+When Wi-Fi operates in Soft-AP mode (`NET_WIFI_MODE_AP` or `NET_WIFI_MODE_STA_AP`), external client devices (technician laptops, smartphones, tablets) associate with the `BrightC-AP` SSID. Without an active DHCP server, client devices would fail to obtain an IP address, trigger connection timeouts, or fall back to link-local APIPA addresses (`169.254.x.x`), preventing communication with the controller.
+
+To ensure immediate plug-and-play connectivity, `adapter_wifi_esp_hosted.c` natively integrates Zephyr's DHCPv4 Server subsystem (`CONFIG_NET_DHCPV4_SERVER=y` via `<zephyr/net/dhcpv4_server.h>`):
+
+#### 6.3.1 Addressing & Pool Allocation Policy
+- **AP Interface Static IP**: `192.168.4.1` (`0xC0A80401` in host byte order).
+- **AP Subnet Mask**: `255.255.255.0` (`0xFFFFFF00`).
+- **Dynamic Lease Pool**: Starts at `192.168.4.2` (`ap_ip_addr + 1U`) with `CONFIG_NET_DHCPV4_SERVER_ADDR_COUNT=8`, allocating dynamic IPv4 addresses from `192.168.4.2` to `192.168.4.9`.
+- **Router Option (`CONFIG_NET_DHCPV4_SERVER_OPTION_ROUTER=y`)**: The server automatically injects DHCP Option 3 (Router) pointing to `192.168.4.1`.
+- **Zero Probe Delay (`CONFIG_NET_DHCPV4_SERVER_ICMP_PROBE_TIMEOUT=0`)**: Probing is disabled to avoid 1-second ICMP ping delays before responding to DHCP Discover/Request, speeding up connection handshakes.
+- **NAK Unrecognized Clients (`CONFIG_NET_DHCPV4_SERVER_NAK_UNRECOGNIZED_REQUESTS=y`)**: Ensures reconnecting stations cleanly reset their lease cache.
+
+#### 6.3.2 Server Lifecycle within the Adapter
+```text
+  User / AO triggers start(WIFI) in AP mode
+              │
+              ▼
+  adapter_wifi_esp_hosted::start_ap()
+              │
+              ├── 1. Enable Soft-AP: net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ...)
+              ├── 2. Assign static IP: net_if_ipv4_addr_add(..., 192.168.4.1)
+              └── 3. Start DHCP server: net_dhcpv4_server_start(iface, &pool_base)
+                            │
+                            ▼
+                     [Clients Connect & Receive 192.168.4.x IPs]
+                            │
+  User / AO triggers stop(WIFI)
+              │
+              ▼
+  adapter_wifi_esp_hosted::stop_ap()
+              │
+              ├── 1. Stop DHCP server: net_dhcpv4_server_stop(iface)
+              └── 2. Disable Soft-AP: net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, ...)
+```
+
+#### 6.3.3 Captive Portal (RFC 8910) — Documented for Future Activation
+Zephyr provides native captive portal option support:
+- `CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL=y`
+- `CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL_URI="http://192.168.4.1"`
+
+When enabled in a future release, connecting mobile devices will immediately detect the BrightC configuration portal and prompt the user with a popup window directing them straight to the embedded commissioning web dashboard.
 
 ---
 

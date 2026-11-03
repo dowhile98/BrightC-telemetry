@@ -64,8 +64,8 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
             mbsl32di_reading_t reading;
             if (mbsl32di_parse_inputs(registers, MBSL32DI_INPUTS_REG_COUNT, &reading) == 0)
             {
-                /*LOG_INF("bus %u: dev %u MBSL32DI inputs=0x%08X", self->bus_id, target->device_id,
-                        (unsigned int)reading.raw_inputs);*/
+                LOG_DBG("bus %u: dev %u MBSL32DI inputs=0x%08X", self->bus_id, target->device_id,
+                        (unsigned int)reading.raw_inputs);
             }
         }
         return res;

@@ -13,6 +13,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/dhcpv4.h>
+#if defined(CONFIG_NET_DHCPV4_SERVER)
+#include <zephyr/net/dhcpv4_server.h>
+#endif
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
@@ -132,6 +135,25 @@ static int start_ap(adapter_wifi_esp_hosted_t *ctx)
         (void)net_if_ipv4_addr_add(target_iface, &ip, NET_ADDR_MANUAL, 0);
         (void)net_if_ipv4_set_netmask_by_addr(target_iface, &ip, &nm);
         net_if_ipv4_set_gw(target_iface, &ip);
+
+#if defined(CONFIG_NET_DHCPV4_SERVER)
+        /* Start DHCPv4 server to dynamically allocate IPs to connected clients */
+        struct net_in_addr pool_base;
+        /* Pool starts at ap_ip_addr + 1 (e.g., 192.168.4.2) */
+        pool_base.s_addr = net_htonl(ctx->cfg.ap.ap_ip_addr + 1U);
+
+        int srv_ret = net_dhcpv4_server_start(target_iface, &pool_base);
+        if (srv_ret < 0 && srv_ret != -EALREADY) {
+            LOG_ERR("WiFi: failed to start DHCPv4 server (%d)", srv_ret);
+        } else {
+            LOG_INF("WiFi: DHCPv4 server started (pool base: %u.%u.%u.%u, %d leases)",
+                    (unsigned int)((ctx->cfg.ap.ap_ip_addr >> 24) & 0xFF),
+                    (unsigned int)((ctx->cfg.ap.ap_ip_addr >> 16) & 0xFF),
+                    (unsigned int)((ctx->cfg.ap.ap_ip_addr >> 8) & 0xFF),
+                    (unsigned int)(((ctx->cfg.ap.ap_ip_addr) & 0xFF) + 1U),
+                    CONFIG_NET_DHCPV4_SERVER_ADDR_COUNT);
+        }
+#endif
     }
 
     return 0;
@@ -159,6 +181,11 @@ static int stop_ap(adapter_wifi_esp_hosted_t *ctx)
     if (target_iface == NULL) {
         return 0;
     }
+
+#if defined(CONFIG_NET_DHCPV4_SERVER)
+    (void)net_dhcpv4_server_stop(target_iface);
+    LOG_INF("WiFi: DHCPv4 server stopped on AP");
+#endif
 
     int ret = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, target_iface, NULL, 0);
     return ret;

@@ -103,7 +103,7 @@ static const modbus_slave_descriptor_t k_default_slaves[] = {
         .timeout_ms = 300U,
         .is_enabled = true,
     },
-   {
+    {
         .device_id = 2U,
         .bus_id = MODBUS_BUS_RS485_1,
         .slave_addr = 2U,
@@ -117,6 +117,15 @@ static const modbus_slave_descriptor_t k_default_slaves[] = {
         .bus_id = MODBUS_BUS_RS485_1,
         .slave_addr = 3U,
         .dev_type = MODBUS_DEV_TYPE_MBSL32DI,
+        .poll_interval_ms = 1000U,
+        .timeout_ms = 300U,
+        .is_enabled = true,
+    },
+    {
+        .device_id = 4U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 4U,
+        .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
         .poll_interval_ms = 1000U,
         .timeout_ms = 300U,
         .is_enabled = true,
@@ -238,18 +247,22 @@ static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
 {
     app_container_t *app = (app_container_t *)ctx;
-    if (app == NULL || domain != CONFIG_DOMAIN_NET_ETH || out_buf == NULL) {
+    if (app == NULL || domain != CONFIG_DOMAIN_NET_ETH || out_buf == NULL)
+    {
         return -EINVAL;
     }
-    if (i_network_is_bound(&app->net_eth)) {
+    if (i_network_is_bound(&app->net_eth))
+    {
         return i_network_get_config(&app->net_eth, NETWORK_INTERFACE_ETHERNET,
                                     out_buf, max_size, out_size);
     }
-    if (max_size < sizeof(net_eth_config_t)) {
+    if (max_size < sizeof(net_eth_config_t))
+    {
         return -ENOMEM;
     }
     (void)memcpy(out_buf, &app->ao_net.eth_cfg, sizeof(net_eth_config_t));
-    if (out_size != NULL) {
+    if (out_size != NULL)
+    {
         *out_size = sizeof(net_eth_config_t);
     }
     return 0;
@@ -259,18 +272,22 @@ static int storage_provider_wifi(void *ctx, config_domain_t domain,
                                  void *out_buf, size_t max_size, size_t *out_size)
 {
     app_container_t *app = (app_container_t *)ctx;
-    if (app == NULL || domain != CONFIG_DOMAIN_NET_WIFI || out_buf == NULL) {
+    if (app == NULL || domain != CONFIG_DOMAIN_NET_WIFI || out_buf == NULL)
+    {
         return -EINVAL;
     }
-    if (i_network_is_bound(&app->net_wifi)) {
+    if (i_network_is_bound(&app->net_wifi))
+    {
         return i_network_get_config(&app->net_wifi, NETWORK_INTERFACE_WIFI,
                                     out_buf, max_size, out_size);
     }
-    if (max_size < sizeof(net_wifi_config_t)) {
+    if (max_size < sizeof(net_wifi_config_t))
+    {
         return -ENOMEM;
     }
     (void)memcpy(out_buf, &app->ao_net.wifi_cfg, sizeof(net_wifi_config_t));
-    if (out_size != NULL) {
+    if (out_size != NULL)
+    {
         *out_size = sizeof(net_wifi_config_t);
     }
     return 0;
@@ -280,7 +297,8 @@ static int storage_provider_modbus(void *ctx, config_domain_t domain,
                                    void *out_buf, size_t max_size, size_t *out_size)
 {
     app_container_t *app = (app_container_t *)ctx;
-    if (app == NULL || domain != CONFIG_DOMAIN_MODBUS || out_buf == NULL) {
+    if (app == NULL || domain != CONFIG_DOMAIN_MODBUS || out_buf == NULL)
+    {
         return -EINVAL;
     }
     return modbus_registry_export(&app->registry_impl, out_buf, max_size, out_size);
@@ -318,7 +336,8 @@ static int init_active_objects(app_container_t *self)
 static int init_storage(app_container_t *self)
 {
 #if defined(CONFIG_ZTEST)
-    if (!i_config_storage_is_bound(&self->storage)) {
+    if (!i_config_storage_is_bound(&self->storage))
+    {
         self->storage = fake_config_storage_get_port();
     }
 #else
@@ -326,19 +345,26 @@ static int init_storage(app_container_t *self)
 #if DT_NODE_EXISTS(DT_NODELABEL(eeprom0))
     eeprom_dev = DEVICE_DT_GET(DT_NODELABEL(eeprom0));
 #endif
-    if (eeprom_dev != NULL) {
+    if (eeprom_dev != NULL)
+    {
         int store_err = adapter_storage_microconf_init(&self->storage_adapter, eeprom_dev);
-        if (store_err == 0) {
+        if (store_err == 0)
+        {
             self->storage = adapter_storage_microconf_port(&self->storage_adapter);
-        } else {
+        }
+        else
+        {
             LOG_WRN("adapter_storage_microconf_init failed (%d)", store_err);
         }
-    } else {
+    }
+    else
+    {
         LOG_WRN("eeprom0 devicetree node not found");
     }
 #endif
 
-    if (!i_config_storage_is_bound(&self->storage)) {
+    if (!i_config_storage_is_bound(&self->storage))
+    {
         LOG_WRN("Persistent storage is not bound; storage subsystem operating in degraded mode");
     }
 
@@ -348,7 +374,8 @@ static int init_storage(app_container_t *self)
     int err = ao_storage_init(&self->ao_store, &self->storage,
                               &self->ao_store_queue, s_ao_store_stack,
                               K_THREAD_STACK_SIZEOF(s_ao_store_stack));
-    if (err != 0) {
+    if (err != 0)
+    {
         LOG_ERR("storage active object init failed (%d)", err);
         return err;
     }
@@ -370,10 +397,12 @@ static int init_network(app_container_t *self)
                 AO_NETWORK_QUEUE_DEPTH);
 
 #if defined(CONFIG_ZTEST)
-    if (!i_network_is_bound(&self->net_eth)) {
+    if (!i_network_is_bound(&self->net_eth))
+    {
         self->net_eth = fake_network_get_eth_port();
     }
-    if (!i_network_is_bound(&self->net_wifi)) {
+    if (!i_network_is_bound(&self->net_wifi))
+    {
         self->net_wifi = fake_network_get_wifi_port();
     }
 #else
@@ -382,9 +411,12 @@ static int init_network(app_container_t *self)
     eth_dev = DEVICE_DT_GET(DT_NODELABEL(mac));
 #endif
     int eth_err = adapter_eth_stm32_init(&self->eth_adapter, eth_dev);
-    if (eth_err == 0) {
+    if (eth_err == 0)
+    {
         self->net_eth = adapter_eth_stm32_port(&self->eth_adapter);
-    } else {
+    }
+    else
+    {
         LOG_WRN("adapter_eth_stm32_init failed (%d)", eth_err);
     }
 
@@ -393,9 +425,12 @@ static int init_network(app_container_t *self)
     wifi_dev = DEVICE_DT_GET(DT_NODELABEL(esp_hosted_mcu_wifi));
 #endif
     int wifi_err = adapter_wifi_esp_hosted_init(&self->wifi_adapter, wifi_dev);
-    if (wifi_err == 0) {
+    if (wifi_err == 0)
+    {
         self->net_wifi = adapter_wifi_esp_hosted_port(&self->wifi_adapter);
-    } else {
+    }
+    else
+    {
         LOG_WRN("adapter_wifi_esp_hosted_init failed (%d)", wifi_err);
     }
 #endif
@@ -406,15 +441,19 @@ static int init_network(app_container_t *self)
     size_t loaded_eth_size = 0;
     int eth_load_res = -1;
 
-    if (i_config_storage_is_bound(&self->storage)) {
+    if (i_config_storage_is_bound(&self->storage))
+    {
         eth_load_res = i_config_storage_load(&self->storage, CONFIG_DOMAIN_NET_ETH,
                                              &loaded_eth_cfg, sizeof(loaded_eth_cfg),
                                              &loaded_eth_size);
         if (eth_load_res == 0 && loaded_eth_size == sizeof(net_eth_config_t) &&
-            net_eth_config_is_valid(&loaded_eth_cfg)) {
+            net_eth_config_is_valid(&loaded_eth_cfg))
+        {
             LOG_INF("Loaded Ethernet config from storage");
             eth_cfg_ptr = &loaded_eth_cfg;
-        } else {
+        }
+        else
+        {
             LOG_INF("No valid Ethernet config in storage (%d), applying defaults", eth_load_res);
             (void)i_config_storage_save(&self->storage, CONFIG_DOMAIN_NET_ETH,
                                         &k_default_eth_cfg, sizeof(k_default_eth_cfg));
@@ -426,15 +465,19 @@ static int init_network(app_container_t *self)
     size_t loaded_wifi_size = 0;
     int wifi_load_res = -1;
 
-    if (i_config_storage_is_bound(&self->storage)) {
+    if (i_config_storage_is_bound(&self->storage))
+    {
         wifi_load_res = i_config_storage_load(&self->storage, CONFIG_DOMAIN_NET_WIFI,
                                               &loaded_wifi_cfg, sizeof(loaded_wifi_cfg),
                                               &loaded_wifi_size);
         if (wifi_load_res == 0 && loaded_wifi_size == sizeof(net_wifi_config_t) &&
-            net_wifi_config_is_valid(&loaded_wifi_cfg)) {
+            net_wifi_config_is_valid(&loaded_wifi_cfg))
+        {
             LOG_INF("Loaded Wi-Fi config from storage");
             wifi_cfg_ptr = &loaded_wifi_cfg;
-        } else {
+        }
+        else
+        {
             LOG_INF("No valid Wi-Fi config in storage (%d), applying defaults", wifi_load_res);
             (void)i_config_storage_save(&self->storage, CONFIG_DOMAIN_NET_WIFI,
                                         &k_default_wifi_cfg, sizeof(k_default_wifi_cfg));
@@ -461,10 +504,12 @@ static int init_indicators(app_container_t *self)
                 sizeof(ao_indicator_event_t), AO_INDICATOR_QUEUE_DEPTH);
 
 #if defined(CONFIG_ZTEST)
-    if (!i_led_is_bound(&self->led)) {
+    if (!i_led_is_bound(&self->led))
+    {
         self->led = fake_led_get_port();
     }
-    if (!i_buzzer_is_bound(&self->buzzer)) {
+    if (!i_buzzer_is_bound(&self->buzzer))
+    {
         self->buzzer = fake_buzzer_get_port();
     }
 #else
@@ -477,9 +522,12 @@ static int init_indicators(app_container_t *self)
 #endif
 
     int led_err = adapter_led_gpio_init(&self->led_adapter, &s_led_spec);
-    if (led_err == 0) {
+    if (led_err == 0)
+    {
         (void)adapter_led_gpio_port(&self->led_adapter, &self->led);
-    } else {
+    }
+    else
+    {
         LOG_WRN("adapter_led_gpio_init failed (%d)", led_err);
     }
 
@@ -490,9 +538,12 @@ static int init_indicators(app_container_t *self)
 #endif
 
     int buzzer_err = adapter_buzzer_pwm_init(&self->buzzer_adapter, &s_buzzer_spec);
-    if (buzzer_err == 0) {
+    if (buzzer_err == 0)
+    {
         (void)adapter_buzzer_pwm_port(&self->buzzer_adapter, &self->buzzer);
-    } else {
+    }
+    else
+    {
         LOG_WRN("adapter_buzzer_pwm_init failed (%d)", buzzer_err);
     }
 #endif
@@ -500,7 +551,8 @@ static int init_indicators(app_container_t *self)
     int err = ao_system_indicator_init(&self->ao_indicator, &self->led, &self->buzzer,
                                        &self->ao_indicator_queue, s_ao_indicator_stack,
                                        K_THREAD_STACK_SIZEOF(s_ao_indicator_stack));
-    if (err != 0) {
+    if (err != 0)
+    {
         LOG_ERR("ao_system_indicator_init failed (%d)", err);
         return err;
     }
@@ -668,4 +720,3 @@ int composition_root_stop(app_container_t *self)
 
     return 0;
 }
-
