@@ -1,0 +1,64 @@
+/*
+ * Copyright (c) 2026 DAECGE
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * @file adapter_di_gpio.h
+ * @brief Infrastructure adapter for Digital Inputs using Zephyr GPIO and SPI expanders.
+ */
+
+#ifndef APP_INFRASTRUCTURE_ADAPTERS_ADAPTER_DI_GPIO_H_
+#define APP_INFRASTRUCTURE_ADAPTERS_ADAPTER_DI_GPIO_H_
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <zephyr/drivers/gpio.h>
+
+#include "common/digital_input_types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum {
+    ONCHIP_DI_USER_BUTTON = 0,
+    ONCHIP_DI_SW_BYPASS,
+    ONCHIP_DI_COUNT
+} onchip_di_id_t;
+
+typedef struct {
+    struct gpio_dt_spec onchip_gpios[ONCHIP_DI_COUNT];
+    const struct device *mcp23s17[2];
+    bool is_ready;
+} adapter_di_gpio_t;
+
+/**
+ * @brief Initialize the GPIO Digital Input adapter.
+ *
+ * Probes and configures on-chip GPIOs (button, bypass switch) and MCP23S17 SPI expanders.
+ *
+ * @param[out] self Adapter instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int adapter_di_gpio_init(adapter_di_gpio_t *self);
+
+/**
+ * @brief Raw hardware reader function matching di_raw_reader_fn_t.
+ *
+ * @param[in]  ctx      Pointer to adapter_di_gpio_t instance.
+ * @param[in]  source   Physical source type (DI_SOURCE_ONCHIP_GPIO or DI_SOURCE_INTERNAL_SPI).
+ * @param[in]  dev_id   Device identifier or onchip enum index.
+ * @param[in]  pin_idx  Pin index.
+ * @param[out] out_raw  Destination for boolean raw logic level.
+ * @return 0 on success, negative errno on failure.
+ */
+int adapter_di_gpio_read(void *ctx,
+                         di_source_type_t source,
+                         uint8_t dev_id,
+                         uint8_t pin_idx,
+                         bool *out_raw);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* APP_INFRASTRUCTURE_ADAPTERS_ADAPTER_DI_GPIO_H_ */

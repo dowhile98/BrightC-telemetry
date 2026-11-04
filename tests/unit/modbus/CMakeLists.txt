@@ -21,19 +21,23 @@ target_sources(app PRIVATE
     ${APP_DIR}/tests/fakes/src/fake_config_storage.c
     ${APP_DIR}/tests/fakes/src/fake_led.c
     ${APP_DIR}/tests/fakes/src/fake_buzzer.c
+    ${APP_DIR}/tests/fakes/src/fake_digital_input.c
     ${APP_DIR}/app/src/domain/services/cwt_tm16pt_codec.c
     ${APP_DIR}/app/src/domain/services/jsy_mk339_codec.c
     ${APP_DIR}/app/src/domain/services/mbsl32di_codec.c
     ${APP_DIR}/app/src/domain/services/waveshare_relay_codec.c
     ${APP_DIR}/app/src/domain/services/slave_scheduler.c
+    ${APP_DIR}/app/src/domain/services/digital_input_aggregator.c
     ${APP_DIR}/app/src/application/modbus/modbus_registry.c
     ${APP_DIR}/app/src/application/active_objects/ao_modbus.c
     ${APP_DIR}/app/src/application/active_objects/ao_network.c
     ${APP_DIR}/app/src/application/active_objects/ao_storage.c
     ${APP_DIR}/app/src/application/active_objects/ao_system_indicator.c
+    ${APP_DIR}/app/src/application/active_objects/ao_digital_input.c
     ${APP_DIR}/app/src/application/zbus/network_channels.c
     ${APP_DIR}/app/src/application/zbus/config_channels.c
     ${APP_DIR}/app/src/application/zbus/indicator_channels.c
+    ${APP_DIR}/app/src/application/zbus/digital_input_channels.c
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_relay_modbus.c
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c
 )

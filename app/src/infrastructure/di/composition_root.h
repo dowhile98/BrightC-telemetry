@@ -14,17 +14,21 @@
 
 #include <zephyr/kernel.h>
 
+#include "application/active_objects/ao_digital_input.h"
 #include "application/active_objects/ao_modbus.h"
 #include "application/active_objects/ao_network.h"
 #include "application/active_objects/ao_storage.h"
 #include "application/active_objects/ao_system_indicator.h"
 #include "application/modbus/modbus_registry.h"
 #include "common/config_types.h"
+#include "common/digital_input_types.h"
 #include "common/indicator_types.h"
 #include "common/modbus_types.h"
 #include "common/network_types.h"
+#include "domain/services/digital_input_aggregator.h"
 #include "interfaces/i_buzzer.h"
 #include "interfaces/i_config_storage.h"
+#include "interfaces/i_digital_input.h"
 #include "interfaces/i_led.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_network.h"
@@ -41,6 +45,7 @@
 #include "infrastructure/adapters/adapter_storage_microconf.h"
 #include "infrastructure/adapters/adapter_led_gpio.h"
 #include "infrastructure/adapters/adapter_buzzer_pwm.h"
+#include "infrastructure/adapters/adapter_di_gpio.h"
 #endif
 
 #ifdef __cplusplus
@@ -54,6 +59,7 @@ extern "C" {
 #define APP_CONTAINER_INIT_NETWORK 0x08U
 #define APP_CONTAINER_INIT_STORAGE 0x10U
 #define APP_CONTAINER_INIT_INDICATORS 0x20U
+#define APP_CONTAINER_INIT_DIGITAL_INPUT 0x40U
 
 /**
  * @brief Every object of the application, wired together.
@@ -78,9 +84,11 @@ typedef struct {
     i_config_storage_t storage;               /**< Persistent storage port */
     i_led_t led;                              /**< Status LED port */
     i_buzzer_t buzzer;                        /**< Buzzer acoustic port */
+    i_digital_input_t digital_inputs;         /**< Digital input and contact alarm port */
 
     /* Adapters, stored by value */
     modbus_registry_t registry_impl;          /**< Concrete registry */
+    di_aggregator_t di_aggregator;            /**< Concrete digital input aggregator */
 #ifdef CONFIG_NANOMODBUS
     adapter_modbus_nmbs_t nmbs[MODBUS_BUS_MAX]; /**< nanoMODBUS client per bus */
 #endif
@@ -91,6 +99,7 @@ typedef struct {
     adapter_storage_microconf_t storage_adapter; /**< microconf EEPROM storage adapter */
     adapter_led_gpio_t led_adapter;           /**< GPIO Status LED adapter */
     adapter_buzzer_pwm_t buzzer_adapter;      /**< PWM Buzzer adapter */
+    adapter_di_gpio_t di_adapter;             /**< GPIO Digital Input adapter */
 #endif
 
     /* Active objects and their static resources */
@@ -109,6 +118,10 @@ typedef struct {
     ao_system_indicator_t ao_indicator;         /**< System indicator active object */
     struct k_msgq ao_indicator_queue;           /**< Indicator AO command queue */
     uint8_t ao_indicator_queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
+
+    ao_digital_input_t ao_di;                   /**< Digital input active object */
+    struct k_msgq ao_di_queue;                  /**< Digital input AO command queue */
+    uint8_t ao_di_queue_buf[AO_DI_QUEUE_DEPTH * sizeof(ao_di_event_t)];
 
     /* Configuration of the physical buses */
     modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];

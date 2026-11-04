@@ -23,10 +23,14 @@ target_sources(app PRIVATE
     src/domain/services/waveshare_relay_codec.c
     src/application/active_objects/ao_storage.c
     src/application/active_objects/ao_system_indicator.c
+    src/application/active_objects/ao_digital_input.c
     src/application/zbus/config_channels.c
     src/application/zbus/indicator_channels.c
+    src/application/zbus/digital_input_channels.c
+    src/domain/services/digital_input_aggregator.c
     src/infrastructure/adapters/adapter_led_gpio.c
     src/infrastructure/adapters/adapter_buzzer_pwm.c
+    src/infrastructure/adapters/adapter_di_gpio.c
     src/infrastructure/di/composition_root.c
 )
 

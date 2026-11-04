@@ -1,0 +1,11 @@
+common:
+  tags:
+    - unit
+    - digital_input
+  platform_allow:
+    - native_sim
+    - qemu_cortex_m3
+tests:
+  unit.digital_input.all:
+    integration_platforms:
+      - native_sim

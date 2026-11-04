@@ -4,6 +4,7 @@
  */
 
 #include "composition_root.h"
+#include "infrastructure/adapters/adapter_di_gpio.h"
 
 #include <errno.h>
 #include <string.h>
@@ -221,6 +222,7 @@ static K_THREAD_STACK_ARRAY_DEFINE(g_ao_stacks, MODBUS_BUS_MAX, AO_MODBUS_STACK_
 static K_THREAD_STACK_DEFINE(s_ao_net_stack, AO_NETWORK_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_store_stack, AO_STORAGE_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_indicator_stack, AO_INDICATOR_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
 
 static const net_eth_config_t k_default_eth_cfg = {
     .ip_mode = NET_IP_MODE_DHCP,
@@ -561,6 +563,154 @@ static int init_indicators(app_container_t *self)
     return 0;
 }
 
+static const di_channel_config_t k_default_di_channels[] = {
+    {
+        .role = DI_ROLE_FAN_1_AUX,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 0U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 500U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_FAN_2_AUX,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 1U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 500U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_FAN_3_AUX,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 2U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 500U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_FAN_4_AUX,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 3U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 500U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_COMPRESSOR_1_AUX,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 4U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 500U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_COMPRESSOR_2_AUX,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 5U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 500U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_SMOKE_FIRE,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 6U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 60U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_WATER_LEAK,
+        .source_type = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = 0U,
+        .pin_index = 7U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 60U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_USER_BUTTON,
+        .source_type = DI_SOURCE_ONCHIP_GPIO,
+        .source_dev_id = (uint8_t)ONCHIP_DI_USER_BUTTON,
+        .pin_index = 0U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 30U,
+        .enabled = true,
+    },
+    {
+        .role = DI_ROLE_BYPASS_SWITCH,
+        .source_type = DI_SOURCE_ONCHIP_GPIO,
+        .source_dev_id = (uint8_t)ONCHIP_DI_SW_BYPASS,
+        .pin_index = 0U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 50U,
+        .enabled = true,
+    },
+};
+
+static int init_digital_inputs(app_container_t *self)
+{
+    k_msgq_init(&self->ao_di_queue, self->ao_di_queue_buf,
+                sizeof(ao_di_event_t), AO_DI_QUEUE_DEPTH);
+
+#if !defined(CONFIG_ZTEST)
+    int adp_err = adapter_di_gpio_init(&self->di_adapter);
+    if (adp_err != 0)
+    {
+        LOG_WRN("adapter_di_gpio_init failed (%d)", adp_err);
+    }
+
+    int err = di_aggregator_init(&self->di_aggregator, k_default_di_channels,
+                                 ARRAY_SIZE(k_default_di_channels),
+                                 adapter_di_gpio_read, &self->di_adapter);
+    if (err != 0)
+    {
+        LOG_ERR("di_aggregator_init failed (%d)", err);
+        return err;
+    }
+#else
+    int err = di_aggregator_init(&self->di_aggregator, k_default_di_channels,
+                                 ARRAY_SIZE(k_default_di_channels),
+                                 NULL, NULL);
+    if (err != 0)
+    {
+        LOG_ERR("di_aggregator_init failed (%d)", err);
+        return err;
+    }
+#endif
+
+    self->digital_inputs = di_aggregator_port(&self->di_aggregator);
+
+    err = ao_digital_input_init(&self->ao_di, &self->di_aggregator, &self->ao_di_queue,
+                                s_ao_di_stack, K_THREAD_STACK_SIZEOF(s_ao_di_stack));
+    if (err != 0)
+    {
+        LOG_ERR("ao_digital_input_init failed (%d)", err);
+        return err;
+    }
+
+    self->init_mask |= APP_CONTAINER_INIT_DIGITAL_INPUT;
+    return 0;
+}
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)
@@ -573,7 +723,7 @@ int composition_root_init(app_container_t *self)
      * being mistaken for a finished one. */
     const uint8_t done = APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO |
                          APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK |
-                         APP_CONTAINER_INIT_INDICATORS;
+                         APP_CONTAINER_INIT_INDICATORS | APP_CONTAINER_INIT_DIGITAL_INPUT;
 
     if ((self->init_mask & done) == done)
     {
@@ -634,6 +784,12 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
+    err = init_digital_inputs(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
     return 0;
 }
 
@@ -688,6 +844,16 @@ int composition_root_start(app_container_t *self)
         (void)ao_system_indicator_trigger_startup_chime(&self->ao_indicator);
     }
 
+    if ((self->init_mask & APP_CONTAINER_INIT_DIGITAL_INPUT) != 0U)
+    {
+        int err = ao_digital_input_start(&self->ao_di);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("digital input active object start failed (%d)", err);
+            return err;
+        }
+    }
+
     return 0;
 }
 
@@ -716,6 +882,11 @@ int composition_root_stop(app_container_t *self)
     if ((self->init_mask & APP_CONTAINER_INIT_INDICATORS) != 0U)
     {
         (void)ao_system_indicator_stop(&self->ao_indicator);
+    }
+
+    if ((self->init_mask & APP_CONTAINER_INIT_DIGITAL_INPUT) != 0U)
+    {
+        (void)ao_digital_input_stop(&self->ao_di);
     }
 
     return 0;

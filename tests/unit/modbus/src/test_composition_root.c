@@ -168,12 +168,13 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_equal(s_app.init_mask,
                   APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO |
                   APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK |
-                  APP_CONTAINER_INIT_INDICATORS,
+                  APP_CONTAINER_INIT_INDICATORS | APP_CONTAINER_INIT_DIGITAL_INPUT,
                   "Init mask mismatch");
     zassert_true(i_slave_registry_is_bound(&s_app.registry), "Registry port must be bound");
     zassert_true(i_config_storage_is_bound(&s_app.storage), "Storage port must be bound");
     zassert_true(i_led_is_bound(&s_app.led), "LED port must be bound");
     zassert_true(i_buzzer_is_bound(&s_app.buzzer), "Buzzer port must be bound");
+    zassert_true(i_digital_input_is_bound(&s_app.digital_inputs), "Digital input port must be bound");
 
     modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
@@ -277,6 +278,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     zassert_equal(ao_storage_stop(&s_app.ao_store), 0, "Stop ao_store failed");
     zassert_equal(ao_network_stop(&s_app.ao_net), 0, "Stop ao_network failed");
     zassert_equal(ao_system_indicator_stop(&s_app.ao_indicator), 0, "Stop ao_indicator failed");
+    zassert_equal(ao_digital_input_stop(&s_app.ao_di), 0, "Stop ao_di failed");
     k_msleep(50);
 }
 
@@ -307,10 +309,38 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
     zassert_equal(ao_storage_start(&s_app.ao_store), 0, "Restart ao_store failed");
     zassert_equal(ao_network_start(&s_app.ao_net), 0, "Restart ao_network failed");
     zassert_equal(ao_system_indicator_start(&s_app.ao_indicator), 0, "Restart ao_indicator failed");
+    zassert_equal(ao_digital_input_start(&s_app.ao_di), 0, "Restart ao_di failed");
 
     k_msleep(1200); /* The default slave polls every 1000 ms. */
 
     zassert_true(s_fake.calls > calls_after_stop, "A restarted thread must poll again");
 
     zassert_equal(composition_root_stop(&s_app), 0, "composition_root_stop failed");
+}
+
+ZTEST(composition_root_suite, test_digital_inputs_bound_and_queryable)
+{
+    (void) memset(&s_app, 0, sizeof(s_app));
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init failed");
+    zassert_true(i_digital_input_is_bound(&s_app.digital_inputs), "Digital input port must be bound");
+
+    bool is_active = true;
+    zassert_equal(i_digital_input_get_state(&s_app.digital_inputs, DI_ROLE_USER_BUTTON, &is_active), 0,
+                  "Query DI_ROLE_USER_BUTTON state failed");
+    zassert_false(is_active, "Initial button state must be inactive");
+
+    zassert_equal(i_digital_input_get_state(&s_app.digital_inputs, DI_ROLE_BYPASS_SWITCH, &is_active), 0,
+                  "Query DI_ROLE_BYPASS_SWITCH state failed");
+    zassert_false(is_active, "Initial bypass switch state must be inactive");
+
+    bool raw_level = true;
+    zassert_equal(i_digital_input_get_raw_level(&s_app.digital_inputs, DI_ROLE_USER_BUTTON, &raw_level), 0,
+                  "Query raw level failed");
+    zassert_false(raw_level, "Initial raw level must be false");
+
+    uint64_t mask = 0xFFFFFFFFULL;
+    zassert_equal(i_digital_input_get_active_mask(&s_app.digital_inputs, &mask), 0,
+                  "Query active mask failed");
+    zassert_equal(mask, 0ULL, "Active mask must initially be 0");
 }
