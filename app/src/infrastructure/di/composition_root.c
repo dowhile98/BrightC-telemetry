@@ -864,30 +864,85 @@ int composition_root_stop(app_container_t *self)
         return -EINVAL;
     }
 
+    /* 1. Stop digital inputs */
+    if ((self->init_mask & APP_CONTAINER_INIT_DIGITAL_INPUT) != 0U)
+    {
+        (void)ao_digital_input_stop(&self->ao_di);
+        (void)ao_digital_input_wait_stopped(&self->ao_di, K_MSEC(500));
+    }
+
+    /* 2. Stop Modbus polling threads */
     for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
     {
         (void)ao_modbus_stop(&self->ao[bus]);
+        (void)ao_modbus_wait_stopped(&self->ao[bus], K_MSEC(1000));
     }
 
-    if ((self->init_mask & APP_CONTAINER_INIT_STORAGE) != 0U)
-    {
-        (void)ao_storage_stop(&self->ao_store);
-    }
-
+    /* 3. Stop network coordinator */
     if ((self->init_mask & APP_CONTAINER_INIT_NETWORK) != 0U)
     {
         (void)ao_network_stop(&self->ao_net);
+        (void)ao_network_wait_stopped(&self->ao_net, K_MSEC(1000));
+    }
+
+    /* 4. Stop storage coordinator (flushes pending changes) */
+    if ((self->init_mask & APP_CONTAINER_INIT_STORAGE) != 0U)
+    {
+        (void)ao_storage_stop(&self->ao_store);
+        (void)ao_storage_wait_stopped(&self->ao_store, K_MSEC(2000));
+    }
+
+    /* 5. Stop system indicators */
+    if ((self->init_mask & APP_CONTAINER_INIT_INDICATORS) != 0U)
+    {
+        (void)ao_system_indicator_stop(&self->ao_indicator);
+        (void)ao_system_indicator_wait_stopped(&self->ao_indicator, K_MSEC(500));
+    }
+
+    return 0;
+}
+
+int composition_root_deinit(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->init_mask == 0U)
+    {
+        return 0;
+    }
+
+    /* Stop all Active Objects gracefully first */
+    (void)composition_root_stop(self);
+
+    /* Deinitialize in reverse order of initialization */
+    if ((self->init_mask & APP_CONTAINER_INIT_DIGITAL_INPUT) != 0U)
+    {
+        (void)ao_digital_input_deinit(&self->ao_di);
     }
 
     if ((self->init_mask & APP_CONTAINER_INIT_INDICATORS) != 0U)
     {
-        (void)ao_system_indicator_stop(&self->ao_indicator);
+        (void)ao_system_indicator_deinit(&self->ao_indicator);
     }
 
-    if ((self->init_mask & APP_CONTAINER_INIT_DIGITAL_INPUT) != 0U)
+    if ((self->init_mask & APP_CONTAINER_INIT_NETWORK) != 0U)
     {
-        (void)ao_digital_input_stop(&self->ao_di);
+        (void)ao_network_deinit(&self->ao_net);
     }
 
+    if ((self->init_mask & APP_CONTAINER_INIT_STORAGE) != 0U)
+    {
+        (void)ao_storage_deinit(&self->ao_store);
+    }
+
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
+        (void)ao_modbus_deinit(&self->ao[bus]);
+    }
+
+    self->init_mask = 0U;
     return 0;
 }

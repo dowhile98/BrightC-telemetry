@@ -152,7 +152,13 @@ static const i_modbus_client_api_t k_fake_api = {
 /* The container is ~10 KB: keep it off the ztest stack. */
 static app_container_t s_app;
 
-ZTEST_SUITE(composition_root_suite, NULL, NULL, NULL, NULL, NULL);
+static void composition_root_test_after(void *fixture)
+{
+    ARG_UNUSED(fixture);
+    (void)composition_root_deinit(&s_app);
+}
+
+ZTEST_SUITE(composition_root_suite, NULL, NULL, NULL, composition_root_test_after, NULL);
 
 ZTEST(composition_root_suite, test_init_rejects_bad_arguments)
 {
@@ -162,6 +168,7 @@ ZTEST(composition_root_suite, test_init_rejects_bad_arguments)
 
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 {
+    (void) composition_root_deinit(&s_app);
     (void) memset(&s_app, 0, sizeof(s_app));
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
@@ -209,10 +216,12 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 
     /* Idempotent. */
     zassert_equal(composition_root_init(&s_app), 0, "Second init must be a no-op");
+    (void) composition_root_deinit(&s_app);
 }
 
 ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_bus)
 {
+    (void) composition_root_deinit(&s_app);
     (void) memset(&s_app, 0, sizeof(s_app));
     (void) memset(&s_fake, 0, sizeof(s_fake));
 
@@ -273,17 +282,13 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     zassert_true(snap[3].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[3].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
 
-    zassert_equal(ao_modbus_stop(&s_app.ao[0]), 0, "Stop failed");
-    zassert_equal(ao_modbus_stop(&s_app.ao[1]), 0, "Stop failed");
-    zassert_equal(ao_storage_stop(&s_app.ao_store), 0, "Stop ao_store failed");
-    zassert_equal(ao_network_stop(&s_app.ao_net), 0, "Stop ao_network failed");
-    zassert_equal(ao_system_indicator_stop(&s_app.ao_indicator), 0, "Stop ao_indicator failed");
-    zassert_equal(ao_digital_input_stop(&s_app.ao_di), 0, "Stop ao_di failed");
-    k_msleep(50);
+    zassert_equal(composition_root_stop(&s_app), 0, "composition_root_stop failed");
+    (void) composition_root_deinit(&s_app);
 }
 
 ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
 {
+    (void) composition_root_deinit(&s_app);
     (void) memset(&s_app, 0, sizeof(s_app));
     (void) memset(&s_fake, 0, sizeof(s_fake));
 
@@ -316,10 +321,12 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
     zassert_true(s_fake.calls > calls_after_stop, "A restarted thread must poll again");
 
     zassert_equal(composition_root_stop(&s_app), 0, "composition_root_stop failed");
+    (void) composition_root_deinit(&s_app);
 }
 
 ZTEST(composition_root_suite, test_digital_inputs_bound_and_queryable)
 {
+    (void) composition_root_deinit(&s_app);
     (void) memset(&s_app, 0, sizeof(s_app));
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
@@ -343,4 +350,6 @@ ZTEST(composition_root_suite, test_digital_inputs_bound_and_queryable)
     zassert_equal(i_digital_input_get_active_mask(&s_app.digital_inputs, &mask), 0,
                   "Query active mask failed");
     zassert_equal(mask, 0ULL, "Active mask must initially be 0");
+
+    (void) composition_root_deinit(&s_app);
 }

@@ -60,19 +60,23 @@ typedef struct {
  * @brief Active Object Digital Input coordinator context.
  */
 typedef struct {
-    di_aggregator_t  *aggregator;   /**< Aggregator domain service instance */
-    struct k_msgq    *queue;        /**< Command queue */
-    struct k_thread   thread;       /**< Kernel thread control block */
-    k_thread_stack_t *stack;        /**< Thread stack pointer */
-    size_t            stack_size;   /**< Thread stack size */
-    volatile bool     is_running;   /**< Active execution flag */
-    uint64_t          last_scan_ms; /**< Uptime of preceding scan */
+    di_aggregator_t  *aggregator;     /**< Aggregator domain service instance */
+    struct k_msgq    *queue;          /**< Command queue */
+    struct k_thread   thread;         /**< Kernel thread control block */
+    k_thread_stack_t *stack;          /**< Thread stack pointer */
+    size_t            stack_size;     /**< Thread stack size */
+    struct k_sem      run_sem;        /**< Outer gate semaphore */
+    struct k_sem      stopped_sem;    /**< Stop confirmation semaphore */
+    volatile bool     is_running;     /**< Active execution flag */
+    volatile bool     terminate;      /**< Outer loop exit flag */
+    bool              is_initialized; /**< Initialization guard */
+    uint64_t          last_scan_ms;   /**< Uptime of preceding scan */
 } ao_digital_input_t;
 
 /**
  * @brief Initialize the Digital Input Active Object.
  *
- * Does not start the thread.
+ * Spawns the thread once in gated state waiting on run_sem.
  *
  * @param[out] self        Instance to initialize.
  * @param[in]  aggregator  Aggregator domain service instance.
@@ -90,6 +94,8 @@ int ao_digital_input_init(ao_digital_input_t *self,
 /**
  * @brief Start the Digital Input Active Object thread.
  *
+ * Unblocks the gate semaphore without recreating the thread.
+ *
  * @param[in,out] self Initialized Active Object instance.
  * @return 0 on success, -EALREADY if already running, -EINVAL on invalid args.
  */
@@ -106,10 +112,29 @@ int ao_digital_input_scan_now(ao_digital_input_t *self);
 /**
  * @brief Stop the Digital Input Active Object thread gracefully.
  *
+ * Sets is_running to false and unblocks the inner loop. Does not abort or destroy thread.
+ *
  * @param[in,out] self Active Object instance.
  * @return 0 on success, negative errno on error.
  */
 int ao_digital_input_stop(ao_digital_input_t *self);
+
+/**
+ * @brief Wait until the Digital Input Active Object confirms it has stopped.
+ *
+ * @param[in,out] self    Active Object instance.
+ * @param[in]     timeout Maximum time to wait.
+ * @return 0 on success, -EAGAIN on timeout, negative errno on error.
+ */
+int ao_digital_input_wait_stopped(ao_digital_input_t *self, k_timeout_t timeout);
+
+/**
+ * @brief Deinitialize the Digital Input Active Object and terminate worker thread.
+ *
+ * @param[in,out] self Active Object instance in stopped state.
+ * @return 0 on success, -EBUSY if running, negative errno on error.
+ */
+int ao_digital_input_deinit(ao_digital_input_t *self);
 
 /**
  * @brief Execute one synchronous scan cycle (exposed for deterministic testing).

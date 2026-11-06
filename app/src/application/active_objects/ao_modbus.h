@@ -54,9 +54,11 @@ extern "C" {
 
 /** Commands accepted by a polling thread. */
 typedef enum {
-    AO_MODBUS_EVENT_POLL_NOW = 0, /**< Break the current wait and poll immediately */
+    AO_MODBUS_EVENT_START = 1,    /**< Enter active polling loop */
+    AO_MODBUS_EVENT_STOP,         /**< Leave the polling loop */
+    AO_MODBUS_EVENT_TERMINATE,    /**< Terminate thread permanently */
+    AO_MODBUS_EVENT_POLL_NOW,     /**< Break the current wait and poll immediately */
     AO_MODBUS_EVENT_WRITE_COIL,   /**< Asynchronous write to a relay coil (FC05/FC0F) */
-    AO_MODBUS_EVENT_STOP          /**< Leave the polling loop */
 } modbus_event_type_t;
 
 /**
@@ -85,10 +87,14 @@ typedef struct {
     k_thread_stack_t *stack;       /**< Stack storage (owned by the container) */
     size_t stack_size;             /**< Usable stack size in bytes */
     volatile bool is_running;      /**< True between start and the STOP command */
+
+    /* Synchronization */
+    struct k_sem stopped_sem;      /**< Signaled when inner loop exits */
+    bool is_initialized;           /**< Initialized flag */
 } ao_modbus_t;
 
 /**
- * @brief Prepare an Active Object. Does not start the thread.
+ * @brief Prepare an Active Object. Spawns thread once in gated state.
  *
  * @param[out] self       Instance to initialise.
  * @param[in]  bus_id     Bus served by this instance.
@@ -105,11 +111,7 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
                    size_t stack_size);
 
 /**
- * @brief Create the polling thread.
- *
- * Pending commands are discarded first: a STOP left over from a previous run
- * would otherwise be consumed by the new thread, which would exit immediately
- * while start() reported success.
+ * @brief Start the polling loop.
  *
  * @return 0 on success, -EINVAL on bad arguments, -EALREADY when already running.
  */
@@ -123,12 +125,28 @@ int ao_modbus_start(ao_modbus_t *self);
 int ao_modbus_post(ao_modbus_t *self, const modbus_event_t *event);
 
 /**
- * @brief Ask the thread to leave its loop and wait for it to do so.
+ * @brief Request the thread to leave its inner polling loop.
  *
- * @return 0 on success, -EINVAL on bad arguments, -EBUSY when the thread did
- *         not finish within @ref AO_MODBUS_STOP_WAIT_MS.
+ * @return 0 on success, -EINVAL on bad arguments.
  */
 int ao_modbus_stop(ao_modbus_t *self);
+
+/**
+ * @brief Wait for the Active Object thread to leave its inner polling loop.
+ *
+ * @param[in] self     Active object handle.
+ * @param[in] timeout  Maximum duration to wait.
+ * @return 0 on success, -EAGAIN on timeout, -EINVAL on invalid handle.
+ */
+int ao_modbus_wait_stopped(ao_modbus_t *self, k_timeout_t timeout);
+
+/**
+ * @brief Deinitialize the Active Object and terminate its thread.
+ *
+ * @param[in] self  Active object handle.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_modbus_deinit(ao_modbus_t *self);
 
 #ifdef __cplusplus
 }

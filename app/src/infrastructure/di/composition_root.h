@@ -156,6 +156,14 @@ int composition_root_start(app_container_t *self);
  */
 int composition_root_stop(app_container_t *self);
 
+/**
+ * @brief Stop and deinitialize all Active Objects, terminating their threads.
+ *
+ * @param[in,out] self Container previously initialised.
+ * @return 0 on success, -EINVAL when @p self is NULL.
+ */
+int composition_root_deinit(app_container_t *self);
+
 #ifdef __cplusplus
 }
 #endif

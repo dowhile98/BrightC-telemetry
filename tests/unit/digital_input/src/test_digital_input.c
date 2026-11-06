@@ -24,6 +24,7 @@
 K_THREAD_STACK_DEFINE(s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
 static struct k_msgq s_test_ao_di_msgq;
 static uint8_t s_test_ao_di_queue_buf[AO_DI_QUEUE_DEPTH * sizeof(ao_di_event_t)];
+static ao_digital_input_t s_test_ao_di;
 
 static void *digital_input_suite_setup(void)
 {
@@ -575,33 +576,31 @@ ZTEST(digital_input_suite, test_zbus_digital_input_channel_publish_and_read)
 
 ZTEST(digital_input_suite, test_ao_digital_input_init_and_validation)
 {
-    ao_digital_input_t ao;
     di_aggregator_t agg;
 
     /* NULL pointers and invalid params check */
     zassert_equal(ao_digital_input_init(NULL, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE),
                   -EINVAL, "NULL self must fail");
-    zassert_equal(ao_digital_input_init(&ao, NULL, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE),
+    zassert_equal(ao_digital_input_init(&s_test_ao_di, NULL, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE),
                   -EINVAL, "NULL aggregator must fail");
-    zassert_equal(ao_digital_input_init(&ao, &agg, NULL, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE),
+    zassert_equal(ao_digital_input_init(&s_test_ao_di, &agg, NULL, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE),
                   -EINVAL, "NULL queue must fail");
-    zassert_equal(ao_digital_input_init(&ao, &agg, &s_test_ao_di_msgq, NULL, AO_DIGITAL_INPUT_STACK_SIZE),
+    zassert_equal(ao_digital_input_init(&s_test_ao_di, &agg, &s_test_ao_di_msgq, NULL, AO_DIGITAL_INPUT_STACK_SIZE),
                   -EINVAL, "NULL stack must fail");
-    zassert_equal(ao_digital_input_init(&ao, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, 0U),
+    zassert_equal(ao_digital_input_init(&s_test_ao_di, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, 0U),
                   -EINVAL, "Zero stack size must fail");
 
     /* Valid initialization */
-    int ret = ao_digital_input_init(&ao, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
+    int ret = ao_digital_input_init(&s_test_ao_di, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
     zassert_equal(ret, 0, "ao_digital_input_init must succeed");
-    zassert_false(ao_digital_input_is_running(&ao), "AO must not be running initially");
-    zassert_equal(ao_digital_input_scan_now(&ao), -EAGAIN, "scan_now before start must return -EAGAIN");
+    zassert_false(ao_digital_input_is_running(&s_test_ao_di), "AO must not be running initially");
+    zassert_equal(ao_digital_input_scan_now(&s_test_ao_di), -EAGAIN, "scan_now before start must return -EAGAIN");
+
+    zassert_equal(ao_digital_input_deinit(&s_test_ao_di), 0, "deinit must succeed");
 }
 
 ZTEST(digital_input_suite, test_ao_digital_input_step_and_zbus_emission)
 {
-    di_aggregator_t agg;
-    ao_digital_input_t ao;
-
     di_channel_config_t configs[2] = {
         {
             .role = DI_ROLE_USER_BUTTON,
@@ -621,19 +620,20 @@ ZTEST(digital_input_suite, test_ao_digital_input_step_and_zbus_emission)
         },
     };
 
+    di_aggregator_t agg;
     int ret = di_aggregator_init(&agg, configs, 2U, NULL, NULL);
     zassert_equal(ret, 0, "di_aggregator_init must succeed");
 
-    ret = ao_digital_input_init(&ao, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
+    ret = ao_digital_input_init(&s_test_ao_di, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
     zassert_equal(ret, 0, "ao_digital_input_init must succeed");
 
     /* First step with no changes: 0 transitions */
-    int trans_count = ao_digital_input_step(&ao, 20U);
+    int trans_count = ao_digital_input_step(&s_test_ao_di, 20U);
     zassert_equal(trans_count, 0, "No transitions expected on initial quiescent step");
 
     /* Trigger USER_BUTTON (0 ms debounce -> immediate transition) */
     di_aggregator_set_raw_by_role(&agg, DI_ROLE_USER_BUTTON, true);
-    trans_count = ao_digital_input_step(&ao, 20U);
+    trans_count = ao_digital_input_step(&s_test_ao_di, 20U);
     zassert_equal(trans_count, 1, "Exactly 1 transition expected for USER_BUTTON");
 
     /* Verify Zbus emission */
@@ -647,13 +647,13 @@ ZTEST(digital_input_suite, test_ao_digital_input_step_and_zbus_emission)
 
     /* Trigger BYPASS_SWITCH (40 ms debounce -> needs two 20ms steps after edge) */
     di_aggregator_set_raw_by_role(&agg, DI_ROLE_BYPASS_SWITCH, true);
-    trans_count = ao_digital_input_step(&ao, 20U); /* counter = 0 */
+    trans_count = ao_digital_input_step(&s_test_ao_di, 20U); /* counter = 0 */
     zassert_equal(trans_count, 0, "No transition at edge (0 ms accumulator)");
 
-    trans_count = ao_digital_input_step(&ao, 20U); /* counter = 20 ms < 40 ms */
+    trans_count = ao_digital_input_step(&s_test_ao_di, 20U); /* counter = 20 ms < 40 ms */
     zassert_equal(trans_count, 0, "No transition at 20 ms accumulator");
 
-    trans_count = ao_digital_input_step(&ao, 20U); /* counter = 40 ms >= 40 ms */
+    trans_count = ao_digital_input_step(&s_test_ao_di, 20U); /* counter = 40 ms >= 40 ms */
     zassert_equal(trans_count, 1, "Transition expected when reaching 40 ms threshold");
 
     memset(&evt, 0, sizeof(evt));
@@ -662,13 +662,12 @@ ZTEST(digital_input_suite, test_ao_digital_input_step_and_zbus_emission)
     zassert_equal(evt.role, DI_ROLE_BYPASS_SWITCH, "Emitted event role must be DI_ROLE_BYPASS_SWITCH");
     zassert_equal(evt.new_state, DI_STATE_ACTIVE, "New state must be ACTIVE");
     zassert_equal(evt.prev_state, DI_STATE_INACTIVE, "Prev state must be INACTIVE");
+
+    zassert_equal(ao_digital_input_deinit(&s_test_ao_di), 0, "deinit must succeed");
 }
 
 ZTEST(digital_input_suite, test_ao_digital_input_lifecycle_and_scan_now)
 {
-    di_aggregator_t agg;
-    ao_digital_input_t ao;
-
     di_channel_config_t config = {
         .role = DI_ROLE_USER_BUTTON,
         .source_type = DI_SOURCE_ONCHIP_GPIO,
@@ -678,23 +677,24 @@ ZTEST(digital_input_suite, test_ao_digital_input_lifecycle_and_scan_now)
         .enabled = true,
     };
 
+    di_aggregator_t agg;
     int ret = di_aggregator_init(&agg, &config, 1U, NULL, NULL);
     zassert_equal(ret, 0, "di_aggregator_init must succeed");
 
-    ret = ao_digital_input_init(&ao, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
+    ret = ao_digital_input_init(&s_test_ao_di, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
     zassert_equal(ret, 0, "ao_digital_input_init must succeed");
 
     /* Start Active Object thread */
-    ret = ao_digital_input_start(&ao);
+    ret = ao_digital_input_start(&s_test_ao_di);
     zassert_equal(ret, 0, "ao_digital_input_start must succeed");
-    zassert_true(ao_digital_input_is_running(&ao), "AO must be running");
+    zassert_true(ao_digital_input_is_running(&s_test_ao_di), "AO must be running");
 
     /* Start again must return -EALREADY */
-    zassert_equal(ao_digital_input_start(&ao), -EALREADY, "Double start must return -EALREADY");
+    zassert_equal(ao_digital_input_start(&s_test_ao_di), -EALREADY, "Double start must return -EALREADY");
 
     /* Change raw pin level and command immediate scan */
     di_aggregator_set_raw_by_role(&agg, DI_ROLE_USER_BUTTON, true);
-    ret = ao_digital_input_scan_now(&ao);
+    ret = ao_digital_input_scan_now(&s_test_ao_di);
     zassert_equal(ret, 0, "ao_digital_input_scan_now must succeed");
 
     /* Give the AO thread a few milliseconds to process the queued scan */
@@ -709,11 +709,15 @@ ZTEST(digital_input_suite, test_ao_digital_input_lifecycle_and_scan_now)
     zassert_equal(evt.new_state, DI_STATE_ACTIVE, "State must be ACTIVE");
 
     /* Graceful stop */
-    ret = ao_digital_input_stop(&ao);
+    ret = ao_digital_input_stop(&s_test_ao_di);
     zassert_equal(ret, 0, "ao_digital_input_stop must succeed");
-    zassert_false(ao_digital_input_is_running(&ao), "AO must no longer be running");
+    zassert_equal(ao_digital_input_wait_stopped(&s_test_ao_di, K_MSEC(500)), 0, "wait_stopped must succeed");
+    zassert_false(ao_digital_input_is_running(&s_test_ao_di), "AO must no longer be running");
 
     /* Stop again must be safe and idempotent */
-    ret = ao_digital_input_stop(&ao);
+    ret = ao_digital_input_stop(&s_test_ao_di);
     zassert_equal(ret, 0, "Repeated ao_digital_input_stop must return 0");
+
+    /* Deinit */
+    zassert_equal(ao_digital_input_deinit(&s_test_ao_di), 0, "ao_digital_input_deinit must succeed");
 }

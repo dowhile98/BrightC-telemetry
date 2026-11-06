@@ -43,10 +43,12 @@ extern "C" {
 
 /** Events/commands accepted by ao_network. */
 typedef enum {
-    AO_NETWORK_EVENT_POLL_STATUS = 0, /**< Trigger immediate status poll */
+    AO_NETWORK_EVENT_START = 1,       /**< Start inner processing loop */
+    AO_NETWORK_EVENT_STOP,            /**< Request to stop Active Object thread */
+    AO_NETWORK_EVENT_TERMINATE,       /**< Terminate thread permanently */
+    AO_NETWORK_EVENT_POLL_STATUS,     /**< Trigger immediate status poll */
     AO_NETWORK_EVENT_CONFIG_ETH,      /**< Reconfigure Ethernet interface */
     AO_NETWORK_EVENT_CONFIG_WIFI,     /**< Reconfigure WiFi interface */
-    AO_NETWORK_EVENT_STOP             /**< Stop Active Object thread */
 } ao_network_event_type_t;
 
 /** Command event payload posted to ao_network queue. */
@@ -70,6 +72,10 @@ typedef struct {
     size_t stack_size;             /**< Usable stack size */
     volatile bool is_running;      /**< Running flag */
 
+    /* Synchronization */
+    struct k_sem stopped_sem;      /**< Signaled when inner loop exits */
+    bool is_initialized;           /**< Initialized flag */
+
     /* Active configuration caches */
     net_eth_config_t  eth_cfg;
     net_wifi_config_t wifi_cfg;
@@ -82,7 +88,7 @@ typedef struct {
 } ao_network_t;
 
 /**
- * @brief Initialize ao_network instance. Does not start the thread.
+ * @brief Initialize ao_network instance. Spawns thread once in gated state.
  *
  * @param[out] self              Instance to initialize.
  * @param[in]  net_eth           Ethernet port handle.
@@ -122,12 +128,29 @@ int ao_network_start(ao_network_t *self);
 int ao_network_post(ao_network_t *self, const ao_network_event_t *event);
 
 /**
- * @brief Stop ao_network thread gracefully and join.
+ * @brief Request ao_network thread to stop its inner processing loop.
  *
  * @param[in,out] self Active object instance.
- * @return 0 on success, -EINVAL or -EBUSY if timeout expired.
+ * @return 0 on success, negative errno on failure.
  */
 int ao_network_stop(ao_network_t *self);
+
+/**
+ * @brief Wait for ao_network thread to exit its inner processing loop.
+ *
+ * @param[in] self     Active object handle.
+ * @param[in] timeout  Maximum duration to wait.
+ * @return 0 on success, -EAGAIN on timeout, -EINVAL on invalid handle.
+ */
+int ao_network_wait_stopped(ao_network_t *self, k_timeout_t timeout);
+
+/**
+ * @brief Deinitialize ao_network and terminate its thread.
+ *
+ * @param[in] self  Active object handle.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_network_deinit(ao_network_t *self);
 
 /**
  * @brief Perform a single synchronous step/poll of both interfaces and publish if status changed.

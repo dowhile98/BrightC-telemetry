@@ -191,6 +191,7 @@ ZTEST(storage_suite, test_fake_config_storage_error_simulation)
 /* File-scope stack and queue for ao_storage tests */
 K_THREAD_STACK_DEFINE(s_test_storage_stack, AO_STORAGE_STACK_SIZE);
 K_MSGQ_DEFINE(s_test_storage_queue, sizeof(ao_storage_event_t), AO_STORAGE_QUEUE_DEPTH, 4);
+static ao_storage_t s_test_ao_storage;
 
 /* Dummy test provider */
 static uint8_t s_mock_net_eth_data[16] = {1, 2, 3, 4, 5, 6, 7, 8};
@@ -218,53 +219,52 @@ ZTEST(storage_suite, test_ao_storage_init_validation)
 {
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
-    ao_storage_t ao;
 
     /* Invalid arguments */
     zassert_equal(ao_storage_init(NULL, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL self");
-    zassert_equal(ao_storage_init(&ao, NULL, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL storage");
-    zassert_equal(ao_storage_init(&ao, &port, NULL, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL queue");
-    zassert_equal(ao_storage_init(&ao, &port, &s_test_storage_queue, NULL, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL stack");
-    zassert_equal(ao_storage_init(&ao, &port, &s_test_storage_queue, s_test_storage_stack, 0), -EINVAL, "0 stack size");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, NULL, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL storage");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, NULL, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL queue");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, NULL, AO_STORAGE_STACK_SIZE), -EINVAL, "NULL stack");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, 0), -EINVAL, "0 stack size");
 
     i_config_storage_t unbound = {0};
-    zassert_equal(ao_storage_init(&ao, &unbound, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "Unbound storage");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &unbound, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "Unbound storage");
 
     /* Valid initialization */
-    zassert_equal(ao_storage_init(&ao, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Valid init failed");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Valid init failed");
+    zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit failed");
 }
 
 ZTEST(storage_suite, test_ao_storage_provider_registration)
 {
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
-    ao_storage_t ao;
-    zassert_equal(ao_storage_init(&ao, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Init");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Init");
 
     /* Invalid provider registration */
     zassert_equal(ao_storage_register_provider(NULL, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), -EINVAL, "NULL self");
-    zassert_equal(ao_storage_register_provider(&ao, CONFIG_DOMAIN_MAX, test_net_eth_provider, NULL), -EINVAL, "Invalid domain");
-    zassert_equal(ao_storage_register_provider(&ao, CONFIG_DOMAIN_NET_ETH, NULL, NULL), -EINVAL, "NULL fn");
+    zassert_equal(ao_storage_register_provider(&s_test_ao_storage, CONFIG_DOMAIN_MAX, test_net_eth_provider, NULL), -EINVAL, "Invalid domain");
+    zassert_equal(ao_storage_register_provider(&s_test_ao_storage, CONFIG_DOMAIN_NET_ETH, NULL, NULL), -EINVAL, "NULL fn");
 
     /* Valid registration */
-    zassert_equal(ao_storage_register_provider(&ao, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), 0, "Valid registration");
+    zassert_equal(ao_storage_register_provider(&s_test_ao_storage, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), 0, "Valid registration");
+    zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit");
 }
 
 ZTEST(storage_suite, test_ao_storage_sync_flush_and_error_handling)
 {
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
-    ao_storage_t ao;
-    zassert_equal(ao_storage_init(&ao, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Init");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Init");
 
     s_mock_provider_err = 0;
-    zassert_equal(ao_storage_register_provider(&ao, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), 0, "Register");
+    zassert_equal(ao_storage_register_provider(&s_test_ao_storage, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), 0, "Register");
 
     /* Mark domain dirty without running thread */
-    ao.dirty_mask |= (1U << CONFIG_DOMAIN_NET_ETH);
-    int flushed = ao_storage_sync_flush(&ao);
+    s_test_ao_storage.dirty_mask |= (1U << CONFIG_DOMAIN_NET_ETH);
+    int flushed = ao_storage_sync_flush(&s_test_ao_storage);
     zassert_equal(flushed, 1, "Should have flushed 1 domain");
-    zassert_equal(ao.dirty_mask, 0, "Dirty mask should be cleared");
+    zassert_equal(s_test_ao_storage.dirty_mask, 0, "Dirty mask should be cleared");
 
     const fake_config_storage_state_t *st = fake_config_storage_get_state();
     zassert_equal(st->slots[CONFIG_DOMAIN_NET_ETH].save_count, 1, "Save count should be 1");
@@ -272,55 +272,60 @@ ZTEST(storage_suite, test_ao_storage_sync_flush_and_error_handling)
 
     /* Test error in provider */
     s_mock_provider_err = -EIO;
-    ao.dirty_mask |= (1U << CONFIG_DOMAIN_NET_ETH);
-    flushed = ao_storage_sync_flush(&ao);
+    s_test_ao_storage.dirty_mask |= (1U << CONFIG_DOMAIN_NET_ETH);
+    flushed = ao_storage_sync_flush(&s_test_ao_storage);
     zassert_equal(flushed, 0, "Should have failed to persist");
-    zassert_equal(ao.dirty_mask, 0, "Dirty mask should still be cleared on handled error");
+    zassert_equal(s_test_ao_storage.dirty_mask, 0, "Dirty mask should still be cleared on handled error");
 
     /* Test error in storage save */
     s_mock_provider_err = 0;
     fake_config_storage_set_errors(0, -EIO, 0, 0);
-    ao.dirty_mask |= (1U << CONFIG_DOMAIN_NET_ETH);
-    flushed = ao_storage_sync_flush(&ao);
+    s_test_ao_storage.dirty_mask |= (1U << CONFIG_DOMAIN_NET_ETH);
+    flushed = ao_storage_sync_flush(&s_test_ao_storage);
     zassert_equal(flushed, 0, "Should have failed to persist on storage error");
     fake_config_storage_set_errors(0, 0, 0, 0);
+
+    zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit");
 }
 
 ZTEST(storage_suite, test_ao_storage_lifecycle_and_debounce)
 {
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
-    ao_storage_t ao;
-    zassert_equal(ao_storage_init(&ao, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Init");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Init");
 
     s_mock_provider_err = 0;
-    zassert_equal(ao_storage_register_provider(&ao, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), 0, "Register");
+    zassert_equal(ao_storage_register_provider(&s_test_ao_storage, CONFIG_DOMAIN_NET_ETH, test_net_eth_provider, NULL), 0, "Register");
 
     /* Start thread */
-    zassert_equal(ao_storage_start(&ao), 0, "Start");
-    zassert_equal(ao_storage_start(&ao), -EALREADY, "Double start should return -EALREADY");
+    zassert_equal(ao_storage_start(&s_test_ao_storage), 0, "Start");
+    zassert_equal(ao_storage_start(&s_test_ao_storage), -EALREADY, "Double start should return -EALREADY");
 
     /* Mark dirty */
-    zassert_equal(ao_storage_mark_dirty(&ao, CONFIG_DOMAIN_NET_ETH, 0), 0, "Mark dirty");
+    zassert_equal(ao_storage_mark_dirty(&s_test_ao_storage, CONFIG_DOMAIN_NET_ETH, 0), 0, "Mark dirty");
 
     /* Check immediately: should NOT be written yet due to 500 ms debounce */
     const fake_config_storage_state_t *st = fake_config_storage_get_state();
     zassert_equal(st->slots[CONFIG_DOMAIN_NET_ETH].save_count, 0, "Should not be persisted immediately (debounce)");
 
     /* Immediate flush command */
-    zassert_equal(ao_storage_flush_now(&ao), 0, "Flush now");
+    zassert_equal(ao_storage_flush_now(&s_test_ao_storage), 0, "Flush now");
     k_sleep(K_MSEC(50));
     zassert_equal(st->slots[CONFIG_DOMAIN_NET_ETH].save_count, 1, "Should be persisted after flush_now");
 
     /* Mark dirty again and let debounce timer expire */
-    zassert_equal(ao_storage_mark_dirty(&ao, CONFIG_DOMAIN_NET_ETH, 0), 0, "Mark dirty again");
+    zassert_equal(ao_storage_mark_dirty(&s_test_ao_storage, CONFIG_DOMAIN_NET_ETH, 0), 0, "Mark dirty again");
     /* Wait for debounce (500 ms + margin) */
     k_sleep(K_MSEC(600));
     zassert_equal(st->slots[CONFIG_DOMAIN_NET_ETH].save_count, 2, "Should be persisted after debounce window");
 
     /* Stop Active Object */
-    zassert_equal(ao_storage_stop(&ao), 0, "Stop");
-    zassert_equal(ao_storage_stop(&ao), 0, "Stop on already stopped AO should succeed");
+    zassert_equal(ao_storage_stop(&s_test_ao_storage), 0, "Stop");
+    zassert_equal(ao_storage_wait_stopped(&s_test_ao_storage, K_MSEC(2000)), 0, "Wait stopped");
+    zassert_equal(ao_storage_stop(&s_test_ao_storage), 0, "Stop on already stopped AO should succeed");
+
+    /* Deinit */
+    zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit");
 }
 
 

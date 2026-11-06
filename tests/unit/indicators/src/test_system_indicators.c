@@ -16,6 +16,7 @@
 K_THREAD_STACK_DEFINE(s_test_ao_indicator_stack, 1536);
 static struct k_msgq s_test_indicator_msgq;
 static uint8_t s_test_indicator_queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
+static ao_system_indicator_t s_test_ao_indicator;
 
 static void *system_indicators_setup(void)
 {
@@ -180,9 +181,8 @@ ZTEST(system_indicators_suite, test_ao_indicator_startup_chime_progression)
 {
     i_led_t led = fake_led_get_port();
     i_buzzer_t buzzer = fake_buzzer_get_port();
-    ao_system_indicator_t ao;
 
-    zassert_equal(ao_system_indicator_init(&ao, &led, &buzzer, &s_test_indicator_msgq,
+    zassert_equal(ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
                                            s_test_ao_indicator_stack,
                                            K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack)),
                   0, "ao_system_indicator_init must succeed");
@@ -191,11 +191,11 @@ ZTEST(system_indicators_suite, test_ao_indicator_startup_chime_progression)
     ao_indicator_event_t evt = {
         .type = AO_INDICATOR_EVT_STARTUP_CHIME,
     };
-    zassert_equal(ao_system_indicator_process_event(&ao, &evt), 0, "Process startup chime event");
-    ao.chime_start_ms = 1000; /* Set fixed start time */
+    zassert_equal(ao_system_indicator_process_event(&s_test_ao_indicator, &evt), 0, "Process startup chime event");
+    s_test_ao_indicator.chime_start_ms = 1000; /* Set fixed start time */
 
     /* Step at t = 1000 ms: Phase 1 (1500 Hz Note for 80 ms, LED steady ON) */
-    zassert_equal(ao_system_indicator_step(&ao, 1000), 0, "Step at 1000 ms");
+    zassert_equal(ao_system_indicator_step(&s_test_ao_indicator, 1000), 0, "Step at 1000 ms");
     const fake_led_state_t *led_st = fake_led_get_state();
     const fake_buzzer_state_t *bz_st = fake_buzzer_get_state();
     zassert_equal(led_st->current_state, LED_STATE_ON, "LED must be ON during startup chime");
@@ -203,30 +203,32 @@ ZTEST(system_indicators_suite, test_ao_indicator_startup_chime_progression)
     zassert_equal(bz_st->last_frequency_hz, 1500, "Tone 1 must be 1500 Hz");
 
     /* Step at t = 1050 ms: still in Note 1 (80 ms total) */
-    zassert_equal(ao_system_indicator_step(&ao, 1050), 0, "Step at 1050 ms");
+    zassert_equal(ao_system_indicator_step(&s_test_ao_indicator, 1050), 0, "Step at 1050 ms");
     zassert_true(bz_st->is_sounding, "Buzzer must still be sounding");
     zassert_equal(bz_st->last_frequency_hz, 1500, "Tone 1 must still be 1500 Hz");
 
     /* Step at t = 1090 ms: Silence phase (between 80 ms and 110 ms) */
-    zassert_equal(ao_system_indicator_step(&ao, 1090), 0, "Step at 1090 ms");
+    zassert_equal(ao_system_indicator_step(&s_test_ao_indicator, 1090), 0, "Step at 1090 ms");
     zassert_false(bz_st->is_sounding, "Buzzer must be silent in pause");
     zassert_equal(led_st->current_state, LED_STATE_ON, "LED must remain steady ON");
 
     /* Step at t = 1120 ms: Phase 2 (2500 Hz Note for 150 ms, from 110 ms to 260 ms) */
-    zassert_equal(ao_system_indicator_step(&ao, 1120), 0, "Step at 1120 ms");
+    zassert_equal(ao_system_indicator_step(&s_test_ao_indicator, 1120), 0, "Step at 1120 ms");
     zassert_true(bz_st->is_sounding, "Buzzer must be sounding during Note 2");
     zassert_equal(bz_st->last_frequency_hz, 2500, "Tone 2 must be 2500 Hz");
 
     /* Step at t = 1270 ms: Chime completed (> 260 ms) */
-    zassert_equal(ao_system_indicator_step(&ao, 1270), 0, "Step at 1270 ms");
+    zassert_equal(ao_system_indicator_step(&s_test_ao_indicator, 1270), 0, "Step at 1270 ms");
     zassert_false(bz_st->is_sounding, "Buzzer must be silent after chime finishes");
     zassert_equal(led_st->current_state, LED_STATE_ON, "LED must remain steady ON in HEALTHY state");
 
     indicator_status_t status;
-    zassert_equal(ao_system_indicator_get_status(&ao, &status), 0, "Query status");
+    zassert_equal(ao_system_indicator_get_status(&s_test_ao_indicator, &status), 0, "Query status");
     zassert_equal(status.led_state, LED_STATE_ON, "Target LED must be steady ON");
     zassert_equal(status.buzzer_pattern, BUZZER_PATTERN_SILENT, "Target buzzer must be SILENT");
     zassert_equal(status.system_health, SYSTEM_HEALTH_HEALTHY, "System health must be HEALTHY");
+
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
 }
 
 /*============================================================================*
@@ -237,9 +239,8 @@ ZTEST(system_indicators_suite, test_ao_indicator_startup_chime_aborted_on_alarm)
 {
     i_led_t led = fake_led_get_port();
     i_buzzer_t buzzer = fake_buzzer_get_port();
-    ao_system_indicator_t ao;
 
-    zassert_equal(ao_system_indicator_init(&ao, &led, &buzzer, &s_test_indicator_msgq,
+    zassert_equal(ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
                                            s_test_ao_indicator_stack,
                                            K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack)),
                   0, "ao_system_indicator_init must succeed");
@@ -248,8 +249,8 @@ ZTEST(system_indicators_suite, test_ao_indicator_startup_chime_aborted_on_alarm)
     ao_indicator_event_t evt_chime = {
         .type = AO_INDICATOR_EVT_STARTUP_CHIME,
     };
-    (void)ao_system_indicator_process_event(&ao, &evt_chime);
-    ao.chime_start_ms = 1000;
+    (void)ao_system_indicator_process_event(&s_test_ao_indicator, &evt_chime);
+    s_test_ao_indicator.chime_start_ms = 1000;
 
     /* A critical alarm arrives! */
     ao_indicator_event_t evt_alarm = {
@@ -261,16 +262,18 @@ ZTEST(system_indicators_suite, test_ao_indicator_startup_chime_aborted_on_alarm)
             .timestamp_ms = 1020,
         },
     };
-    (void)ao_system_indicator_process_event(&ao, &evt_alarm);
+    (void)ao_system_indicator_process_event(&s_test_ao_indicator, &evt_alarm);
 
     /* Step at t = 1020 ms: chime must be aborted and critical alarm must take over! */
-    zassert_equal(ao_system_indicator_step(&ao, 1020), 0, "Step at 1020 ms");
-    zassert_false(ao.startup_chime_active, "Startup chime must be aborted");
+    zassert_equal(ao_system_indicator_step(&s_test_ao_indicator, 1020), 0, "Step at 1020 ms");
+    zassert_false(s_test_ao_indicator.startup_chime_active, "Startup chime must be aborted");
 
     indicator_status_t status;
-    zassert_equal(ao_system_indicator_get_status(&ao, &status), 0, "Query status");
+    zassert_equal(ao_system_indicator_get_status(&s_test_ao_indicator, &status), 0, "Query status");
     zassert_equal(status.led_state, LED_STATE_BLINK_FAST, "Critical alarm triggers FAST blink");
     zassert_equal(status.buzzer_pattern, BUZZER_PATTERN_ALARM_CONTINUOUS, "Critical alarm triggers continuous buzzer");
+
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
 }
 
 /*============================================================================*
@@ -281,9 +284,8 @@ ZTEST(system_indicators_suite, test_ao_indicator_alarm_priority)
 {
     i_led_t led = fake_led_get_port();
     i_buzzer_t buzzer = fake_buzzer_get_port();
-    ao_system_indicator_t ao;
 
-    ao_system_indicator_init(&ao, &led, &buzzer, &s_test_indicator_msgq,
+    ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
                              s_test_ao_indicator_stack,
                              K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack));
 
@@ -294,14 +296,14 @@ ZTEST(system_indicators_suite, test_ao_indicator_alarm_priority)
         .is_active = true,
         .timestamp_ms = 100,
     };
-    ao_system_indicator_post_alarm(&ao, &warn);
+    ao_system_indicator_post_alarm(&s_test_ao_indicator, &warn);
     ao_indicator_event_t evt;
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
 
-    ao_system_indicator_step(&ao, 100);
+    ao_system_indicator_step(&s_test_ao_indicator, 100);
     indicator_status_t status;
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_equal(status.active_alarm_level, ALARM_LEVEL_WARNING, "Active alarm should be WARNING");
     zassert_equal(status.led_state, LED_STATE_BLINK_SLOW, "WARNING triggers SLOW blink");
     zassert_equal(status.buzzer_pattern, BUZZER_PATTERN_ALARM_INTERMITTENT, "WARNING triggers intermittent tone");
@@ -313,38 +315,40 @@ ZTEST(system_indicators_suite, test_ao_indicator_alarm_priority)
         .is_active = true,
         .timestamp_ms = 200,
     };
-    ao_system_indicator_post_alarm(&ao, &crit);
+    ao_system_indicator_post_alarm(&s_test_ao_indicator, &crit);
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
 
-    ao_system_indicator_step(&ao, 200);
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_step(&s_test_ao_indicator, 200);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_equal(status.active_alarm_level, ALARM_LEVEL_CRITICAL, "Active alarm should be CRITICAL");
     zassert_equal(status.led_state, LED_STATE_BLINK_FAST, "CRITICAL triggers FAST blink");
     zassert_equal(status.buzzer_pattern, BUZZER_PATTERN_ALARM_CONTINUOUS, "CRITICAL triggers continuous tone");
 
     /* 3. Clear CRITICAL alarm: drops back to WARNING */
     crit.is_active = false;
-    ao_system_indicator_post_alarm(&ao, &crit);
+    ao_system_indicator_post_alarm(&s_test_ao_indicator, &crit);
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
 
-    ao_system_indicator_step(&ao, 300);
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_step(&s_test_ao_indicator, 300);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_equal(status.active_alarm_level, ALARM_LEVEL_WARNING, "Active alarm should drop to WARNING");
     zassert_equal(status.led_state, LED_STATE_BLINK_SLOW, "Falls back to SLOW blink");
 
     /* 4. Clear WARNING alarm: returns to HEALTHY */
     warn.is_active = false;
-    ao_system_indicator_post_alarm(&ao, &warn);
+    ao_system_indicator_post_alarm(&s_test_ao_indicator, &warn);
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
 
-    ao_system_indicator_step(&ao, 400);
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_step(&s_test_ao_indicator, 400);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_equal(status.active_alarm_level, ALARM_LEVEL_NONE, "No active alarms");
     zassert_equal(status.led_state, LED_STATE_ON, "Returns to steady HEALTHY LED ON");
     zassert_equal(status.buzzer_pattern, BUZZER_PATTERN_SILENT, "Returns to silent buzzer");
+
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
 }
 
 /*============================================================================*
@@ -355,9 +359,8 @@ ZTEST(system_indicators_suite, test_ao_indicator_manual_override)
 {
     i_led_t led = fake_led_get_port();
     i_buzzer_t buzzer = fake_buzzer_get_port();
-    ao_system_indicator_t ao;
 
-    ao_system_indicator_init(&ao, &led, &buzzer, &s_test_indicator_msgq,
+    ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
                              s_test_ao_indicator_stack,
                              K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack));
 
@@ -368,21 +371,21 @@ ZTEST(system_indicators_suite, test_ao_indicator_manual_override)
         .buzzer_pattern = BUZZER_PATTERN_SILENT,
         .duration_ms = 1000,
     };
-    ao_system_indicator_post_command(&ao, &cmd);
+    ao_system_indicator_post_command(&s_test_ao_indicator, &cmd);
     ao_indicator_event_t evt;
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
-    ao.manual_start_ms = 5000;
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
+    s_test_ao_indicator.manual_start_ms = 5000;
 
-    ao_system_indicator_step(&ao, 5500);
+    ao_system_indicator_step(&s_test_ao_indicator, 5500);
     indicator_status_t status;
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_true(status.manual_override, "Manual override must be active");
     zassert_equal(status.led_state, LED_STATE_BLINK_FAST, "LED forced to BLINK_FAST");
 
     /* Step past duration: 5000 + 1000 = 6000 ms */
-    ao_system_indicator_step(&ao, 6050);
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_step(&s_test_ao_indicator, 6050);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_false(status.manual_override, "Manual override must expire");
     zassert_equal(status.led_state, LED_STATE_ON, "Returns to normal HEALTHY LED ON");
 
@@ -390,20 +393,66 @@ ZTEST(system_indicators_suite, test_ao_indicator_manual_override)
     cmd.cmd = INDICATOR_CMD_FORCE_BUZZER;
     cmd.buzzer_pattern = BUZZER_PATTERN_ALARM_INTERMITTENT;
     cmd.duration_ms = 0; /* permanent */
-    ao_system_indicator_post_command(&ao, &cmd);
+    ao_system_indicator_post_command(&s_test_ao_indicator, &cmd);
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
 
-    ao_system_indicator_step(&ao, 7000);
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_step(&s_test_ao_indicator, 7000);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_true(status.manual_override, "Manual override must be active");
 
     cmd.cmd = INDICATOR_CMD_AUTO;
-    ao_system_indicator_post_command(&ao, &cmd);
+    ao_system_indicator_post_command(&s_test_ao_indicator, &cmd);
     k_msgq_get(&s_test_indicator_msgq, &evt, K_NO_WAIT);
-    ao_system_indicator_process_event(&ao, &evt);
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
 
-    ao_system_indicator_step(&ao, 7100);
-    ao_system_indicator_get_status(&ao, &status);
+    ao_system_indicator_step(&s_test_ao_indicator, 7100);
+    ao_system_indicator_get_status(&s_test_ao_indicator, &status);
     zassert_false(status.manual_override, "AUTO must immediately cancel manual override");
+
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
+}
+
+/*============================================================================*
+ * 8. Active Object Thread Lifecycle Tests
+ *============================================================================*/
+
+ZTEST(system_indicators_suite, test_ao_indicator_lifecycle)
+{
+    i_led_t led = fake_led_get_port();
+    i_buzzer_t buzzer = fake_buzzer_get_port();
+
+    /* Init */
+    zassert_equal(ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
+                                           s_test_ao_indicator_stack,
+                                           K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack)),
+                  0, "Init");
+
+    /* Start */
+    zassert_equal(ao_system_indicator_start(&s_test_ao_indicator), 0, "Start");
+    zassert_equal(ao_system_indicator_start(&s_test_ao_indicator), -EALREADY, "Double start");
+
+    /* Post alarm while running */
+    alarm_msg_t warn = {
+        .alarm_id = 99,
+        .level = ALARM_LEVEL_WARNING,
+        .is_active = true,
+        .timestamp_ms = (uint32_t)k_uptime_get(),
+    };
+    zassert_equal(ao_system_indicator_post_alarm(&s_test_ao_indicator, &warn), 0, "Post alarm");
+
+    /* Wait a couple of ticks (AO_INDICATOR_TICK_MS is 25 ms) */
+    k_sleep(K_MSEC(75));
+
+    indicator_status_t status;
+    zassert_equal(ao_system_indicator_get_status(&s_test_ao_indicator, &status), 0, "Get status");
+    zassert_equal(status.active_alarm_level, ALARM_LEVEL_WARNING, "Alarm level should be WARNING");
+
+    /* Stop */
+    zassert_equal(ao_system_indicator_stop(&s_test_ao_indicator), 0, "Stop");
+    zassert_equal(ao_system_indicator_wait_stopped(&s_test_ao_indicator, K_MSEC(500)), 0, "Wait stopped");
+    zassert_equal(ao_system_indicator_stop(&s_test_ao_indicator), 0, "Stop when stopped");
+
+    /* Deinit */
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
 }

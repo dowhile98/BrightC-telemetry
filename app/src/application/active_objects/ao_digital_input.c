@@ -26,32 +26,54 @@ static void ao_digital_input_thread_entry(void *p1, void *p2, void *p3)
     ARG_UNUSED(p2);
     ARG_UNUSED(p3);
 
-    LOG_INF("ao_digital_input thread started");
-    self->last_scan_ms = (uint64_t)k_uptime_get();
+    while (!self->terminate) {
+        /* 1. Blocked on outer gate until ao_digital_input_start() or deinit() */
+        (void)k_sem_take(&self->run_sem, K_FOREVER);
+        if (self->terminate) {
+            break;
+        }
 
-    while (self->is_running) {
-        ao_di_event_t evt;
-        int ret = k_msgq_get(self->queue, &evt, K_MSEC(AO_DIGITAL_INPUT_SCAN_PERIOD_MS));
-        if (ret == 0) {
-            if (evt.type == AO_DI_EVENT_STOP) {
+        LOG_INF("ao_digital_input thread entered inner loop");
+        self->last_scan_ms = (uint64_t)k_uptime_get();
+
+        /* 2. Inner work loop */
+        while (self->is_running) {
+            if (self->queue != NULL) {
+                ao_di_event_t evt;
+                int ret = k_msgq_get(self->queue, &evt, K_MSEC(AO_DIGITAL_INPUT_SCAN_PERIOD_MS));
+                if (ret == 0) {
+                    if (evt.type == AO_DI_EVENT_STOP) {
+                        break;
+                    }
+                    /* AO_DI_EVENT_SCAN_NOW triggers immediate scan */
+                }
+            } else {
+                k_msleep(AO_DIGITAL_INPUT_SCAN_PERIOD_MS);
+            }
+
+            if (!self->is_running) {
                 break;
             }
-            /* AO_DI_EVENT_SCAN_NOW triggers immediate scan */
+
+            uint64_t now_ms = (uint64_t)k_uptime_get();
+            uint32_t elapsed_ms = (self->last_scan_ms > 0ULL && now_ms >= self->last_scan_ms)
+                                    ? (uint32_t)(now_ms - self->last_scan_ms)
+                                    : AO_DIGITAL_INPUT_SCAN_PERIOD_MS;
+            if (elapsed_ms == 0U) {
+                elapsed_ms = AO_DIGITAL_INPUT_SCAN_PERIOD_MS;
+            }
+            self->last_scan_ms = now_ms;
+
+            (void)ao_digital_input_step(self, elapsed_ms);
         }
 
-        uint64_t now_ms = (uint64_t)k_uptime_get();
-        uint32_t elapsed_ms = (self->last_scan_ms > 0ULL && now_ms >= self->last_scan_ms)
-                                ? (uint32_t)(now_ms - self->last_scan_ms)
-                                : AO_DIGITAL_INPUT_SCAN_PERIOD_MS;
-        if (elapsed_ms == 0U) {
-            elapsed_ms = AO_DIGITAL_INPUT_SCAN_PERIOD_MS;
-        }
-        self->last_scan_ms = now_ms;
-
-        (void)ao_digital_input_step(self, elapsed_ms);
+        LOG_INF("ao_digital_input thread exited inner loop");
+        self->is_running = false;
+        (void)k_sem_give(&self->stopped_sem);
     }
 
-    LOG_INF("ao_digital_input thread stopped");
+    LOG_INF("ao_digital_input thread terminated");
+    (void)k_sem_give(&self->stopped_sem);
 }
 
 int ao_digital_input_init(ao_digital_input_t *self,
@@ -71,30 +93,21 @@ int ao_digital_input_init(ao_digital_input_t *self,
     self->stack = stack;
     self->stack_size = stack_size;
     self->is_running = false;
+    self->terminate = false;
     self->last_scan_ms = 0ULL;
 
-    return 0;
-}
+    k_sem_init(&self->run_sem, 0, 1);
+    k_sem_init(&self->stopped_sem, 0, 1);
 
-int ao_digital_input_start(ao_digital_input_t *self)
-{
-    if (self == NULL || self->aggregator == NULL || self->queue == NULL ||
-        self->stack == NULL || self->stack_size == 0U) {
-        return -EINVAL;
-    }
+    self->is_initialized = true;
 
-    if (self->is_running) {
-        return -EALREADY;
-    }
-
-    self->is_running = true;
-
+    /* Spawn thread once in gated state */
     k_thread_create(&self->thread,
                     self->stack,
                     self->stack_size,
                     ao_digital_input_thread_entry,
                     self, NULL, NULL,
-                    AO_DIGITAL_INPUT_PRIORITY,
+                    K_PRIO_PREEMPT(AO_DIGITAL_INPUT_PRIORITY),
                     0,
                     K_NO_WAIT);
 
@@ -103,9 +116,29 @@ int ao_digital_input_start(ao_digital_input_t *self)
     return 0;
 }
 
+int ao_digital_input_start(ao_digital_input_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+
+    if (self->is_running) {
+        return -EALREADY;
+    }
+
+    if (self->queue != NULL) {
+        k_msgq_purge(self->queue);
+    }
+
+    self->is_running = true;
+    k_sem_give(&self->run_sem);
+
+    return 0;
+}
+
 int ao_digital_input_scan_now(ao_digital_input_t *self)
 {
-    if (self == NULL || self->queue == NULL) {
+    if (self == NULL || self->queue == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 
@@ -121,7 +154,7 @@ int ao_digital_input_scan_now(ao_digital_input_t *self)
 
 int ao_digital_input_stop(ao_digital_input_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 
@@ -129,18 +162,45 @@ int ao_digital_input_stop(ao_digital_input_t *self)
         return 0;
     }
 
-    ao_di_event_t evt = {
-        .type = AO_DI_EVENT_STOP,
-    };
-    (void)k_msgq_put(self->queue, &evt, K_MSEC(50));
-
     self->is_running = false;
-    int err = k_thread_join(&self->thread, K_MSEC(AO_DIGITAL_INPUT_STOP_WAIT_MS));
+
+    if (self->queue != NULL) {
+        ao_di_event_t evt = {
+            .type = AO_DI_EVENT_STOP,
+        };
+        (void)k_msgq_put(self->queue, &evt, K_NO_WAIT);
+    }
+
+    return 0;
+}
+
+int ao_digital_input_wait_stopped(ao_digital_input_t *self, k_timeout_t timeout)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    return k_sem_take(&self->stopped_sem, timeout);
+}
+
+int ao_digital_input_deinit(ao_digital_input_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    if (self->is_running) {
+        return -EBUSY;
+    }
+
+    self->terminate = true;
+    k_sem_give(&self->run_sem);
+
+    int err = k_thread_join(&self->thread, K_MSEC(1000));
     if (err != 0) {
-        LOG_WRN("ao_digital_input join timed out (%d), aborting", err);
+        LOG_WRN("ao_digital_input deinit timeout, forcing abort");
         k_thread_abort(&self->thread);
     }
 
+    self->is_initialized = false;
     return 0;
 }
 

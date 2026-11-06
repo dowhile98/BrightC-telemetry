@@ -14,9 +14,6 @@
 
 LOG_MODULE_REGISTER(ao_storage, LOG_LEVEL_INF);
 
-/* Temporary bounce buffer for domain serialization to avoid stack overflow */
-static uint8_t s_storage_bounce_buffer[2048];
-
 static void ao_storage_publish_event(config_domain_t domain,
                                     config_event_type_t event_type,
                                     uint16_t sub_id,
@@ -56,8 +53,8 @@ int ao_storage_sync_flush(ao_storage_t *self)
         }
 
         size_t size = 0;
-        int err = provider->fn(provider->ctx, domain, s_storage_bounce_buffer,
-                               sizeof(s_storage_bounce_buffer), &size);
+        int err = provider->fn(provider->ctx, domain, self->bounce_buf,
+                               sizeof(self->bounce_buf), &size);
         if (err != 0 || size == 0) {
             LOG_ERR("Provider for domain %d failed to retrieve data: %d", domain, err);
             self->dirty_mask &= ~bit;
@@ -65,7 +62,7 @@ int ao_storage_sync_flush(ao_storage_t *self)
             continue;
         }
 
-        err = i_config_storage_save(self->storage, domain, s_storage_bounce_buffer, size);
+        err = i_config_storage_save(self->storage, domain, self->bounce_buf, size);
         if (err != 0) {
             LOG_ERR("Failed to persist domain %d: %d", domain, err);
             self->dirty_mask &= ~bit;
@@ -88,53 +85,78 @@ static void ao_storage_thread(void *p1, void *p2, void *p3)
     ARG_UNUSED(p2);
     ARG_UNUSED(p3);
 
-    LOG_INF("ao_storage thread started");
+    bool should_terminate = false;
 
-    while (self->is_running) {
+    while (!should_terminate) {
         ao_storage_event_t event;
-        k_timeout_t wait_time = K_FOREVER;
-
-        /* If debounce timer has expired or is active, check timer status */
-        if (k_timer_status_get(&self->debounce_timer) > 0) {
-            /* Debounce timer elapsed, flush dirty domains */
-            ao_storage_sync_flush(self);
+        /* Outer gate: wait for START or TERMINATE */
+        int err = k_msgq_get(self->queue, &event, K_FOREVER);
+        if (err != 0) {
+            continue;
+        }
+        if (event.type == AO_STORAGE_EVENT_TERMINATE) {
+            break;
+        }
+        if (event.type != AO_STORAGE_EVENT_START) {
+            continue;
         }
 
-        /* If domains are dirty, calculate remaining debounce or poll with timeout */
-        if (self->dirty_mask != 0) {
-            k_ticks_t rem = k_timer_remaining_ticks(&self->debounce_timer);
-            wait_time = K_TICKS(rem);
-            if (K_TICKS(rem).ticks == 0) {
-                ao_storage_sync_flush(self);
-                wait_time = K_FOREVER;
+        LOG_INF("ao_storage thread entered inner loop");
+
+        /* Inner work loop */
+        while (self->is_running) {
+            k_timeout_t wait_time = K_FOREVER;
+
+            if (k_timer_status_get(&self->debounce_timer) > 0) {
+                (void)ao_storage_sync_flush(self);
             }
-        }
 
-        int err = k_msgq_get(self->queue, &event, wait_time);
-        if (err == 0) {
-            if (event.type == AO_STORAGE_EVENT_STOP) {
-                break;
-            } else if (event.type == AO_STORAGE_EVENT_DIRTY) {
-                if (config_domain_is_valid(event.domain)) {
-                    self->dirty_mask |= (1U << event.domain);
-                    k_timer_start(&self->debounce_timer, K_MSEC(AO_STORAGE_DEBOUNCE_MS), K_NO_WAIT);
-                    LOG_DBG("Domain %d marked dirty, debounce timer restarted", event.domain);
+            if (self->dirty_mask != 0) {
+                k_ticks_t rem = k_timer_remaining_ticks(&self->debounce_timer);
+                wait_time = K_TICKS(rem);
+                if (K_TICKS(rem).ticks == 0) {
+                    (void)ao_storage_sync_flush(self);
+                    wait_time = K_FOREVER;
                 }
-            } else if (event.type == AO_STORAGE_EVENT_FLUSH_NOW) {
-                k_timer_stop(&self->debounce_timer);
-                ao_storage_sync_flush(self);
             }
-        } else if (err == -EAGAIN) {
-            /* Timeout expired while waiting -> debounce period finished */
-            ao_storage_sync_flush(self);
+
+            err = k_msgq_get(self->queue, &event, wait_time);
+            if (err == 0) {
+                if (event.type == AO_STORAGE_EVENT_STOP) {
+                    break;
+                }
+                if (event.type == AO_STORAGE_EVENT_TERMINATE) {
+                    should_terminate = true;
+                    break;
+                }
+                if (event.type == AO_STORAGE_EVENT_DIRTY) {
+                    if (config_domain_is_valid(event.domain)) {
+                        self->dirty_mask |= (1U << event.domain);
+                        k_timer_start(&self->debounce_timer, K_MSEC(AO_STORAGE_DEBOUNCE_MS), K_NO_WAIT);
+                        LOG_DBG("Domain %d marked dirty, debounce timer restarted", event.domain);
+                    }
+                } else if (event.type == AO_STORAGE_EVENT_FLUSH_NOW) {
+                    k_timer_stop(&self->debounce_timer);
+                    (void)ao_storage_sync_flush(self);
+                }
+            } else if (err == -EAGAIN) {
+                (void)ao_storage_sync_flush(self);
+            }
+        }
+
+        /* Thread exiting inner loop, flush remaining dirty data */
+        k_timer_stop(&self->debounce_timer);
+        (void)ao_storage_sync_flush(self);
+
+        self->is_running = false;
+        LOG_INF("ao_storage thread exited inner loop");
+        if (!should_terminate) {
+            (void)k_sem_give(&self->stopped_sem);
         }
     }
 
-    /* Thread exiting, flush remaining dirty data */
-    k_timer_stop(&self->debounce_timer);
-    ao_storage_sync_flush(self);
-
-    LOG_INF("ao_storage thread stopped");
+    LOG_INF("ao_storage thread terminated");
+    (void)k_sem_give(&self->stopped_sem);
 }
 
 int ao_storage_init(ao_storage_t *self,
@@ -159,7 +181,22 @@ int ao_storage_init(ao_storage_t *self,
     self->is_running = false;
     self->dirty_mask = 0;
 
+    k_sem_init(&self->stopped_sem, 0, 1);
     k_timer_init(&self->debounce_timer, NULL, NULL);
+
+    self->is_initialized = true;
+
+    /* Spawn worker thread once in gated state */
+    k_thread_create(&self->thread,
+                    self->stack,
+                    self->stack_size,
+                    ao_storage_thread,
+                    self, NULL, NULL,
+                    K_PRIO_PREEMPT(AO_STORAGE_PRIORITY),
+                    0,
+                    K_NO_WAIT);
+
+    k_thread_name_set(&self->thread, "ao_storage");
 
     return 0;
 }
@@ -180,7 +217,7 @@ int ao_storage_register_provider(ao_storage_t *self,
 
 int ao_storage_start(ao_storage_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL || !self->is_initialized) {
         return -EINVAL;
     }
     if (self->is_running) {
@@ -189,22 +226,15 @@ int ao_storage_start(ao_storage_t *self)
 
     self->is_running = true;
 
-    k_thread_create(&self->thread,
-                    self->stack,
-                    self->stack_size,
-                    ao_storage_thread,
-                    self, NULL, NULL,
-                    AO_STORAGE_PRIORITY,
-                    0,
-                    K_NO_WAIT);
-
-    k_thread_name_set(&self->thread, "ao_storage");
-    return 0;
+    ao_storage_event_t evt = {
+        .type = AO_STORAGE_EVENT_START,
+    };
+    return k_msgq_put(self->queue, &evt, K_NO_WAIT);
 }
 
 int ao_storage_post(ao_storage_t *self, const ao_storage_event_t *event)
 {
-    if (self == NULL || event == NULL) {
+    if (self == NULL || event == NULL || !self->is_initialized) {
         return -EINVAL;
     }
     if (!self->is_running) {
@@ -246,25 +276,51 @@ int ao_storage_flush_now(ao_storage_t *self)
 
 int ao_storage_stop(ao_storage_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL || !self->is_initialized) {
         return -EINVAL;
     }
     if (!self->is_running) {
         return 0;
     }
 
+    self->is_running = false;
+
     ao_storage_event_t evt = {
         .type = AO_STORAGE_EVENT_STOP,
     };
+    (void)k_msgq_put(self->queue, &evt, K_NO_WAIT);
 
-    (void)k_msgq_put(self->queue, &evt, K_MSEC(100));
+    return 0;
+}
 
-    self->is_running = false;
-    int err = k_thread_join(&self->thread, K_MSEC(AO_STORAGE_STOP_WAIT_MS));
-    if (err != 0) {
-        LOG_ERR("Failed to join ao_storage thread: %d", err);
+int ao_storage_wait_stopped(ao_storage_t *self, k_timeout_t timeout)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    return k_sem_take(&self->stopped_sem, timeout);
+}
+
+int ao_storage_deinit(ao_storage_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    if (self->is_running) {
         return -EBUSY;
     }
 
+    ao_storage_event_t evt = {
+        .type = AO_STORAGE_EVENT_TERMINATE,
+    };
+    (void)k_msgq_put(self->queue, &evt, K_NO_WAIT);
+
+    int err = k_thread_join(&self->thread, K_MSEC(1000));
+    if (err != 0) {
+        LOG_WRN("ao_storage deinit timeout, forcing abort");
+        k_thread_abort(&self->thread);
+    }
+
+    self->is_initialized = false;
     return 0;
 }

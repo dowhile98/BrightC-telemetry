@@ -33,11 +33,13 @@ extern "C" {
  * @brief Event types received by ao_system_indicator message queue.
  */
 typedef enum {
-    AO_INDICATOR_EVT_ALARM = 0,     /**< Alarm report or clearance */
+    AO_INDICATOR_EVT_START = 1,     /**< Start inner processing loop */
+    AO_INDICATOR_EVT_STOP,          /**< Request to stop Active Object thread */
+    AO_INDICATOR_EVT_TERMINATE,     /**< Terminate thread permanently */
+    AO_INDICATOR_EVT_ALARM,         /**< Alarm report or clearance */
     AO_INDICATOR_EVT_HEALTH,        /**< System health update */
     AO_INDICATOR_EVT_COMMAND,       /**< Manual override command */
     AO_INDICATOR_EVT_STARTUP_CHIME, /**< Request to run startup chime */
-    AO_INDICATOR_EVT_STOP           /**< Request to stop Active Object thread */
 } ao_indicator_event_type_t;
 
 /**
@@ -75,6 +77,10 @@ typedef struct {
     k_thread_stack_t  *stack;
     size_t             stack_size;
     volatile bool      is_running;
+
+    /* Synchronization */
+    struct k_sem       stopped_sem;
+    bool               is_initialized;
 
     /* Priority State Machine Data */
     ao_indicator_alarm_entry_t alarms[AO_INDICATOR_MAX_ALARMS];
@@ -133,6 +139,23 @@ int ao_system_indicator_start(ao_system_indicator_t *self);
  * @brief Stop the System Indicator Active Object thread.
  */
 int ao_system_indicator_stop(ao_system_indicator_t *self);
+
+/**
+ * @brief Wait for the Active Object thread to exit its inner work loop.
+ *
+ * @param[in] self     Active object handle.
+ * @param[in] timeout  Maximum duration to wait.
+ * @return 0 on success, -EAGAIN on timeout, -EINVAL on invalid handle.
+ */
+int ao_system_indicator_wait_stopped(ao_system_indicator_t *self, k_timeout_t timeout);
+
+/**
+ * @brief Deinitialize the Active Object and terminate its thread.
+ *
+ * @param[in] self  Active object handle.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_system_indicator_deinit(ao_system_indicator_t *self);
 
 /**
  * @brief Post an alarm event to the indicator queue.

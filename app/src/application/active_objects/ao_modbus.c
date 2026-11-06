@@ -125,65 +125,97 @@ static void ao_modbus_thread(void *p1, void *p2, void *p3)
 
     LOG_INF("bus %u: polling thread started", self->bus_id);
 
-    while (self->is_running)
+    bool should_terminate = false;
+    while (!should_terminate)
     {
-        uint64_t now_ms = (uint64_t)k_uptime_get();
-        modbus_poll_target_t target;
-
-        if (i_slave_registry_claim_next_due(self->registry, self->bus_id, now_ms, &target) == 0)
+        modbus_event_t event;
+        int err = k_msgq_get(self->queue, &event, K_FOREVER);
+        if (err != 0)
         {
-            modbus_transaction_result_t result = poll_target(self, &target);
-
-            (void)i_slave_registry_record(self->registry, target.device_id, result,
-                                          (uint64_t)k_uptime_get());
-
-            if (result != MODBUS_RESULT_OK)
-            {
-                LOG_WRN("bus %u: dev %u (addr %u) poll failed: %d",
-                        self->bus_id, target.device_id, target.slave_addr, (int)result);
-            }
-
-            if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U)
-            {
-                k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
-            }
+            continue;
+        }
+        if (event.type == AO_MODBUS_EVENT_TERMINATE)
+        {
+            break;
+        }
+        if (event.type != AO_MODBUS_EVENT_START)
+        {
             continue;
         }
 
-        modbus_event_t event;
+        LOG_INF("bus %u: polling thread entered inner loop", self->bus_id);
 
-        if (k_msgq_get(self->queue, &event, K_MSEC(idle_wait_ms(self, now_ms))) == 0)
+        while (self->is_running)
         {
-            if (event.type == AO_MODBUS_EVENT_STOP)
-            {
-                break;
-            }
+            uint64_t now_ms = (uint64_t)k_uptime_get();
+            modbus_poll_target_t target;
 
-            if (event.type == AO_MODBUS_EVENT_WRITE_COIL)
+            if (i_slave_registry_claim_next_due(self->registry, self->bus_id, now_ms, &target) == 0)
             {
-                /* Asynchronous relay write: half-duplex bus is owned by this
-                 * thread, so no other context may transmit on the UART. */
-                modbus_transaction_result_t res = i_modbus_client_write_single_coil(
-                    self->client, event.slave_addr, event.coil_addr, event.coil_value,
-                    event.timeout_ms);
+                modbus_transaction_result_t result = poll_target(self, &target);
 
-                (void)i_slave_registry_record(self->registry, event.device_id, res,
+                (void)i_slave_registry_record(self->registry, target.device_id, result,
                                               (uint64_t)k_uptime_get());
 
-                LOG_DBG("bus %u: write coil dev=%u addr=0x%04X value=0x%04X -> %d",
-                        self->bus_id, event.device_id, event.coil_addr, event.coil_value, res);
+                if (result != MODBUS_RESULT_OK)
+                {
+                    LOG_WRN("bus %u: dev %u (addr %u) poll failed: %d",
+                            self->bus_id, target.device_id, target.slave_addr, (int)result);
+                }
 
                 if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U)
                 {
                     k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
                 }
+                continue;
             }
 
-            continue;
+            if (k_msgq_get(self->queue, &event, K_MSEC(idle_wait_ms(self, now_ms))) == 0)
+            {
+                if (event.type == AO_MODBUS_EVENT_STOP)
+                {
+                    break;
+                }
+                if (event.type == AO_MODBUS_EVENT_TERMINATE)
+                {
+                    should_terminate = true;
+                    break;
+                }
+
+                if (event.type == AO_MODBUS_EVENT_WRITE_COIL)
+                {
+                    /* Asynchronous relay write: half-duplex bus is owned by this
+                     * thread, so no other context may transmit on the UART. */
+                    modbus_transaction_result_t res = i_modbus_client_write_single_coil(
+                        self->client, event.slave_addr, event.coil_addr, event.coil_value,
+                        event.timeout_ms);
+
+                    (void)i_slave_registry_record(self->registry, event.device_id, res,
+                                                  (uint64_t)k_uptime_get());
+
+                    LOG_DBG("bus %u: write coil dev=%u addr=0x%04X value=0x%04X -> %d",
+                            self->bus_id, event.device_id, event.coil_addr, event.coil_value, res);
+
+                    if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U)
+                    {
+                        k_msleep(AO_MODBUS_INTER_POLL_DELAY_MS);
+                    }
+                }
+
+                continue;
+            }
+        }
+
+        self->is_running = false;
+        LOG_INF("bus %u: polling thread exited inner loop", self->bus_id);
+        if (!should_terminate)
+        {
+            (void)k_sem_give(&self->stopped_sem);
         }
     }
 
-    LOG_INF("bus %u: polling thread stopped", self->bus_id);
+    LOG_INF("bus %u: polling thread terminated", self->bus_id);
+    (void)k_sem_give(&self->stopped_sem);
 }
 
 int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *registry,
@@ -204,12 +236,21 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
     self->stack_size = stack_size;
     self->is_running = false;
 
+    k_sem_init(&self->stopped_sem, 0, 1);
+    self->is_initialized = true;
+
+    (void)k_thread_create(&self->thread, self->stack, self->stack_size, ao_modbus_thread, self,
+                          NULL, NULL, K_PRIO_PREEMPT(AO_MODBUS_PRIORITY), 0, K_NO_WAIT);
+    (void)k_thread_name_set(&self->thread, (self->bus_id == (uint8_t)MODBUS_BUS_RS485_1)
+                                               ? "ao_modbus_1"
+                                               : "ao_modbus_2");
+
     return 0;
 }
 
 int ao_modbus_start(ao_modbus_t *self)
 {
-    if (self == NULL || self->queue == NULL || self->stack == NULL)
+    if (self == NULL || !self->is_initialized)
     {
         return -EINVAL;
     }
@@ -224,13 +265,10 @@ int ao_modbus_start(ao_modbus_t *self)
 
     self->is_running = true;
 
-    (void)k_thread_create(&self->thread, self->stack, self->stack_size, ao_modbus_thread, self,
-                          NULL, NULL, K_PRIO_PREEMPT(AO_MODBUS_PRIORITY), 0, K_NO_WAIT);
-    (void)k_thread_name_set(&self->thread, (self->bus_id == (uint8_t)MODBUS_BUS_RS485_1)
-                                               ? "ao_modbus_1"
-                                               : "ao_modbus_2");
-
-    return 0;
+    modbus_event_t evt = {
+        .type = AO_MODBUS_EVENT_START,
+    };
+    return k_msgq_put(self->queue, &evt, K_NO_WAIT);
 }
 
 int ao_modbus_post(ao_modbus_t *self, const modbus_event_t *event)
@@ -250,32 +288,51 @@ int ao_modbus_post(ao_modbus_t *self, const modbus_event_t *event)
 
 int ao_modbus_stop(ao_modbus_t *self)
 {
-    if (self == NULL)
+    if (self == NULL || !self->is_initialized)
     {
         return -EINVAL;
     }
 
-    const modbus_event_t stop = {.type = AO_MODBUS_EVENT_STOP};
-
-    /* The loop re-checks is_running, so a full queue still stops it. */
-    self->is_running = false;
-    (void)ao_modbus_post(self, &stop);
-
-    /* Waiting here is what makes a later start() safe: recreating the thread
-     * over a thread control block that is still in use is undefined. */
-    int err = k_thread_join(&self->thread, K_MSEC(AO_MODBUS_STOP_WAIT_MS));
-
-    if (err == -EDEADLK)
+    if (!self->is_running)
     {
-        /* Never started: nothing to wait for. */
         return 0;
     }
 
-    if (err != 0)
+    const modbus_event_t stop = {.type = AO_MODBUS_EVENT_STOP};
+    self->is_running = false;
+    return ao_modbus_post(self, &stop);
+}
+
+int ao_modbus_wait_stopped(ao_modbus_t *self, k_timeout_t timeout)
+{
+    if (self == NULL || !self->is_initialized)
     {
-        LOG_ERR("bus %u: polling thread did not stop (%d)", self->bus_id, err);
+        return -EINVAL;
+    }
+    return k_sem_take(&self->stopped_sem, timeout);
+}
+
+int ao_modbus_deinit(ao_modbus_t *self)
+{
+    if (self == NULL || !self->is_initialized)
+    {
+        return -EINVAL;
+    }
+    if (self->is_running)
+    {
         return -EBUSY;
     }
 
+    const modbus_event_t term = {.type = AO_MODBUS_EVENT_TERMINATE};
+    (void)k_msgq_put(self->queue, &term, K_NO_WAIT);
+
+    int err = k_thread_join(&self->thread, K_MSEC(1000));
+    if (err != 0)
+    {
+        LOG_WRN("bus %u: ao_modbus deinit timeout, forcing abort", self->bus_id);
+        k_thread_abort(&self->thread);
+    }
+
+    self->is_initialized = false;
     return 0;
 }

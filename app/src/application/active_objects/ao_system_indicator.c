@@ -341,29 +341,56 @@ static void ao_system_indicator_thread_entry(void *p1, void *p2, void *p3)
 
     LOG_INF("ao_system_indicator thread started");
 
-    while (self->is_running) {
+    bool should_terminate = false;
+    while (!should_terminate) {
         ao_indicator_event_t evt;
-        int ret = k_msgq_get(self->queue, &evt, K_MSEC(AO_INDICATOR_TICK_MS));
-        if (ret == 0) {
-            if (evt.type == AO_INDICATOR_EVT_STOP) {
-                break;
-            }
-            (void)ao_system_indicator_process_event(self, &evt);
+        int ret = k_msgq_get(self->queue, &evt, K_FOREVER);
+        if (ret != 0) {
+            continue;
+        }
+        if (evt.type == AO_INDICATOR_EVT_TERMINATE) {
+            break;
+        }
+        if (evt.type != AO_INDICATOR_EVT_START) {
+            continue;
         }
 
-        uint32_t now = (uint32_t)k_uptime_get();
-        (void)ao_system_indicator_step(self, now);
+        LOG_INF("ao_system_indicator thread entered inner loop");
+
+        while (self->is_running) {
+            ret = k_msgq_get(self->queue, &evt, K_MSEC(AO_INDICATOR_TICK_MS));
+            if (ret == 0) {
+                if (evt.type == AO_INDICATOR_EVT_STOP) {
+                    break;
+                }
+                if (evt.type == AO_INDICATOR_EVT_TERMINATE) {
+                    should_terminate = true;
+                    break;
+                }
+                (void)ao_system_indicator_process_event(self, &evt);
+            }
+
+            uint32_t now = (uint32_t)k_uptime_get();
+            (void)ao_system_indicator_step(self, now);
+        }
+
+        /* Silence and turn off on inner loop exit */
+        if (i_led_is_bound(self->led)) {
+            (void)i_led_set_state(self->led, LED_STATE_OFF);
+        }
+        if (i_buzzer_is_bound(self->buzzer)) {
+            (void)i_buzzer_stop(self->buzzer);
+        }
+
+        self->is_running = false;
+        LOG_INF("ao_system_indicator thread exited inner loop");
+        if (!should_terminate) {
+            (void)k_sem_give(&self->stopped_sem);
+        }
     }
 
-    /* Silence and turn off on thread exit */
-    if (i_led_is_bound(self->led)) {
-        (void)i_led_set_state(self->led, LED_STATE_OFF);
-    }
-    if (i_buzzer_is_bound(self->buzzer)) {
-        (void)i_buzzer_stop(self->buzzer);
-    }
-
-    LOG_INF("ao_system_indicator thread stopped");
+    LOG_INF("ao_system_indicator thread terminated");
+    (void)k_sem_give(&self->stopped_sem);
 }
 
 int ao_system_indicator_init(ao_system_indicator_t *self,
@@ -389,20 +416,8 @@ int ao_system_indicator_init(ao_system_indicator_t *self,
     self->target_led_state = LED_STATE_OFF;
     self->target_buzzer_pattern = BUZZER_PATTERN_SILENT;
 
-    return 0;
-}
-
-int ao_system_indicator_start(ao_system_indicator_t *self)
-{
-    if (self == NULL || self->queue == NULL || self->stack == NULL) {
-        return -EINVAL;
-    }
-
-    if (self->is_running) {
-        return -EALREADY;
-    }
-
-    self->is_running = true;
+    k_sem_init(&self->stopped_sem, 0, 1);
+    self->is_initialized = true;
 
     k_thread_create(&self->thread, self->stack, self->stack_size,
                     ao_system_indicator_thread_entry,
@@ -414,9 +429,27 @@ int ao_system_indicator_start(ao_system_indicator_t *self)
     return 0;
 }
 
+int ao_system_indicator_start(ao_system_indicator_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+
+    if (self->is_running) {
+        return -EALREADY;
+    }
+
+    self->is_running = true;
+
+    ao_indicator_event_t evt = {
+        .type = AO_INDICATOR_EVT_START,
+    };
+    return k_msgq_put(self->queue, &evt, K_NO_WAIT);
+}
+
 int ao_system_indicator_stop(ao_system_indicator_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 
@@ -424,23 +457,51 @@ int ao_system_indicator_stop(ao_system_indicator_t *self)
         return 0;
     }
 
+    self->is_running = false;
+
     ao_indicator_event_t evt = {
         .type = AO_INDICATOR_EVT_STOP,
     };
     (void)k_msgq_put(self->queue, &evt, K_NO_WAIT);
 
-    self->is_running = false;
+    return 0;
+}
+
+int ao_system_indicator_wait_stopped(ao_system_indicator_t *self, k_timeout_t timeout)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    return k_sem_take(&self->stopped_sem, timeout);
+}
+
+int ao_system_indicator_deinit(ao_system_indicator_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    if (self->is_running) {
+        return -EBUSY;
+    }
+
+    ao_indicator_event_t evt = {
+        .type = AO_INDICATOR_EVT_TERMINATE,
+    };
+    (void)k_msgq_put(self->queue, &evt, K_NO_WAIT);
+
     int err = k_thread_join(&self->thread, K_MSEC(1000));
     if (err != 0) {
+        LOG_WRN("ao_system_indicator deinit timeout, forcing abort");
         k_thread_abort(&self->thread);
     }
 
+    self->is_initialized = false;
     return 0;
 }
 
 int ao_system_indicator_post_alarm(ao_system_indicator_t *self, const alarm_msg_t *msg)
 {
-    if (self == NULL || msg == NULL || self->queue == NULL) {
+    if (self == NULL || msg == NULL || self->queue == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 

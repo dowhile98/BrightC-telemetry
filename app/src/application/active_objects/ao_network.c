@@ -81,33 +81,67 @@ static void ao_network_thread(void *p1, void *p2, void *p3)
 
     LOG_INF("ao_network thread started");
 
-    while (self->is_running) {
+    bool should_terminate = false;
+    while (!should_terminate) {
         ao_network_event_t event;
-        int err = k_msgq_get(self->queue, &event, K_MSEC(AO_NETWORK_POLL_INTERVAL_MS));
-
-        if (err == 0) {
-            if (event.type == AO_NETWORK_EVENT_STOP) {
-                break;
-            }
-
-            if (event.type == AO_NETWORK_EVENT_CONFIG_ETH) {
-                self->eth_cfg = event.data.eth_cfg;
-                (void)i_network_stop(self->net_eth, NETWORK_INTERFACE_ETHERNET);
-                (void)i_network_set_config(self->net_eth, NETWORK_INTERFACE_ETHERNET, &self->eth_cfg, sizeof(self->eth_cfg));
-                (void)i_network_start(self->net_eth, NETWORK_INTERFACE_ETHERNET);
-            } else if (event.type == AO_NETWORK_EVENT_CONFIG_WIFI) {
-                self->wifi_cfg = event.data.wifi_cfg;
-                (void)i_network_stop(self->net_wifi, NETWORK_INTERFACE_WIFI);
-                (void)i_network_set_config(self->net_wifi, NETWORK_INTERFACE_WIFI, &self->wifi_cfg, sizeof(self->wifi_cfg));
-                (void)i_network_start(self->net_wifi, NETWORK_INTERFACE_WIFI);
-            }
+        int err = k_msgq_get(self->queue, &event, K_FOREVER);
+        if (err != 0) {
+            continue;
+        }
+        if (event.type == AO_NETWORK_EVENT_TERMINATE) {
+            break;
+        }
+        if (event.type != AO_NETWORK_EVENT_START) {
+            continue;
         }
 
-        /* Periodic status check & publish if state changed */
-        (void)ao_network_sync_step(self);
+        LOG_INF("ao_network thread entered inner loop");
+
+        while (self->is_running) {
+            err = k_msgq_get(self->queue, &event, K_MSEC(AO_NETWORK_POLL_INTERVAL_MS));
+            if (err == 0) {
+                if (event.type == AO_NETWORK_EVENT_STOP) {
+                    break;
+                }
+                if (event.type == AO_NETWORK_EVENT_TERMINATE) {
+                    should_terminate = true;
+                    break;
+                }
+
+                if (event.type == AO_NETWORK_EVENT_CONFIG_ETH) {
+                    self->eth_cfg = event.data.eth_cfg;
+                    (void)i_network_stop(self->net_eth, NETWORK_INTERFACE_ETHERNET);
+                    (void)i_network_set_config(self->net_eth, NETWORK_INTERFACE_ETHERNET, &self->eth_cfg, sizeof(self->eth_cfg));
+                    (void)i_network_start(self->net_eth, NETWORK_INTERFACE_ETHERNET);
+                } else if (event.type == AO_NETWORK_EVENT_CONFIG_WIFI) {
+                    self->wifi_cfg = event.data.wifi_cfg;
+                    (void)i_network_stop(self->net_wifi, NETWORK_INTERFACE_WIFI);
+                    (void)i_network_set_config(self->net_wifi, NETWORK_INTERFACE_WIFI, &self->wifi_cfg, sizeof(self->wifi_cfg));
+                    (void)i_network_start(self->net_wifi, NETWORK_INTERFACE_WIFI);
+                }
+            }
+
+            /* Periodic status check & publish if state changed */
+            (void)ao_network_sync_step(self);
+        }
+
+        /* Stop network interfaces */
+        if (self->net_eth) {
+            (void)i_network_stop(self->net_eth, NETWORK_INTERFACE_ETHERNET);
+        }
+        if (self->net_wifi) {
+            (void)i_network_stop(self->net_wifi, NETWORK_INTERFACE_WIFI);
+        }
+
+        self->is_running = false;
+        LOG_INF("ao_network thread exited inner loop");
+        if (!should_terminate) {
+            (void)k_sem_give(&self->stopped_sem);
+        }
     }
 
-    LOG_INF("ao_network thread stopped");
+    LOG_INF("ao_network thread terminated");
+    (void)k_sem_give(&self->stopped_sem);
 }
 
 int ao_network_init(ao_network_t *self,
@@ -132,6 +166,9 @@ int ao_network_init(ao_network_t *self,
     self->stack_size = stack_size;
     self->is_running = false;
 
+    k_sem_init(&self->stopped_sem, 0, 1);
+    self->is_initialized = true;
+
     /* Initialize configurations: use injected initial configs if provided, else fall back to domain defaults */
     if (initial_eth_cfg != NULL) {
         self->eth_cfg = *initial_eth_cfg;
@@ -145,13 +182,16 @@ int ao_network_init(ao_network_t *self,
         (void)network_default_wifi_config(&self->wifi_cfg);
     }
 
+    (void)k_thread_create(&self->thread, self->stack, self->stack_size, ao_network_thread,
+                          self, NULL, NULL, K_PRIO_PREEMPT(AO_NETWORK_PRIORITY), 0, K_NO_WAIT);
+    (void)k_thread_name_set(&self->thread, "ao_network");
+
     return 0;
 }
 
 int ao_network_start(ao_network_t *self)
 {
-    if (self == NULL || self->queue == NULL || self->stack == NULL ||
-        self->net_eth == NULL || self->net_wifi == NULL) {
+    if (self == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 
@@ -175,17 +215,15 @@ int ao_network_start(ao_network_t *self)
     k_msgq_purge(self->queue);
     self->is_running = true;
 
-    /* Spawn Active Object thread */
-    (void)k_thread_create(&self->thread, self->stack, self->stack_size, ao_network_thread,
-                          self, NULL, NULL, K_PRIO_PREEMPT(AO_NETWORK_PRIORITY), 0, K_NO_WAIT);
-    (void)k_thread_name_set(&self->thread, "ao_network");
-
-    return 0;
+    ao_network_event_t evt = {
+        .type = AO_NETWORK_EVENT_START,
+    };
+    return k_msgq_put(self->queue, &evt, K_NO_WAIT);
 }
 
 int ao_network_post(ao_network_t *self, const ao_network_event_t *event)
 {
-    if (self == NULL || event == NULL || self->queue == NULL) {
+    if (self == NULL || event == NULL || self->queue == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 
@@ -198,7 +236,7 @@ int ao_network_post(ao_network_t *self, const ao_network_event_t *event)
 
 int ao_network_stop(ao_network_t *self)
 {
-    if (self == NULL) {
+    if (self == NULL || !self->is_initialized) {
         return -EINVAL;
     }
 
@@ -208,25 +246,35 @@ int ao_network_stop(ao_network_t *self)
 
     const ao_network_event_t stop_evt = {.type = AO_NETWORK_EVENT_STOP};
     self->is_running = false;
-    (void)ao_network_post(self, &stop_evt);
+    return ao_network_post(self, &stop_evt);
+}
 
-    int err = k_thread_join(&self->thread, K_MSEC(AO_NETWORK_STOP_WAIT_MS));
-    if (err == -EDEADLK) {
-        return 0;
+int ao_network_wait_stopped(ao_network_t *self, k_timeout_t timeout)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
     }
+    return k_sem_take(&self->stopped_sem, timeout);
+}
 
-    if (err != 0) {
-        LOG_ERR("ao_network thread did not stop (%d)", err);
+int ao_network_deinit(ao_network_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+    if (self->is_running) {
         return -EBUSY;
     }
 
-    /* Stop network interfaces */
-    if (self->net_eth) {
-        (void)i_network_stop(self->net_eth, NETWORK_INTERFACE_ETHERNET);
-    }
-    if (self->net_wifi) {
-        (void)i_network_stop(self->net_wifi, NETWORK_INTERFACE_WIFI);
+    const ao_network_event_t term_evt = {.type = AO_NETWORK_EVENT_TERMINATE};
+    (void)k_msgq_put(self->queue, &term_evt, K_NO_WAIT);
+
+    int err = k_thread_join(&self->thread, K_MSEC(1000));
+    if (err != 0) {
+        LOG_WRN("ao_network deinit timeout, forcing abort");
+        k_thread_abort(&self->thread);
     }
 
+    self->is_initialized = false;
     return 0;
 }

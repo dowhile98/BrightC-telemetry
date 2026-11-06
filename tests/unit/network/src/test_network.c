@@ -365,6 +365,7 @@ ZTEST(network_suite, test_ao_network_init_validation)
     zassert_equal(s_test_ao_net.eth_cfg.ip_addr, 0xC0A80164, "ETH fallback IP 192.168.1.100");
     zassert_equal(s_test_ao_net.wifi_cfg.mode, NET_WIFI_MODE_AP, "WiFi fallback is AP");
     zassert_str_equal(s_test_ao_net.wifi_cfg.ap.ssid, "BrightC-AP", "WiFi fallback SSID");
+    zassert_ok(ao_network_deinit(&s_test_ao_net), "Deinit after first init");
 
     /* Valid init with injected custom initial configs */
     net_eth_config_t custom_eth = {
@@ -390,6 +391,7 @@ ZTEST(network_suite, test_ao_network_init_validation)
     zassert_equal(s_test_ao_net.eth_cfg.ip_addr, 0x0A00000A, "Injected ETH IP");
     zassert_equal(s_test_ao_net.wifi_cfg.mode, NET_WIFI_MODE_STA, "Injected WiFi mode STA");
     zassert_str_equal(s_test_ao_net.wifi_cfg.sta.ssid, "CustomAP", "Injected WiFi SSID");
+    zassert_ok(ao_network_deinit(&s_test_ao_net), "Deinit after second init");
 }
 
 ZTEST(network_suite, test_ao_network_lifecycle_and_zbus_publication)
@@ -462,6 +464,8 @@ ZTEST(network_suite, test_ao_network_lifecycle_and_zbus_publication)
 
     /* Stop ao_network */
     zassert_ok(ao_network_stop(&s_test_ao_net), "Stop ao_network");
+    zassert_ok(ao_network_wait_stopped(&s_test_ao_net, K_MSEC(1000)), "Wait stopped");
+    zassert_ok(ao_network_deinit(&s_test_ao_net), "Deinit");
 }
 
 
