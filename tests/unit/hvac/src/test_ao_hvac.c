@@ -14,6 +14,7 @@
 #include "application/active_objects/ao_hvac.h"
 #include "application/zbus/hvac_channels.h"
 #include "common/hvac_types.h"
+#include "common/default_config_profiles.h"
 #include "fake_hvac_unit.h"
 
 static ao_hvac_t s_ao;
@@ -357,5 +358,132 @@ ZTEST(ao_hvac_suite, test_ao_hvac_feed_temperatures_multi_sensor)
     zassert_equal(ao_hvac_feed_temperatures(NULL, temps, valid_mask, 4U), -EINVAL, "NULL self must return -EINVAL");
     zassert_equal(ao_hvac_feed_temperatures(&s_ao, NULL, valid_mask, 4U), -EINVAL, "NULL temperatures must return -EINVAL");
 }
+
+ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
+{
+    /* 1. Verify static HVAC hybrid config validity and parameters */
+    zassert_true(config_hvac_is_valid(&k_default_hvac_config_hybrid_4units),
+                 "k_default_hvac_config_hybrid_4units must be valid");
+    zassert_equal(k_default_hvac_config_hybrid_4units.operation_mode, HVAC_MODE_HYBRID_FULL,
+                  "Mode must be HVAC_MODE_HYBRID_FULL");
+    zassert_equal(k_default_hvac_config_hybrid_4units.total_groups, 1U, "total_groups must be 1");
+    zassert_equal(k_default_hvac_config_hybrid_4units.total_units, 4U, "total_units must be 4");
+
+    const config_hvac_group_t *g0 = &k_default_hvac_config_hybrid_4units.groups[0];
+    zassert_equal(g0->unit_mask, 0x0FU, "unit_mask must be 0x0F (units 0..3)");
+    zassert_equal(g0->active_turn_count, 2U, "active_turn_count must be 2 (2+2 rotation)");
+    zassert_equal(g0->sensor_mask, 0x001FU, "sensor_mask must be 0x001F (5 internal RTD probes)");
+    zassert_within(g0->temp_min, 20.0f, 0.001f, "temp_min must be 20.0 C");
+    zassert_within(g0->temp_max, 24.0f, 0.001f, "temp_max must be 24.0 C");
+    zassert_within(g0->temp_alarm, 28.0f, 0.001f, "temp_alarm must be 28.0 C");
+    zassert_within(g0->temp_bypass, 32.0f, 0.001f, "temp_bypass must be 32.0 C");
+    zassert_equal(g0->time_to_cool_s, 1800U, "time_to_cool_s must be 1800");
+    zassert_equal(g0->delay_on_s, 10U, "delay_on_s must be 10");
+    zassert_equal(g0->fan_delay_s, 30U, "fan_delay_s must be 30");
+    zassert_equal(g0->pressure_retry_s, 180U, "pressure_retry_s must be 180");
+    zassert_equal(g0->rotation_interval_hours, 24U, "rotation_interval_hours must be 24");
+
+    /* 2. Verify relay actuator endpoints (Waveshare 32CH relay, device_id = 4) */
+    for (uint8_t u = 0; u < 4U; u++) {
+        const hvac_unit_hw_config_t *u_cfg = &k_default_hvac_config_hybrid_4units.units[u];
+        zassert_equal(u_cfg->relay_aa.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Relay backend");
+        zassert_equal(u_cfg->relay_aa.device_id, 4U, "Relay device_id 4");
+        zassert_equal(u_cfg->relay_aa.channel, (uint8_t)(u * 3U + 0U), "Cooling AA channel");
+
+        zassert_equal(u_cfg->relay_sm.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Fan backend");
+        zassert_equal(u_cfg->relay_sm.device_id, 4U, "Fan device_id 4");
+        zassert_equal(u_cfg->relay_sm.channel, (uint8_t)(u * 3U + 1U), "Fan SM channel");
+
+        zassert_equal(u_cfg->relay_g.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Alarm relay backend");
+        zassert_equal(u_cfg->relay_g.device_id, 4U, "Alarm relay device_id 4");
+        zassert_equal(u_cfg->relay_g.channel, (uint8_t)(u * 3U + 2U), "Alarm G channel");
+
+        /* Alarms (MBSL32DI, device_id = 3, channels 0..15) */
+        zassert_equal(u_cfg->alarm_hp.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "HP backend");
+        zassert_equal(u_cfg->alarm_hp.device_id, 3U, "HP device_id 3");
+        zassert_equal(u_cfg->alarm_hp.channel, (uint8_t)(u * 4U + 0U), "HP channel");
+
+        zassert_equal(u_cfg->alarm_lp.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "LP backend");
+        zassert_equal(u_cfg->alarm_lp.device_id, 3U, "LP device_id 3");
+        zassert_equal(u_cfg->alarm_lp.channel, (uint8_t)(u * 4U + 1U), "LP channel");
+
+        zassert_equal(u_cfg->alarm_flow.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Flow backend");
+        zassert_equal(u_cfg->alarm_flow.device_id, 3U, "Flow device_id 3");
+        zassert_equal(u_cfg->alarm_flow.channel, (uint8_t)(u * 4U + 2U), "Flow channel");
+
+        zassert_equal(u_cfg->alarm_volt.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Volt backend");
+        zassert_equal(u_cfg->alarm_volt.device_id, 3U, "Volt device_id 3");
+        zassert_equal(u_cfg->alarm_volt.channel, (uint8_t)(u * 4U + 3U), "Volt channel");
+
+        /* Feedbacks (MBSL32DI, device_id = 3, channels 18..25) */
+        zassert_equal(u_cfg->fb_fan.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "FB fan backend");
+        zassert_equal(u_cfg->fb_fan.device_id, 3U, "FB fan device_id 3");
+        zassert_equal(u_cfg->fb_fan.channel, (uint8_t)(18U + u * 2U), "FB fan channel");
+
+        zassert_equal(u_cfg->fb_compressor.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "FB comp backend");
+        zassert_equal(u_cfg->fb_compressor.device_id, 3U, "FB comp device_id 3");
+        zassert_equal(u_cfg->fb_compressor.channel, (uint8_t)(19U + u * 2U), "FB comp channel");
+    }
+
+    /* Interlocks */
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Fire backend");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.device_id, 3U, "Fire dev_id");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.channel, 16U, "Fire channel");
+
+    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Bypass backend");
+    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.device_id, 3U, "Bypass dev_id");
+    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.channel, 17U, "Bypass channel");
+
+    /* 3. Verify DI Hybrid Profile (32 channels) */
+    size_t di_count = 0;
+    const di_channel_config_t *di_prof = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
+    zassert_not_null(di_prof, "Hybrid DI profile must not be NULL");
+    zassert_equal(di_count, 32U, "Hybrid DI profile must have 32 channels");
+
+    /* Channels 0..15 alarm roles */
+    for (uint8_t i = 0; i < 16U; i++) {
+        zassert_equal(di_prof[i].source_type, DI_SOURCE_EXTERNAL_MODBUS, "DI source MBSL32DI");
+        zassert_equal(di_prof[i].source_dev_id, 3U, "DI dev_id 3");
+        zassert_equal(di_prof[i].pin_index, i, "DI pin_index matches");
+        zassert_true(di_prof[i].enabled, "DI channel enabled");
+    }
+    zassert_equal(di_prof[0].role, DI_ROLE_UNIT_0_ALARM_HP, "CH0 is Unit 0 HP");
+    zassert_equal(di_prof[15].role, DI_ROLE_UNIT_3_ALARM_VOLT, "CH15 is Unit 3 Volt");
+
+    /* Channel 16: Fire Interlock, Channel 17: Door Open */
+    zassert_equal(di_prof[16].role, DI_ROLE_SMOKE_FIRE, "CH16 is Fire Interlock");
+    zassert_equal(di_prof[17].role, DI_ROLE_DOOR_OPEN, "CH17 is Door Open");
+
+    /* Channels 18..25: Feedbacks */
+    zassert_equal(di_prof[18].role, DI_ROLE_FAN_1_AUX, "CH18 is Unit 0 FB Fan");
+    zassert_equal(di_prof[19].role, DI_ROLE_COMPRESSOR_1_AUX, "CH19 is Unit 0 FB Comp");
+    zassert_equal(di_prof[24].role, DI_ROLE_FAN_4_AUX, "CH24 is Unit 3 FB Fan");
+    zassert_equal(di_prof[25].role, DI_ROLE_COMPRESSOR_4_AUX, "CH25 is Unit 3 FB Comp");
+
+    /* 4. Verify helper function profile dispatch */
+    zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL), &k_default_hvac_config_hybrid_4units, "Hybrid profile lookup");
+    zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY), &k_default_hvac_config_control_only_8units, "Control-only profile lookup");
+    zassert_is_null(default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY), "Telemetry-only has no HVAC profile");
+
+    /* 5. Initialize ao_hvac with hybrid profile and feed 5 internal RTDs */
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init with hybrid profile must succeed");
+
+    /* Feed 5 internal RTDs: all at 25.0 C (above max 24.0 C) */
+    float rtd_temps[5] = { 25.0f, 25.0f, 25.0f, 25.0f, 25.0f };
+    ret = ao_hvac_feed_temperatures(&s_ao, rtd_temps, 0x001FU, 5U);
+    zassert_equal(ret, 0, "ao_hvac_feed_temperatures must succeed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step must succeed");
+
+    hvac_status_msg_t status;
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "ao_hvac_get_status must succeed");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group 0 must enter COOLING");
+    zassert_within(status.highest_temp[0], 25.0f, 0.001f, "Highest temp should be 25.0 C");
+}
+
 
 

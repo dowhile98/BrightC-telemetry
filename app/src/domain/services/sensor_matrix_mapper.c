@@ -49,17 +49,17 @@ int sensor_matrix_init_default_pilot_config(sensor_channel_cfg_t *configs, size_
         configs[idx].associated_hvac_unit = s_pair_units[k];
     }
 
-    /* 3. External CWT CH13 and CH14: Room Ambient Probes (0 and 1) */
+    /* 3. External CWT CH13 and CH14: Room Ambient Probes (Probes 5 and 6) */
     configs[12].physical_ch = (uint8_t)PHYS_CH_CWT_13;
     configs[12].role = (uint8_t)SENSOR_ROLE_TEMP_ROOM_AMBIENT;
-    configs[12].target_index = 0;
+    configs[12].target_index = 5;
     configs[12].cal_offset_c_centi = 0;
     configs[12].cal_gain_ppm = 0;
     configs[12].associated_hvac_unit = 0;
 
     configs[13].physical_ch = (uint8_t)PHYS_CH_CWT_14;
     configs[13].role = (uint8_t)SENSOR_ROLE_TEMP_ROOM_AMBIENT;
-    configs[13].target_index = 1;
+    configs[13].target_index = 6;
     configs[13].cal_offset_c_centi = 0;
     configs[13].cal_gain_ppm = 0;
     configs[13].associated_hvac_unit = 0;
@@ -79,12 +79,12 @@ int sensor_matrix_init_default_pilot_config(sensor_channel_cfg_t *configs, size_
     configs[15].cal_gain_ppm = 0;
     configs[15].associated_hvac_unit = 0;
 
-    /* 5. Internal On-Board RTD 1 to 5: Disabled by default (100% spare reserve) */
+    /* 5. Internal On-Board RTD 1 to 5: Room Ambient Probes (Probes 0 to 4) */
     for (uint8_t i = 0; i < 5; i++) {
         uint8_t idx = 16 + i;
         configs[idx].physical_ch = (uint8_t)(PHYS_CH_INTERNAL_RTD_1 + i);
-        configs[idx].role = (uint8_t)SENSOR_ROLE_DISABLED;
-        configs[idx].target_index = 0;
+        configs[idx].role = (uint8_t)SENSOR_ROLE_TEMP_ROOM_AMBIENT;
+        configs[idx].target_index = i;
         configs[idx].cal_offset_c_centi = 0;
         configs[idx].cal_gain_ppm = 0;
         configs[idx].associated_hvac_unit = 0;

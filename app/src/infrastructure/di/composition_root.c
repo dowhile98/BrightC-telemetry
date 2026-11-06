@@ -165,84 +165,7 @@ static const net_wifi_config_t k_default_wifi_cfg = {
     },
 };
 
-static const config_hvac_t k_default_hvac_cfg = {
-    .operation_mode = (uint8_t)HVAC_MODE_HYBRID_FULL,
-    .total_units = 8U,
-    .total_groups = 1U,
-    .fire_interlock = {
-        .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO,
-        .device_id = 0U,
-        .channel = 0U,
-    },
-    .bypass_switch = {
-        .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO,
-        .device_id = 0U,
-        .channel = 1U,
-    },
-    .groups = {
-        [0] = {
-            .temp_min = 20.0f,
-            .temp_max = 24.0f,
-            .temp_alarm = 28.0f,
-            .temp_bypass = 32.0f,
-            .time_to_cool_s = 1800U,
-            .delay_on_s = 10U,
-            .fan_delay_s = 30U,
-            .pressure_retry_s = 180U,
-            .manual_timeout_s = 3600U,
-            .rotation_interval_hours = 24U,
-            .sensor_mask = 0x00FFU,
-            .unit_mask = 0xFFU,
-            .active_turn_count = 4U,
-            .max_allowed_faults = 3U,
-            .enable_fan_delay = 1U,
-            .hum_min = 40U,
-            .hum_max = 70U,
-        },
-    },
-    .units = {
-        [0] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 0U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 1U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 2U },
-        },
-        [1] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 3U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 4U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 5U },
-        },
-        [2] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 6U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 7U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 8U },
-        },
-        [3] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 9U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 10U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 11U },
-        },
-        [4] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 12U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 13U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 14U },
-        },
-        [5] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 15U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 16U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 17U },
-        },
-        [6] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 18U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 19U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 20U },
-        },
-        [7] = {
-            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 21U },
-            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 22U },
-            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 23U },
-        },
-    },
-};
+#define k_default_hvac_cfg k_default_hvac_config_hybrid_4units
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
@@ -700,108 +623,7 @@ int composition_root_init_indicators(app_container_t *self)
     return 0;
 }
 
-static const di_channel_config_t k_default_di_channels[] = {
-    {
-        .role = DI_ROLE_FAN_1_AUX,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 0U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 500U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_FAN_2_AUX,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 1U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 500U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_FAN_3_AUX,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 2U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 500U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_FAN_4_AUX,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 3U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 500U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_COMPRESSOR_1_AUX,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 4U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 500U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_COMPRESSOR_2_AUX,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 5U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 500U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_SMOKE_FIRE,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 6U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 60U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_WATER_LEAK,
-        .source_type = DI_SOURCE_INTERNAL_SPI,
-        .source_dev_id = 0U,
-        .pin_index = 7U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 60U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_USER_BUTTON,
-        .source_type = DI_SOURCE_ONCHIP_GPIO,
-        .source_dev_id = (uint8_t)ONCHIP_DI_USER_BUTTON,
-        .pin_index = 0U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 30U,
-        .enabled = true,
-    },
-    {
-        .role = DI_ROLE_BYPASS_SWITCH,
-        .source_type = DI_SOURCE_ONCHIP_GPIO,
-        .source_dev_id = (uint8_t)ONCHIP_DI_SW_BYPASS,
-        .pin_index = 0U,
-        .active_level = DI_ACTIVE_HIGH,
-        .contact_type = DI_CONTACT_NORMALLY_OPEN,
-        .debounce_ms = 50U,
-        .enabled = true,
-    },
-};
+#define k_default_di_channels k_default_di_channels_hybrid
 
 int composition_root_init_digital_inputs(app_container_t *self)
 {
@@ -1411,3 +1233,43 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
 
     return 0;
 }
+
+int app_container_apply_profile(app_container_t *self, hvac_operation_mode_t mode)
+{
+    if (self == NULL || !hvac_operation_mode_is_valid((uint8_t)mode))
+    {
+        return -EINVAL;
+    }
+
+    const config_hvac_t *hvac_cfg = default_config_get_hvac_profile(mode);
+    size_t di_count = 0;
+    const di_channel_config_t *di_cfg = default_config_get_di_profile(mode, &di_count);
+
+    if (hvac_cfg == NULL || di_cfg == NULL)
+    {
+        return -EINVAL;
+    }
+
+    int err = app_container_set_hvac_config(self, hvac_cfg);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    if (self->di.initialized)
+    {
+        di_raw_reader_fn_t reader = self->di.aggregator.raw_reader;
+        void *reader_ctx = self->di.aggregator.reader_ctx;
+
+        err = di_aggregator_init(&self->di.aggregator, di_cfg, di_count, reader, reader_ctx);
+        if (err != 0)
+        {
+            return err;
+        }
+
+        self->di.port = di_aggregator_port(&self->di.aggregator);
+    }
+
+    return 0;
+}
+

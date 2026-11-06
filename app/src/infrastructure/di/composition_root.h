@@ -23,6 +23,7 @@
 #include "application/active_objects/ao_system_indicator.h"
 #include "application/modbus/modbus_registry.h"
 #include "common/config_types.h"
+#include "common/default_config_profiles.h"
 #include "common/digital_input_types.h"
 #include "common/hvac_types.h"
 #include "common/indicator_types.h"
@@ -359,6 +360,19 @@ int app_container_set_hvac_group_config(app_container_t *self, uint8_t group_id,
  * @return 0 on success, negative errno on error.
  */
 int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cfg);
+
+/**
+ * @brief Apply an operational profile (HVAC configuration + Digital Input mappings).
+ *
+ * Applies the corresponding configuration (hybrid 4-unit or control-only 8-unit)
+ * to the HVAC subsystem and re-initializes the digital input aggregator.
+ * Also marks the HVAC domain dirty for persistence.
+ *
+ * @param[in,out] self Container instance.
+ * @param[in]     mode Operating mode profile to apply (@see hvac_operation_mode_t).
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_apply_profile(app_container_t *self, hvac_operation_mode_t mode);
 
 /* =========================================================================
  * Full Lifecycle Management

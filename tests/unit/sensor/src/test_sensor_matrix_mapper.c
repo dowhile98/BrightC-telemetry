@@ -100,23 +100,23 @@ ZTEST(sensor_matrix_mapper_suite, test_pilot_profile_initialization)
         zassert_equal(configs[idx].target_index, k, "Return target index %d", k);
     }
 
-    /* Verify Room Probes */
-    zassert_equal(configs[12].role, SENSOR_ROLE_TEMP_ROOM_AMBIENT, "Room 0 role");
-    zassert_equal(configs[12].target_index, 0, "Room 0 index");
-    zassert_equal(configs[13].role, SENSOR_ROLE_TEMP_ROOM_AMBIENT, "Room 1 role");
-    zassert_equal(configs[13].target_index, 1, "Room 1 index");
+    /* Verify Room Probes (Internal RTDs 0..4, CWT 13..14 as 5..6) */
+    for (int i = 0; i < 5; i++) {
+        zassert_equal(configs[16 + i].physical_ch, PHYS_CH_INTERNAL_RTD_1 + i, "Internal RTD %d physical ch", i + 1);
+        zassert_equal(configs[16 + i].role, SENSOR_ROLE_TEMP_ROOM_AMBIENT, "Internal RTD %d role", i + 1);
+        zassert_equal(configs[16 + i].target_index, i, "Internal RTD %d target index", i);
+        zassert_equal(configs[16 + i].cal_offset_c_centi, 0, "Internal RTD %d offset 0", i + 1);
+    }
+    zassert_equal(configs[12].role, SENSOR_ROLE_TEMP_ROOM_AMBIENT, "Room 5 role (CWT 13)");
+    zassert_equal(configs[12].target_index, 5, "Room 5 index");
+    zassert_equal(configs[13].role, SENSOR_ROLE_TEMP_ROOM_AMBIENT, "Room 6 role (CWT 14)");
+    zassert_equal(configs[13].target_index, 6, "Room 6 index");
 
     /* Verify Outdoor Probes */
     zassert_equal(configs[14].role, SENSOR_ROLE_TEMP_OUTDOOR_AMBIENT, "Outdoor 0 role");
     zassert_equal(configs[14].target_index, 0, "Outdoor 0 index");
     zassert_equal(configs[15].role, SENSOR_ROLE_TEMP_OUTDOOR_AMBIENT, "Outdoor 1 role");
     zassert_equal(configs[15].target_index, 1, "Outdoor 1 index");
-
-    /* Verify Internal RTD 1-5 disabled */
-    for (int i = 0; i < 5; i++) {
-        zassert_equal(configs[16 + i].role, SENSOR_ROLE_DISABLED, "Internal RTD %d disabled", i + 1);
-        zassert_equal(configs[16 + i].cal_offset_c_centi, 0, "Internal RTD %d offset 0", i + 1);
-    }
 
     /* Verify J9 CH1 return humidity */
     zassert_equal(configs[21].physical_ch, PHYS_CH_ANALOG_J9_CH1, "J9 CH1 channel");
@@ -134,6 +134,11 @@ ZTEST(sensor_matrix_mapper_suite, test_pilot_profile_happy_path_mapping)
 
     raw_sensor_readings_t raw;
     setup_nominal_pilot_raw(&raw);
+    float rtd_sim_counts = 16700.0f;
+    for (int i = 0; i < 5; i++) {
+        raw.internal_rtd_raw_adc[i] = rtd_sim_counts;
+    }
+    raw.internal_rtd_valid_mask = 0x1F;
 
     thermal_matrix_frame_t frame;
     int err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
@@ -141,15 +146,15 @@ ZTEST(sensor_matrix_mapper_suite, test_pilot_profile_happy_path_mapping)
 
     zassert_equal(frame.timestamp_us, raw.timestamp_us, "Timestamp preserved");
     zassert_equal(frame.configured_pairs, 6, "Must configure 6 pairs");
-    zassert_equal(frame.configured_room_probes, 2, "Must configure 2 room probes");
+    zassert_equal(frame.configured_room_probes, 7, "Must configure 7 room probes (5 internal + 2 CWT)");
     zassert_equal(frame.configured_outdoor_probes, 2, "Must configure 2 outdoor probes");
 
     /* Consensus masks: all 6 pairs valid, 0 open */
     zassert_equal(frame.pair_valid_mask, 0x003F, "All 6 pairs must be valid (bits 0..5)");
     zassert_equal(frame.pair_open_probe_mask, 0x0000, "No open probes expected");
 
-    /* Room and Outdoor masks */
-    zassert_equal(frame.room_valid_mask, 0x03, "Both room probes valid (bits 0, 1)");
+    /* Room and Outdoor masks: 7 room probes valid (bits 0..6) = 0x007F */
+    zassert_equal(frame.room_valid_mask, 0x007F, "All 7 room probes valid (bits 0..6)");
     zassert_equal(frame.outdoor_valid_mask, 0x03, "Both outdoor probes valid (bits 0, 1)");
 
     /* Temperatures mapped accurately */
@@ -158,8 +163,11 @@ ZTEST(sensor_matrix_mapper_suite, test_pilot_profile_happy_path_mapping)
     zassert_within(frame.t_inj[5], 14.5f, 0.01f, "Inj 5");
     zassert_within(frame.t_ret[5], 24.5f, 0.01f, "Ret 5");
 
-    zassert_within(frame.t_room[0], 21.0f, 0.01f, "Room 0");
-    zassert_within(frame.t_room[1], 21.5f, 0.01f, "Room 1");
+    for (int i = 0; i < 5; i++) {
+        zassert_within(frame.t_room[i], 20.0f, 0.5f, "Room %d internal RTD", i);
+    }
+    zassert_within(frame.t_room[5], 21.0f, 0.01f, "Room 5 (CWT 13)");
+    zassert_within(frame.t_room[6], 21.5f, 0.01f, "Room 6 (CWT 14)");
     zassert_within(frame.t_outdoor[0], 32.0f, 0.01f, "Outdoor 0");
     zassert_within(frame.t_outdoor[1], 32.5f, 0.01f, "Outdoor 1");
 
@@ -250,9 +258,9 @@ ZTEST(sensor_matrix_mapper_suite, test_temperature_boundary_violation)
     zassert_false((frame.pair_valid_mask & (1U << 0)), "Pair 0 must be invalid");
     zassert_true((frame.pair_open_probe_mask & (1U << 0)), "Pair 0 flagged open");
 
-    /* Room 1 (CH14) must be invalidated */
-    zassert_false((frame.room_valid_mask & (1U << 1)), "Room 1 must be invalid");
-    zassert_true((frame.room_valid_mask & (1U << 0)), "Room 0 must still be valid");
+    /* Room 6 (CH14) must be invalidated, Room 5 (CH13) must still be valid */
+    zassert_false((frame.room_valid_mask & (1U << 6)), "Room 6 (CH14) must be invalid");
+    zassert_true((frame.room_valid_mask & (1U << 5)), "Room 5 (CH13) must still be valid");
 }
 
 ZTEST(sensor_matrix_mapper_suite, test_calibration_offset_and_gain_application)
@@ -414,10 +422,10 @@ ZTEST(sensor_matrix_mapper_suite, test_multi_cwt_concentrator_mapping)
     sensor_channel_cfg_t configs[SENSOR_PHYS_CH_MAX];
     sensor_matrix_init_default_pilot_config(configs, SENSOR_PHYS_CH_MAX);
 
-    /* Configure CWT 2 Channel 1 (PHYS_CH_CWT2_1 = 31) as Room Ambient Probe 2 */
+    /* Configure CWT 2 Channel 1 (PHYS_CH_CWT2_1 = 31) as Room Ambient Probe 7 */
     configs[31].physical_ch = (uint8_t)PHYS_CH_CWT2_1;
     configs[31].role = (uint8_t)SENSOR_ROLE_TEMP_ROOM_AMBIENT;
-    configs[31].target_index = 2;
+    configs[31].target_index = 7;
     configs[31].cal_offset_c_centi = 0;
     configs[31].cal_gain_ppm = 0;
     configs[31].associated_hvac_unit = 0;
@@ -445,7 +453,7 @@ ZTEST(sensor_matrix_mapper_suite, test_multi_cwt_concentrator_mapping)
     raw.cwt_comm_ok[1] = true;
     raw.cwt_valid_mask[1] = 0x0007; /* Channels 0, 1, 2 valid */
     raw.cwt_open_probe_mask[1] = 0x0000;
-    raw.cwt_temperatures_c[1][0] = 22.8f; /* Room 2 */
+    raw.cwt_temperatures_c[1][0] = 22.8f; /* Room 7 */
     raw.cwt_temperatures_c[1][1] = 13.2f; /* Pair 6 Supply */
     raw.cwt_temperatures_c[1][2] = 23.4f; /* Pair 6 Return */
 
@@ -455,13 +463,13 @@ ZTEST(sensor_matrix_mapper_suite, test_multi_cwt_concentrator_mapping)
 
     /* Verify CWT 1 channels still properly mapped */
     zassert_within(frame.t_inj[0], 12.0f, 0.01f, "Inj 0 from CWT 1");
-    zassert_within(frame.t_room[0], 21.0f, 0.01f, "Room 0 from CWT 1");
-    zassert_within(frame.t_room[1], 21.5f, 0.01f, "Room 1 from CWT 1");
+    zassert_within(frame.t_room[5], 21.0f, 0.01f, "Room 5 from CWT 1");
+    zassert_within(frame.t_room[6], 21.5f, 0.01f, "Room 6 from CWT 1");
 
     /* Verify CWT 2 channels mapped */
-    zassert_equal(frame.configured_room_probes, 3, "Total configured room probes");
-    zassert_true((frame.room_valid_mask & (1U << 2)) != 0, "Room 2 valid bit must be set");
-    zassert_within(frame.t_room[2], 22.8f, 0.01f, "Room 2 temperature");
+    zassert_equal(frame.configured_room_probes, 8, "Total configured room probes");
+    zassert_true((frame.room_valid_mask & (1U << 7)) != 0, "Room 7 valid bit must be set");
+    zassert_within(frame.t_room[7], 22.8f, 0.01f, "Room 7 temperature");
 
     zassert_equal(frame.configured_pairs, 7, "Total configured pairs");
     zassert_true((frame.pair_valid_mask & (1U << 6)) != 0, "Pair 6 valid bit must be set");
@@ -477,10 +485,10 @@ ZTEST(sensor_matrix_mapper_suite, test_multi_cwt_concentrator_mapping)
 
     /* CWT 1 remains intact */
     zassert_true((frame.pair_valid_mask & (1U << 0)) != 0, "Pair 0 from CWT 1 still valid");
-    zassert_true((frame.room_valid_mask & (1U << 0)) != 0, "Room 0 from CWT 1 still valid");
+    zassert_true((frame.room_valid_mask & (1U << 5)) != 0, "Room 5 from CWT 1 still valid");
 
     /* CWT 2 channels invalidated */
     zassert_false((frame.pair_valid_mask & (1U << 6)) != 0, "Pair 6 invalid on CWT 2 comm loss");
     zassert_true((frame.pair_open_probe_mask & (1U << 6)) != 0, "Pair 6 marked open on CWT 2 comm loss");
-    zassert_false((frame.room_valid_mask & (1U << 2)) != 0, "Room 2 invalid on CWT 2 comm loss");
+    zassert_false((frame.room_valid_mask & (1U << 7)) != 0, "Room 7 invalid on CWT 2 comm loss");
 }
