@@ -9,7 +9,9 @@ target_sources(app PRIVATE
     src/test_sensor_types.c
     src/test_sensor_matrix_mapper.c
     src/test_fake_sensor_matrix.c
+    src/test_thermodynamic_engine.c
     ${APP_DIR}/app/src/domain/services/sensor_matrix_mapper.c
+    ${APP_DIR}/app/src/domain/services/thermodynamic_engine.c
     ${APP_DIR}/tests/fakes/src/fake_sensor_matrix.c
 )
 

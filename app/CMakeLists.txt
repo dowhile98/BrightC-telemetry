@@ -19,6 +19,7 @@ target_sources(app PRIVATE
     src/domain/services/jsy_mk339_codec.c
     src/domain/services/mbsl32di_codec.c
     src/domain/services/sensor_matrix_mapper.c
+    src/domain/services/thermodynamic_engine.c
     src/domain/services/slave_scheduler.c
     src/domain/services/waveshare_relay_codec.c
     src/application/active_objects/ao_storage.c
