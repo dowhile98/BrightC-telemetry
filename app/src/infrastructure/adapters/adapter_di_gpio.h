@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/spinlock.h>
 
 #include "common/digital_input_types.h"
 
@@ -22,8 +23,22 @@ extern "C" {
 typedef struct {
     struct gpio_dt_spec onchip_gpios[ONCHIP_DI_COUNT];
     const struct device *mcp23s17[2];
-    bool is_ready;
+    struct k_spinlock   modbus_lock;
+    uint32_t            modbus_raw_inputs;
+    bool                modbus_valid;
+    bool                is_ready;
 } adapter_di_gpio_t;
+
+/**
+ * @brief Update cached external Modbus digital input bitmask (e.g. from MBSL32DI).
+ *
+ * Thread-safe: protected by internal spinlock.
+ *
+ * @param[in,out] self Adapter instance.
+ * @param[in]     raw_inputs 32-bit bitmask of external inputs.
+ * @param[in]     is_valid True if Modbus polling succeeded.
+ */
+void adapter_di_gpio_set_modbus_raw(adapter_di_gpio_t *self, uint32_t raw_inputs, bool is_valid);
 
 /**
  * @brief Initialize the GPIO Digital Input adapter.

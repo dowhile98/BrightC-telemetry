@@ -98,9 +98,21 @@ typedef struct {
     uint32_t                  dirty_mask;/**< Bitmask of domains pending persistence */
     struct k_timer            debounce_timer; /**< Debounce timer */
 
+    bool                      is_degraded;   /**< True when operating without non-volatile storage */
     ao_storage_provider_entry_t providers[CONFIG_DOMAIN_MAX]; /**< Registered providers */
     uint8_t                   bounce_buf[AO_STORAGE_BOUNCE_BUFFER_SIZE]; /**< Instance bounce buffer */
 } ao_storage_t;
+
+/**
+ * @brief Check if storage coordinator is operating in degraded mode (RAM-only).
+ *
+ * @param[in] self ao_storage instance.
+ * @return true if degraded, false otherwise.
+ */
+static inline bool ao_storage_is_degraded(const ao_storage_t *self)
+{
+    return (self != NULL && self->is_degraded);
+}
 
 /**
  * @brief Initialize ao_storage instance.

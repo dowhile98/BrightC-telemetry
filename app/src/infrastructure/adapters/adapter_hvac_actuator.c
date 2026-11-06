@@ -7,6 +7,7 @@
  */
 
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
+#include "common/default_config_profiles.h"
 
 #include <errno.h>
 #include <string.h>
@@ -22,18 +23,37 @@ static int dispatch_endpoint_relay(adapter_hvac_actuator_t *self,
     relay_state_t r_state = state ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN;
 
     if (endpoint->backend == (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS) {
+        /* Route to remote Modbus expansion relay (e.g. Waveshare 32CH) */
+        if (!i_relay_is_bound(&self->remote_relay_port)) {
+            return -ENODEV;
+        }
+        /* Validate device_id routing: accept default (0) or Waveshare relay slave ID */
+        if (endpoint->device_id != 0U &&
+            endpoint->device_id != DEFAULT_MODBUS_DEV_ID_WAVESHARE_RELAY) {
+            return -ENODEV;
+        }
         return i_relay_set_state(&self->remote_relay_port,
                                  (relay_channel_t)endpoint->channel,
                                  r_state);
     }
 
-    if (endpoint->backend == (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO) {
+    if (endpoint->backend == (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO ||
+        endpoint->backend == (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17) {
+        /* Route to local on-board relay port (direct GPIO or SPI expander mcp23s17_2) */
+        if (!i_relay_is_bound(&self->local_relay_port)) {
+            return -ENODEV;
+        }
+        /* Validate device_id routing: accept default (0) or on-board expander index (<= 2) */
+        if (endpoint->device_id > 2U) {
+            return -ENODEV;
+        }
         return i_relay_set_state(&self->local_relay_port,
                                  (relay_channel_t)endpoint->channel,
                                  r_state);
     }
 
-    return 0;
+    /* P1-12: Unknown backend must return error, never return 0 silently */
+    return -EINVAL;
 }
 
 static int adapter_hvac_actuator_set_tri_state(void *impl, uint8_t unit_id, hvac_tri_state_t tri)

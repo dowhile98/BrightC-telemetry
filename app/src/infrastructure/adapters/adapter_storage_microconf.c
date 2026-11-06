@@ -187,7 +187,9 @@ static int storage_api_load(void *impl, config_domain_t domain, void *out_data,
 
     size_t copy_size = ctx->domain_payload_size[domain];
     if (copy_size > max_size) {
-        copy_size = max_size;
+        LOG_ERR("storage_api_load: domain %d payload size %zu exceeds buffer %zu",
+                domain, copy_size, max_size);
+        return -ENOBUFS;
     }
 
     memcpy(out_data, ctx->payload_buf[domain], copy_size);

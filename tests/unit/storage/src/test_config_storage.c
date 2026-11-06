@@ -7,6 +7,7 @@
 #include <errno.h>
 
 #include "common/config_types.h"
+#include "common/config_envelope.h"
 #include "interfaces/i_config_storage.h"
 #include "fake_config_storage.h"
 #include "application/zbus/config_channels.h"
@@ -236,10 +237,13 @@ ZTEST(storage_suite, test_ao_storage_init_validation)
     zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, 0), -EINVAL, "0 stack size");
 
     i_config_storage_t unbound = {0};
-    zassert_equal(ao_storage_init(&s_test_ao_storage, &unbound, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), -EINVAL, "Unbound storage");
+    zassert_equal(ao_storage_init(&s_test_ao_storage, &unbound, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Unbound storage initializes in degraded mode");
+    zassert_true(ao_storage_is_degraded(&s_test_ao_storage), "Storage AO should be degraded");
+    zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit failed");
 
-    /* Valid initialization */
+    /* Valid initialization with bound port */
     zassert_equal(ao_storage_init(&s_test_ao_storage, &port, &s_test_storage_queue, s_test_storage_stack, AO_STORAGE_STACK_SIZE), 0, "Valid init failed");
+    zassert_false(ao_storage_is_degraded(&s_test_ao_storage), "Storage AO should not be degraded");
     zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit failed");
 }
 
@@ -336,6 +340,51 @@ ZTEST(storage_suite, test_ao_storage_lifecycle_and_debounce)
     zassert_equal(ao_storage_deinit(&s_test_ao_storage), 0, "Deinit");
 }
 
+ZTEST(storage_suite, test_config_envelope_packing_and_validation)
+{
+    uint8_t payload[32];
+    for (size_t i = 0; i < sizeof(payload); i++) {
+        payload[i] = (uint8_t)(i * 3 + 7);
+    }
 
+    uint8_t env_buf[64];
+    size_t env_len = 0;
 
+    /* Pack envelope */
+    int ret = config_envelope_pack(CONFIG_DOMAIN_NET_ETH, payload, sizeof(payload),
+                                   env_buf, sizeof(env_buf), &env_len);
+    zassert_equal(ret, 0, "Pack envelope failed");
+    zassert_equal(env_len, CONFIG_ENVELOPE_HEADER_SIZE + sizeof(payload), "Envelope length mismatch");
 
+    /* Unpack envelope */
+    uint8_t unpacked[32];
+    size_t unpacked_len = 0;
+    ret = config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, env_buf, env_len,
+                                 unpacked, sizeof(unpacked), &unpacked_len);
+    zassert_equal(ret, 0, "Unpack envelope failed");
+    zassert_equal(unpacked_len, sizeof(payload), "Unpacked length mismatch");
+    zassert_mem_equal(unpacked, payload, sizeof(payload), "Payload mismatch");
+
+    /* Domain mismatch detection */
+    ret = config_envelope_unpack(CONFIG_DOMAIN_HVAC, env_buf, env_len,
+                                 unpacked, sizeof(unpacked), &unpacked_len);
+    zassert_equal(ret, -EBADMSG, "Should reject domain mismatch");
+
+    /* Buffer too small */
+    ret = config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, env_buf, env_len,
+                                 unpacked, 10, &unpacked_len);
+    zassert_equal(ret, -ENOBUFS, "Should reject buffer too small");
+
+    /* CRC corruption detection */
+    env_buf[CONFIG_ENVELOPE_HEADER_SIZE + 5] ^= 0x55;
+    ret = config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, env_buf, env_len,
+                                 unpacked, sizeof(unpacked), &unpacked_len);
+    zassert_equal(ret, -EBADMSG, "Should detect CRC corruption");
+
+    /* Magic corruption detection */
+    env_buf[CONFIG_ENVELOPE_HEADER_SIZE + 5] ^= 0x55; /* restore */
+    env_buf[0] ^= 0xFF; /* corrupt magic */
+    ret = config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, env_buf, env_len,
+                                 unpacked, sizeof(unpacked), &unpacked_len);
+    zassert_equal(ret, -EBADMSG, "Should detect magic mismatch");
+}

@@ -278,3 +278,21 @@ int ao_network_deinit(ao_network_t *self)
     self->is_initialized = false;
     return 0;
 }
+
+int ao_network_get_eth_config(const ao_network_t *self, net_eth_config_t *out_cfg)
+{
+    if (self == NULL || out_cfg == NULL) {
+        return -EINVAL;
+    }
+    *out_cfg = self->eth_cfg;
+    return 0;
+}
+
+int ao_network_get_wifi_config(const ao_network_t *self, net_wifi_config_t *out_cfg)
+{
+    if (self == NULL || out_cfg == NULL) {
+        return -EINVAL;
+    }
+    *out_cfg = self->wifi_cfg;
+    return 0;
+}

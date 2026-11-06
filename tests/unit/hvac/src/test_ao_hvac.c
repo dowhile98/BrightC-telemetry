@@ -489,7 +489,7 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     /* 4. Verify helper function profile dispatch */
     zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL), &k_default_hvac_config_hybrid_4units, "Hybrid profile lookup");
     zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY), &k_default_hvac_config_control_only_8units, "Control-only profile lookup");
-    zassert_is_null(default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY), "Telemetry-only has no HVAC profile");
+    zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY), &k_default_hvac_config_telemetry_only, "Telemetry-only profile lookup");
 
     /* 5. Initialize ao_hvac with hybrid profile and feed 5 internal RTDs */
     int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,

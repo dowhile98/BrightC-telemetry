@@ -30,8 +30,10 @@ Allowing any thread or use case to write directly to the physical EEPROM introdu
 
 To solve these problems without violating Dependency Inversion (DIP):
 - The application and domain interact exclusively through RAM and abstract contracts (`i_config_storage.h`).
-- Changes are announced through the decoupled **Zephyr Zbus** event bus (`chan_system_config`).
-- A single asynchronous actor, the **Storage Active Object (`ao_storage`)**, is the exclusive owner of the I2C2 bus, the physical EEPROM, and the `microconf` instances.
+- Domain mutations signal dirty state directly and deterministically to the coordinator via `ao_storage_mark_dirty(&app->storage.ao, domain, sub_id)`.
+- A single asynchronous actor, the **Storage Active Object (`ao_storage`)**, is the exclusive owner of the physical EEPROM driver and `microconf` instances.
+- Upon successful asynchronous flush, `ao_storage` broadcasts `CONFIG_EVENT_PERSISTED` on `chan_system_config` so interested observers know configuration is durable in silicon.
+- **Fault-Tolerant Degraded Mode**: If the EEPROM device is absent, failing, or unready, the system does not abort; `ao_storage` enters degraded mode (operating purely on RAM-cached defaults, discarding writebacks, and logging warnings).
 
 ---
 
@@ -184,35 +186,24 @@ Reading at boot is **completely synchronous** and occurs before initializing con
 When a user or process modifies a parameter at runtime (e.g., changing Ethernet static IP or Wi-Fi SSID):
 
 1. **RAM Mutation**: The component modifies its protected state in memory (e.g., `i_network_set_config()` for the affected interface). The response to the user or CLI is immediate (< 1 ms).
-2. **Zbus Event Emission**: The component publishes a message on `chan_system_config` indicating the affected domain:
+2. **Dirty Mark Request**: The modifying facade or active object directly marks the domain dirty in the storage coordinator:
    ```c
-   /* Example: Ethernet configuration change */
-   system_config_event_t evt = {
-       .domain = CONFIG_DOMAIN_NET_ETH,
-       .event_type = CONFIG_EVENT_DIRTY,
-       .sub_id = 0,
-   };
-   zbus_chan_pub(&chan_system_config, &evt, K_MSEC(10));
+   /* Example: Mark Ethernet domain dirty for persistence */
+   ao_storage_mark_dirty(&app->storage.ao, CONFIG_DOMAIN_NET_ETH, 0U);
    ```
    ```c
-   /* Example: Wi-Fi configuration change */
-   system_config_event_t evt = {
-       .domain = CONFIG_DOMAIN_NET_WIFI,
-       .event_type = CONFIG_EVENT_DIRTY,
-       .sub_id = 0,
-   };
-   zbus_chan_pub(&chan_system_config, &evt, K_MSEC(10));
+   /* Example: Mark HVAC group configuration dirty */
+   ao_storage_mark_dirty(&app->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
    ```
-3. **Reception in `ao_storage`**:
-   - `ao_storage` receives the event in its message queue.
-   - Marks internal flag `dirty_mask |= (1 << domain)` for the corresponding domain (`CONFIG_DOMAIN_NET_ETH` or `CONFIG_DOMAIN_NET_WIFI`).
-   - Restarts the **Debounce** timer (500 ms).
-4. **Debounce Expiration and Physical Write**:
-   - Upon completing 500 ms of inactivity, `ao_storage` wakes up.
-   - Calls the in-memory export of the dirty domain (e.g., Ethernet or Wi-Fi configuration).
-   - Checks if current content differs from stored content (*Dirty-Check*).
-   - If changed, invokes `i_config_storage_save()`, which executes `mconf_save()` on the corresponding EEPROM region (`0x0C00` for Ethernet, `0x1000` for Wi-Fi).
-   - Publishes on Zbus an event `CONFIG_EVENT_PERSISTED` informing that data is safe in silicon.
+3. **Coalescing & Debouncing in `ao_storage`**:
+   - `ao_storage` records the dirty domain in its bitmask (`dirty_domains |= (1 << domain)`).
+   - Starts or restarts the 500 ms debounce timer (`s_debounce_timer`).
+4. **Debounce Expiration and Envelope Serialization**:
+   - Upon timer expiry, `ao_storage` wakes up its thread.
+   - For each dirty domain, it invokes the registered provider callback (`storage_provider_*`).
+   - The provider obtains the authoritative domain config and wraps it in a versioned envelope (`config_envelope_t` with magic `0x4243544C`, version 1, payload length, and CRC16).
+   - Invokes `i_config_storage_save()` to commit the blob atomically via `microconf` dual-slot ping-pong.
+   - Publishes `CONFIG_EVENT_PERSISTED` on Zbus `chan_system_config` so observers know data is safe in silicon.
 
 **Network domain isolation**: A change in Wi-Fi configuration **does not invalidate** the fingerprint nor CRC of the Ethernet region, and vice versa. Each domain is persisted independently.
 

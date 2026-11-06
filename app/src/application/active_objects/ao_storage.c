@@ -30,8 +30,14 @@ static void ao_storage_publish_event(config_domain_t domain,
 
 int ao_storage_sync_flush(ao_storage_t *self)
 {
-    if (self == NULL || self->storage == NULL) {
+    if (self == NULL) {
         return -EINVAL;
+    }
+
+    if (self->is_degraded || self->storage == NULL || !i_config_storage_is_bound(self->storage)) {
+        LOG_DBG("Storage is degraded/unbound; discarding dirty mask without writeback");
+        self->dirty_mask = 0U;
+        return 0;
     }
 
     int persisted_count = 0;
@@ -169,10 +175,6 @@ int ao_storage_init(ao_storage_t *self,
         return -EINVAL;
     }
 
-    if (!i_config_storage_is_bound(storage)) {
-        return -EINVAL;
-    }
-
     memset(self, 0, sizeof(*self));
     self->storage = storage;
     self->queue = queue;
@@ -180,6 +182,11 @@ int ao_storage_init(ao_storage_t *self,
     self->stack_size = stack_size;
     self->is_running = false;
     self->dirty_mask = 0;
+
+    if (storage == NULL || !i_config_storage_is_bound(storage)) {
+        self->is_degraded = true;
+        LOG_WRN("ao_storage initialized in DEGRADED mode (storage unbound); EEPROM writes disabled");
+    }
 
     k_sem_init(&self->stopped_sem, 0, 1);
     k_timer_init(&self->debounce_timer, NULL, NULL);

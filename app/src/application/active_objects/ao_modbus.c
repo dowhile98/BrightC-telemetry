@@ -66,6 +66,10 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
             {
                 LOG_DBG("bus %u: dev %u MBSL32DI inputs=0x%08X", self->bus_id, target->device_id,
                         (unsigned int)reading.raw_inputs);
+                if (self->mbsl32di_cb != NULL)
+                {
+                    self->mbsl32di_cb(self->mbsl32di_cb_ctx, target->device_id, reading.raw_inputs);
+                }
             }
         }
         return res;
@@ -235,6 +239,8 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
     self->stack = stack;
     self->stack_size = stack_size;
     self->is_running = false;
+    self->mbsl32di_cb = NULL;
+    self->mbsl32di_cb_ctx = NULL;
 
     k_sem_init(&self->stopped_sem, 0, 1);
     self->is_initialized = true;
@@ -335,4 +341,13 @@ int ao_modbus_deinit(ao_modbus_t *self)
 
     self->is_initialized = false;
     return 0;
+}
+
+void ao_modbus_set_mbsl32di_callback(ao_modbus_t *self, ao_modbus_mbsl32di_cb_t cb, void *ctx)
+{
+    if (self != NULL)
+    {
+        self->mbsl32di_cb = cb;
+        self->mbsl32di_cb_ctx = ctx;
+    }
 }

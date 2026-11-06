@@ -58,6 +58,32 @@ int di_aggregator_init(di_aggregator_t *self,
     return 0;
 }
 
+int di_aggregator_reconfigure(di_aggregator_t *self,
+                              const di_channel_config_t *configs,
+                              size_t count)
+{
+    if (self == NULL || configs == NULL || count == 0U || count > DI_CHANNEL_MAX) {
+        return -EINVAL;
+    }
+
+    self->channel_count = count;
+
+    for (size_t i = 0; i < count; i++) {
+        self->configs[i] = configs[i];
+        debounce_filter_init(&self->filters[i], configs[i].debounce_ms, false);
+        self->statuses[i].role = configs[i].role;
+        self->statuses[i].raw_level = false;
+        self->statuses[i].is_active = false;
+        self->statuses[i].active_duration_s = 0U;
+        self->statuses[i].transition_count = 0U;
+        self->statuses[i].last_transition_ms = self->current_time_ms;
+        self->raw_inputs[i] = false;
+        self->active_accum_ms[i] = 0U;
+    }
+
+    return 0;
+}
+
 int di_aggregator_scan(di_aggregator_t *self,
                        uint32_t elapsed_ms,
                        di_transition_event_t *out_events,

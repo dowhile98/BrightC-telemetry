@@ -16,7 +16,7 @@
 | **Industrial Modbus** | [`modbus_progress.md`](modbus_progress.md) | **90%** | Dual RS-485, 4 codecs, scheduler, registry, relay adapter, `ao_modbus` | 2026-11-05 |
 | **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **85%** | `ao_digital_input`, 2x MCP23S17 SPI + on-chip GPIOs, debouncing | 2026-11-05 |
 | **Network & Wi-Fi** | [`network_progress.md`](network_progress.md) | **75%** | `ao_network`, STM32 RMII Ethernet, ESP-Hosted SPI Wi-Fi, ISP ports | 2026-11-05 |
-| **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **75%** | `ao_storage`, Microconf I2C2 EEPROM adapter, config Zbus | 2026-11-05 |
+| **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **90%** | `ao_storage`, Microconf I2C2 EEPROM adapter, envelope framing, degraded mode | 2026-11-06 |
 | **Sensors & Mathematical Model** | [`sensors_progress.md`](sensors_progress.md) | **85%** | Sensor matrix mapper, Modbus codecs, Rev F Thermodynamic Engine (31/31 unit tests). Pending ADC & adapters | 2026-11-06 |
 | **MicroSD Filesystem** | [`sd_card_filesystem_progress.md`](sd_card_filesystem_progress.md) | **10%** | Port `i_storage_fs.h` & types. Pending SDMMC1 FatFS & `ao_storage_sd` | 2026-11-05 |
 | **Telemetry Store & Forward** | [`telemetry_store_forward_progress.md`](telemetry_store_forward_progress.md) | **0%** | Spec approved. Pending dual-tier spooling & `ao_telemetry_spool` | 2026-11-05 |

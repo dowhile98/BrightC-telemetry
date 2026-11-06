@@ -210,6 +210,31 @@ int modbus_registry_get(const modbus_registry_t *self, uint8_t device_id,
     return ret;
 }
 
+int modbus_registry_find_by_type(const modbus_registry_t *self, modbus_device_type_t dev_type,
+                                 modbus_slave_descriptor_t *out)
+{
+    if (self == NULL || out == NULL) {
+        return -EINVAL;
+    }
+
+    int ret = -ENOENT;
+    modbus_registry_t *mutable_self = (modbus_registry_t *) self;
+
+    (void) k_mutex_lock(&mutable_self->lock, K_FOREVER);
+
+    for (size_t i = 0U; i < mutable_self->count; i++) {
+        if (mutable_self->entries[i].descriptor.dev_type == dev_type) {
+            *out = mutable_self->entries[i].descriptor;
+            ret = 0;
+            break;
+        }
+    }
+
+    (void) k_mutex_unlock(&mutable_self->lock);
+
+    return ret;
+}
+
 int modbus_registry_get_bus_cfg(const modbus_registry_t *self, uint8_t bus_id,
                                 modbus_bus_cfg_t *out)
 {
@@ -222,6 +247,20 @@ int modbus_registry_get_bus_cfg(const modbus_registry_t *self, uint8_t bus_id,
     (void) k_mutex_lock(&mutable_self->lock, K_FOREVER);
     *out = mutable_self->bus_cfg[bus_id];
     (void) k_mutex_unlock(&mutable_self->lock);
+
+    return 0;
+}
+
+int modbus_registry_set_bus_cfg(modbus_registry_t *self, uint8_t bus_id,
+                                const modbus_bus_cfg_t *cfg)
+{
+    if (self == NULL || cfg == NULL || !bus_is_valid(bus_id) || !modbus_bus_cfg_is_valid(cfg)) {
+        return -EINVAL;
+    }
+
+    (void) k_mutex_lock(&self->lock, K_FOREVER);
+    self->bus_cfg[bus_id] = *cfg;
+    (void) k_mutex_unlock(&self->lock);
 
     return 0;
 }

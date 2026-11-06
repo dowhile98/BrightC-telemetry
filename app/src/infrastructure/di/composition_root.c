@@ -4,6 +4,8 @@
  */
 
 #include "composition_root.h"
+#include "common/config_envelope.h"
+#include "common/default_config_profiles.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
 
 #include <errno.h>
@@ -14,26 +16,27 @@
 
 LOG_MODULE_REGISTER(composition_root, LOG_LEVEL_INF);
 
-/**
- * Line configuration applied to a bus when its transport cannot report one.
- *
- * Also the boot configuration in host builds, where no transport is compiled
- * in and the tests bind a fake client port instead.
- */
-static const modbus_bus_cfg_t k_fallback_bus_cfg[MODBUS_BUS_MAX] = {
-    [MODBUS_BUS_RS485_1] = {
-        .baudrate = 9600U,
-        .parity = MODBUS_PARITY_NONE,
-        .stop_bits = 1U,
-        .data_bits = 8U,
-    },
-    [MODBUS_BUS_RS485_2] = {
-        .baudrate = 9600U,
-        .parity = MODBUS_PARITY_NONE,
-        .stop_bits = 1U,
-        .data_bits = 8U,
-    },
-};
+/* Compile-time assertions for persistent storage layout (§4.1.C, P1-8) */
+BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
+             "config_hvac_t envelope exceeds storage slot size (1024 - 32 bytes)");
+BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
+             "net_eth_config_t envelope exceeds storage slot size (512 - 32 bytes)");
+BUILD_ASSERT(sizeof(net_wifi_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
+             "net_wifi_config_t envelope exceeds storage slot size (512 - 32 bytes)");
+
+/* EEPROM capacity check: 32 KB AT24C256C */
+#define EEPROM_AT24C256C_CAPACITY_BYTES 32768U
+BUILD_ASSERT(0x2800 + 2048 <= EEPROM_AT24C256C_CAPACITY_BYTES,
+             "Storage domains exceed physical EEPROM capacity (32KB)");
+
+/* Non-overlapping domain layout checks */
+BUILD_ASSERT(0x0000 + 1024 <= 0x0400, "DEVICE domain overlaps MODBUS");
+BUILD_ASSERT(0x0400 + 2048 <= 0x0C00, "MODBUS domain overlaps NET_ETH");
+BUILD_ASSERT(0x0C00 + 1024 <= 0x1000, "NET_ETH domain overlaps NET_WIFI");
+BUILD_ASSERT(0x1000 + 1024 <= 0x1400, "NET_WIFI domain overlaps CALIBRATION");
+BUILD_ASSERT(0x1400 + 1024 <= 0x1800, "CALIBRATION domain overlaps SENSOR_CFG");
+BUILD_ASSERT(0x1800 + 2048 <= 0x2000, "SENSOR_CFG domain overlaps BASELINE");
+BUILD_ASSERT(0x2000 + 2048 <= 0x2800, "BASELINE domain overlaps HVAC");
 
 #ifdef CONFIG_NANOMODBUS
 /**
@@ -48,92 +51,6 @@ static const nmbs_z_serial_transport_config_t k_bus_transport_cfg[MODBUS_BUS_MAX
 };
 #endif
 
-/**
- * Slave table applied at boot.
- *
- * A compile-time table, not mutable state: it will be replaced by the
- * persisted configuration once the settings backend lands.
- */
-#ifdef CONFIG_ZTEST
-static const modbus_slave_descriptor_t k_default_slaves[] = {
-    {
-        .device_id = 1U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 1U,
-        .dev_type = MODBUS_DEV_TYPE_CWT_TM16PT,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-    {
-        .device_id = 2U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 2U,
-        .dev_type = MODBUS_DEV_TYPE_JSY_MK339,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-    {
-        .device_id = 3U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 3U,
-        .dev_type = MODBUS_DEV_TYPE_MBSL32DI,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-    {
-        .device_id = 4U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 4U,
-        .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-};
-#else
-static const modbus_slave_descriptor_t k_default_slaves[] = {
-    {
-        .device_id = 1U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 1U,
-        .dev_type = MODBUS_DEV_TYPE_CWT_TM16PT,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-    {
-        .device_id = 2U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 2U,
-        .dev_type = MODBUS_DEV_TYPE_JSY_MK339,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-    {
-        .device_id = 3U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 3U,
-        .dev_type = MODBUS_DEV_TYPE_MBSL32DI,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-    {
-        .device_id = 4U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 4U,
-        .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
-        .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
-        .is_enabled = true,
-    },
-};
-#endif
-
 /*
  * Thread stacks defined at file scope to satisfy MPU alignment and guard constraints.
  */
@@ -144,29 +61,6 @@ static K_THREAD_STACK_DEFINE(s_ao_indicator_stack, AO_INDICATOR_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_hvac_stack, AO_HVAC_STACK_SIZE);
 
-static const net_eth_config_t k_default_eth_cfg = {
-    .ip_mode = NET_IP_MODE_DHCP,
-    .auto_dhcpv4 = 1U,
-    .ip_addr = 0xC0A80164,     /* 192.168.1.100 */
-    .subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
-    .gateway = 0xC0A80101,     /* 192.168.1.1 */
-};
-
-static const net_wifi_config_t k_default_wifi_cfg = {
-    .mode = NET_WIFI_MODE_AP,
-    .ap = {
-        .ssid = "BrightC-AP",
-        .psk = "12345678",
-        .security = NET_WIFI_SEC_WPA2_PSK,
-        .channel = 9U,
-        .max_clients = 5U,
-        .ap_ip_addr = 0xC0A80401,     /* 192.168.4.1 */
-        .ap_subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
-    },
-};
-
-#define k_default_hvac_cfg k_default_hvac_config_hybrid_4units
-
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
 {
@@ -175,21 +69,13 @@ static int storage_provider_eth(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    if (i_network_is_bound(&app->network.eth_port))
+    net_eth_config_t cfg;
+    int err = ao_network_get_eth_config(&app->network.ao, &cfg);
+    if (err != 0)
     {
-        return i_network_get_config(&app->network.eth_port,
-                                    out_buf, max_size, out_size);
+        return err;
     }
-    if (max_size < sizeof(net_eth_config_t))
-    {
-        return -ENOMEM;
-    }
-    (void)memcpy(out_buf, &app->network.ao.eth_cfg, sizeof(net_eth_config_t));
-    if (out_size != NULL)
-    {
-        *out_size = sizeof(net_eth_config_t);
-    }
-    return 0;
+    return config_envelope_pack(CONFIG_DOMAIN_NET_ETH, &cfg, sizeof(cfg), out_buf, max_size, out_size);
 }
 
 static int storage_provider_wifi(void *ctx, config_domain_t domain,
@@ -200,21 +86,13 @@ static int storage_provider_wifi(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    if (i_network_is_bound(&app->network.wifi_port))
+    net_wifi_config_t cfg;
+    int err = ao_network_get_wifi_config(&app->network.ao, &cfg);
+    if (err != 0)
     {
-        return i_network_get_config(&app->network.wifi_port,
-                                    out_buf, max_size, out_size);
+        return err;
     }
-    if (max_size < sizeof(net_wifi_config_t))
-    {
-        return -ENOMEM;
-    }
-    (void)memcpy(out_buf, &app->network.ao.wifi_cfg, sizeof(net_wifi_config_t));
-    if (out_size != NULL)
-    {
-        *out_size = sizeof(net_wifi_config_t);
-    }
-    return 0;
+    return config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, &cfg, sizeof(cfg), out_buf, max_size, out_size);
 }
 
 static int storage_provider_modbus(void *ctx, config_domain_t domain,
@@ -236,16 +114,13 @@ static int storage_provider_hvac(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    if (max_size < sizeof(config_hvac_t))
+    config_hvac_t cfg;
+    int err = ao_hvac_get_config(&app->hvac.ao, &cfg);
+    if (err != 0)
     {
-        return -ENOMEM;
+        return err;
     }
-    (void)memcpy(out_buf, &app->hvac.config, sizeof(config_hvac_t));
-    if (out_size != NULL)
-    {
-        *out_size = sizeof(config_hvac_t);
-    }
-    return 0;
+    return config_envelope_pack(CONFIG_DOMAIN_HVAC, &cfg, sizeof(cfg), out_buf, max_size, out_size);
 }
 
 #if defined(CONFIG_ZTEST)
@@ -271,7 +146,7 @@ int composition_root_init_modbus(app_container_t *self)
         return 0;
     }
 
-    (void)memcpy(self->modbus.bus_cfg, k_fallback_bus_cfg, sizeof(self->modbus.bus_cfg));
+    (void)memcpy(self->modbus.bus_cfg, k_default_modbus_bus_cfg, sizeof(self->modbus.bus_cfg));
 
 #ifdef CONFIG_NANOMODBUS
     size_t bound_buses = 0U;
@@ -322,12 +197,14 @@ int composition_root_init_modbus(app_container_t *self)
         return err;
     }
 
-    for (size_t i = 0U; i < ARRAY_SIZE(k_default_slaves); i++)
+    size_t slave_count = 0U;
+    const modbus_slave_descriptor_t *default_slaves = default_config_get_modbus_slaves(&slave_count);
+    for (size_t i = 0U; i < slave_count; i++)
     {
-        err = modbus_registry_register(&self->modbus.registry_impl, &k_default_slaves[i]);
+        err = modbus_registry_register(&self->modbus.registry_impl, &default_slaves[i]);
         if (err != 0)
         {
-            LOG_ERR("registering device %u failed (%d)", k_default_slaves[i].device_id, err);
+            LOG_ERR("registering device %u failed (%d)", default_slaves[i].device_id, err);
             return err;
         }
     }
@@ -345,6 +222,18 @@ int composition_root_init_modbus(app_container_t *self)
             if (import_res == 0)
             {
                 LOG_INF("Loaded Modbus registry config from storage (%zu bytes)", loaded_size);
+                for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+                {
+                    modbus_bus_cfg_t bcfg;
+                    if (modbus_registry_get_bus_cfg(&self->modbus.registry_impl, bus, &bcfg) == 0)
+                    {
+                        self->modbus.bus_cfg[bus] = bcfg;
+                        if (self->modbus.client_port[bus].api != NULL)
+                        {
+                            (void)i_modbus_client_set_bus_cfg(&self->modbus.client_port[bus], &bcfg);
+                        }
+                    }
+                }
             }
             else
             {
@@ -386,18 +275,15 @@ int composition_root_init_modbus(app_container_t *self)
     uint8_t waveshare_addr = 4U;
     uint16_t waveshare_timeout_ms = 300U;
 
-    (void)k_mutex_lock(&self->modbus.registry_impl.lock, K_FOREVER);
-    for (size_t i = 0U; i < self->modbus.registry_impl.count; i++)
+    modbus_slave_descriptor_t ws_desc;
+    if (modbus_registry_find_by_type(&self->modbus.registry_impl,
+                                     MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+                                     &ws_desc) == 0)
     {
-        if (self->modbus.registry_impl.entries[i].descriptor.dev_type == MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH)
-        {
-            waveshare_bus = self->modbus.registry_impl.entries[i].descriptor.bus_id;
-            waveshare_addr = self->modbus.registry_impl.entries[i].descriptor.slave_addr;
-            waveshare_timeout_ms = self->modbus.registry_impl.entries[i].descriptor.timeout_ms;
-            break;
-        }
+        waveshare_bus = ws_desc.bus_id;
+        waveshare_addr = ws_desc.slave_addr;
+        waveshare_timeout_ms = ws_desc.timeout_ms;
     }
-    (void)k_mutex_unlock(&self->modbus.registry_impl.lock);
 
     if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
     {
@@ -547,16 +433,19 @@ int composition_root_init_network(app_container_t *self)
 
     /* Synchronous boot read from storage for network configurations */
     net_eth_config_t loaded_eth_cfg;
-    const net_eth_config_t *eth_cfg_ptr = &k_default_eth_cfg;
+    const net_eth_config_t *eth_cfg_ptr = default_config_get_net_eth_cfg();
+    uint8_t eth_buf[sizeof(config_envelope_header_t) + sizeof(net_eth_config_t)];
     size_t loaded_eth_size = 0;
     int eth_load_res = -1;
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
         eth_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                             &loaded_eth_cfg, sizeof(loaded_eth_cfg),
+                                             eth_buf, sizeof(eth_buf),
                                              &loaded_eth_size);
-        if (eth_load_res == 0 && loaded_eth_size == sizeof(net_eth_config_t) &&
+        if (eth_load_res == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, eth_buf, loaded_eth_size,
+                                   &loaded_eth_cfg, sizeof(loaded_eth_cfg), NULL) == 0 &&
             net_eth_config_is_valid(&loaded_eth_cfg))
         {
             LOG_INF("Loaded Ethernet config from storage");
@@ -565,22 +454,30 @@ int composition_root_init_network(app_container_t *self)
         else
         {
             LOG_INF("No valid Ethernet config in storage (%d), applying defaults", eth_load_res);
-            (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                        &k_default_eth_cfg, sizeof(k_default_eth_cfg));
+            size_t pack_len = 0;
+            if (config_envelope_pack(CONFIG_DOMAIN_NET_ETH, eth_cfg_ptr, sizeof(*eth_cfg_ptr),
+                                     eth_buf, sizeof(eth_buf), &pack_len) == 0)
+            {
+                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
+                                            eth_buf, pack_len);
+            }
         }
     }
 
     net_wifi_config_t loaded_wifi_cfg;
-    const net_wifi_config_t *wifi_cfg_ptr = &k_default_wifi_cfg;
+    const net_wifi_config_t *wifi_cfg_ptr = default_config_get_net_wifi_cfg();
+    uint8_t wifi_buf[sizeof(config_envelope_header_t) + sizeof(net_wifi_config_t)];
     size_t loaded_wifi_size = 0;
     int wifi_load_res = -1;
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
         wifi_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                              &loaded_wifi_cfg, sizeof(loaded_wifi_cfg),
+                                              wifi_buf, sizeof(wifi_buf),
                                               &loaded_wifi_size);
-        if (wifi_load_res == 0 && loaded_wifi_size == sizeof(net_wifi_config_t) &&
+        if (wifi_load_res == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_NET_WIFI, wifi_buf, loaded_wifi_size,
+                                   &loaded_wifi_cfg, sizeof(loaded_wifi_cfg), NULL) == 0 &&
             net_wifi_config_is_valid(&loaded_wifi_cfg))
         {
             LOG_INF("Loaded Wi-Fi config from storage");
@@ -589,8 +486,13 @@ int composition_root_init_network(app_container_t *self)
         else
         {
             LOG_INF("No valid Wi-Fi config in storage (%d), applying defaults", wifi_load_res);
-            (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                        &k_default_wifi_cfg, sizeof(k_default_wifi_cfg));
+            size_t pack_len = 0;
+            if (config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, wifi_cfg_ptr, sizeof(*wifi_cfg_ptr),
+                                     wifi_buf, sizeof(wifi_buf), &pack_len) == 0)
+            {
+                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
+                                            wifi_buf, pack_len);
+            }
         }
     }
 
@@ -716,8 +618,11 @@ int composition_root_init_digital_inputs(app_container_t *self)
         LOG_WRN("adapter_di_gpio_init failed (%d)", adp_err);
     }
 
-    int err = di_aggregator_init(&self->di.aggregator, k_default_di_channels,
-                                 ARRAY_SIZE(k_default_di_channels),
+    size_t di_count = 0U;
+    const di_channel_config_t *di_cfg = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
+
+    int err = di_aggregator_init(&self->di.aggregator, di_cfg,
+                                 di_count,
                                  adapter_di_gpio_read, &self->di.di_adapter);
     if (err != 0)
     {
@@ -725,8 +630,11 @@ int composition_root_init_digital_inputs(app_container_t *self)
         return err;
     }
 #else
-    int err = di_aggregator_init(&self->di.aggregator, k_default_di_channels,
-                                 ARRAY_SIZE(k_default_di_channels),
+    size_t di_count = 0U;
+    const di_channel_config_t *di_cfg = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
+
+    int err = di_aggregator_init(&self->di.aggregator, di_cfg,
+                                 di_count,
                                  NULL, NULL);
     if (err != 0)
     {
@@ -763,16 +671,19 @@ int composition_root_init_hvac(app_container_t *self)
 
     /* 1. Synchronous boot read from storage for HVAC configuration */
     config_hvac_t loaded_hvac_cfg;
-    const config_hvac_t *hvac_cfg_ptr = &k_default_hvac_cfg;
+    const config_hvac_t *hvac_cfg_ptr = default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
+    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
     size_t loaded_hvac_size = 0;
     int hvac_load_res = -1;
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
         hvac_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                             &loaded_hvac_cfg, sizeof(loaded_hvac_cfg),
-                                             &loaded_hvac_size);
-        if (hvac_load_res == 0 && loaded_hvac_size == sizeof(config_hvac_t) &&
+                                              hvac_buf, sizeof(hvac_buf),
+                                              &loaded_hvac_size);
+        if (hvac_load_res == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_HVAC, hvac_buf, loaded_hvac_size,
+                                   &loaded_hvac_cfg, sizeof(loaded_hvac_cfg), NULL) == 0 &&
             config_hvac_is_valid(&loaded_hvac_cfg))
         {
             LOG_INF("Loaded HVAC config from storage");
@@ -781,8 +692,13 @@ int composition_root_init_hvac(app_container_t *self)
         else
         {
             LOG_INF("No valid HVAC config in storage (%d), applying defaults", hvac_load_res);
-            (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                        &k_default_hvac_cfg, sizeof(k_default_hvac_cfg));
+            size_t pack_len = 0;
+            if (config_envelope_pack(CONFIG_DOMAIN_HVAC, hvac_cfg_ptr, sizeof(*hvac_cfg_ptr),
+                                     hvac_buf, sizeof(hvac_buf), &pack_len) == 0)
+            {
+                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                            hvac_buf, pack_len);
+            }
         }
     }
     (void)memcpy(&self->hvac.config, hvac_cfg_ptr, sizeof(config_hvac_t));
@@ -856,8 +772,23 @@ int composition_root_init_hvac(app_container_t *self)
         return err;
     }
 
+    ao_hvac_set_actuator_adapter(&self->hvac.ao, &self->hvac.actuator_adapter);
+
     self->hvac.initialized = true;
     return 0;
+}
+
+static void on_modbus_mbsl32di_reading(void *ctx, uint8_t device_id, uint32_t raw_inputs)
+{
+    ARG_UNUSED(device_id);
+    app_container_t *self = (app_container_t *)ctx;
+    if (self == NULL)
+    {
+        return;
+    }
+#if !defined(CONFIG_ZTEST)
+    adapter_di_gpio_set_modbus_raw(&self->di.di_adapter, raw_inputs, true);
+#endif
 }
 
 int composition_root_wire(app_container_t *self)
@@ -892,6 +823,14 @@ int composition_root_wire(app_container_t *self)
             self->network.wifi_ctrl_port = fake_network_get_wifi_control_port();
         }
 #endif
+    }
+
+    if (self->modbus.initialized)
+    {
+        for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+        {
+            ao_modbus_set_mbsl32di_callback(&self->modbus.ao[bus], on_modbus_mbsl32di_reading, self);
+        }
     }
 
     return 0;
@@ -1308,6 +1247,11 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
 
     if (self->hvac.initialized)
     {
+        for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
+        {
+            (void)adapter_hvac_actuator_set_hw_config(&self->hvac.actuator_adapter, u, &cfg->units[u]);
+        }
+
         int err = ao_hvac_apply_config(&self->hvac.ao, cfg);
         if (err != 0)
         {
@@ -1349,10 +1293,7 @@ int app_container_apply_profile(app_container_t *self, hvac_operation_mode_t mod
 
     if (self->di.initialized)
     {
-        di_raw_reader_fn_t reader = self->di.aggregator.raw_reader;
-        void *reader_ctx = self->di.aggregator.reader_ctx;
-
-        err = di_aggregator_init(&self->di.aggregator, di_cfg, di_count, reader, reader_ctx);
+        err = di_aggregator_reconfigure(&self->di.aggregator, di_cfg, di_count);
         if (err != 0)
         {
             return err;

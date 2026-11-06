@@ -79,7 +79,9 @@ extern "C" {
  * Thread stacks are defined separately at file scope with K_THREAD_STACK_ARRAY_DEFINE
  * to satisfy MPU alignment and guard constraints.
  */
-typedef struct {
+typedef struct app_container app_container_t;
+
+struct app_container {
     /* Subsystem 1: Modbus Master & Relays */
     struct {
         i_slave_registry_t registry_port;              /**< Slave registry port */
@@ -168,7 +170,7 @@ typedef struct {
     /* Container-level status */
     bool is_initialized;                               /**< True when container is initialized */
     bool is_running;                                   /**< True when Active Objects are running */
-} app_container_t;
+};
 
 /* =========================================================================
  * Modular Subsystem Initializers
@@ -376,6 +378,17 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
  * @return 0 on success, negative errno on error.
  */
 int app_container_apply_profile(app_container_t *self, hvac_operation_mode_t mode);
+
+/* =========================================================================
+ * Modular Subsystem Initializers
+ * ========================================================================= */
+
+int composition_root_init_modbus(app_container_t *self);
+int composition_root_init_storage(app_container_t *self);
+int composition_root_init_network(app_container_t *self);
+int composition_root_init_indicators(app_container_t *self);
+int composition_root_init_digital_inputs(app_container_t *self);
+int composition_root_init_hvac(app_container_t *self);
 
 /* =========================================================================
  * Full Lifecycle Management

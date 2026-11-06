@@ -161,6 +161,24 @@ int ao_network_deinit(ao_network_t *self);
  */
 int ao_network_sync_step(ao_network_t *self);
 
+/**
+ * @brief Get the authoritative cached Ethernet configuration.
+ *
+ * @param[in]  self    Active object instance.
+ * @param[out] out_cfg Destination buffer.
+ * @return 0 on success, -EINVAL on NULL arguments.
+ */
+int ao_network_get_eth_config(const ao_network_t *self, net_eth_config_t *out_cfg);
+
+/**
+ * @brief Get the authoritative cached WiFi configuration.
+ *
+ * @param[in]  self    Active object instance.
+ * @param[out] out_cfg Destination buffer.
+ * @return 0 on success, -EINVAL on NULL arguments.
+ */
+int ao_network_get_wifi_config(const ao_network_t *self, net_wifi_config_t *out_cfg);
+
 #ifdef __cplusplus
 }
 #endif

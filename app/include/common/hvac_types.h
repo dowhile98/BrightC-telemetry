@@ -213,6 +213,35 @@ static inline bool hvac_io_backend_is_valid(uint8_t backend)
 }
 
 /**
+ * @brief Validate an HVAC I/O endpoint descriptor.
+ *
+ * Checks that the backend is valid, and enforces channel limits based on backend type:
+ * - NONE: valid, channel ignored.
+ * - LOCAL_GPIO / LOCAL_MCP23S17: channel must be < 32.
+ * - REMOTE_MODBUS: channel must be < 32.
+ *
+ * @param ep Endpoint to validate.
+ * @return true if valid, false otherwise.
+ */
+static inline bool hvac_endpoint_is_valid(const hvac_io_endpoint_t *ep)
+{
+    if (ep == NULL) {
+        return false;
+    }
+
+    if (!hvac_io_backend_is_valid(ep->backend)) {
+        return false;
+    }
+
+    if (ep->backend == (uint8_t)HVAC_IO_BACKEND_NONE) {
+        return true;
+    }
+
+    /* Channel must be within valid channel range (0..31) */
+    return (ep->channel < 32U);
+}
+
+/**
  * @brief Validate tri-state enumerator.
  *
  * @param tri Tri-state value to validate.
@@ -258,7 +287,9 @@ static inline bool config_hvac_group_is_valid(const config_hvac_group_t *group)
 /**
  * @brief Validate root HVAC configuration structure.
  *
- * Checks operation mode, unit and group counts, and each configured group.
+ * Checks operation mode, unit and group counts, each configured group,
+ * endpoint validity across units and interlocks, and coherence between
+ * group unit_masks and total_units.
  *
  * @param cfg HVAC configuration to check (may be NULL).
  * @return true if valid, false otherwise.
@@ -281,8 +312,49 @@ static inline bool config_hvac_is_valid(const config_hvac_t *cfg)
         return false;
     }
 
+    if (!hvac_endpoint_is_valid(&cfg->fire_interlock) ||
+        !hvac_endpoint_is_valid(&cfg->bypass_switch)) {
+        return false;
+    }
+
+    uint8_t allowed_unit_mask = 0U;
+    if (cfg->total_units == 8U) {
+        allowed_unit_mask = 0xFFU;
+    } else if (cfg->total_units > 0U) {
+        allowed_unit_mask = (uint8_t)((1U << cfg->total_units) - 1U);
+    }
+
     for (uint8_t i = 0U; i < cfg->total_groups; i++) {
         if (!config_hvac_group_is_valid(&cfg->groups[i])) {
+            return false;
+        }
+
+        if ((cfg->groups[i].unit_mask & ~allowed_unit_mask) != 0U) {
+            return false;
+        }
+
+        uint8_t assigned_units = 0U;
+        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+            if ((cfg->groups[i].unit_mask & (1U << u)) != 0U) {
+                assigned_units++;
+            }
+        }
+        if (cfg->groups[i].active_turn_count > assigned_units) {
+            return false;
+        }
+    }
+
+    for (uint8_t u = 0U; u < cfg->total_units; u++) {
+        const hvac_unit_hw_config_t *unit = &cfg->units[u];
+        if (!hvac_endpoint_is_valid(&unit->relay_aa) ||
+            !hvac_endpoint_is_valid(&unit->relay_sm) ||
+            !hvac_endpoint_is_valid(&unit->relay_g) ||
+            !hvac_endpoint_is_valid(&unit->alarm_hp) ||
+            !hvac_endpoint_is_valid(&unit->alarm_lp) ||
+            !hvac_endpoint_is_valid(&unit->alarm_flow) ||
+            !hvac_endpoint_is_valid(&unit->alarm_volt) ||
+            !hvac_endpoint_is_valid(&unit->fb_fan) ||
+            !hvac_endpoint_is_valid(&unit->fb_compressor)) {
             return false;
         }
     }

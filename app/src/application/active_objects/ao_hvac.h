@@ -58,12 +58,18 @@ typedef struct {
     ao_hvac_event_type_t type;
 } ao_hvac_event_t;
 
+/* Forward declaration of actuator adapter */
+struct adapter_hvac_actuator_s;
+
 /**
  * @brief Active Object HVAC coordinator context.
  */
 typedef struct {
     /* Actuator port handle */
     i_hvac_unit_t actuator_port;
+
+    /* Optional actuator adapter for runtime hardware routing updates */
+    struct adapter_hvac_actuator_s *actuator_adapter;
 
     /* Configuration copy */
     config_hvac_t config;
@@ -258,6 +264,44 @@ int ao_hvac_set_group_config(ao_hvac_t *self, uint8_t group_id, const config_hva
  * @return 0 on success, negative errno on failure.
  */
 int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg);
+
+/**
+ * @brief Thread-safe query of the active HVAC configuration.
+ *
+ * @param[in,out] self    Active Object instance.
+ * @param[out]    out_cfg Destination configuration struct.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_hvac_get_config(ao_hvac_t *self, config_hvac_t *out_cfg);
+
+/**
+ * @brief Bind actuator adapter instance to Active Object for runtime hardware routing.
+ *
+ * @param[in,out] self             Active Object instance.
+ * @param[in]     actuator_adapter Pointer to actuator adapter instance.
+ */
+void ao_hvac_set_actuator_adapter(ao_hvac_t *self, struct adapter_hvac_actuator_s *actuator_adapter);
+
+/**
+ * @brief Force immediate unit duty rotation turn for an HVAC group.
+ *
+ * @param[in,out] self     Active Object instance.
+ * @param[in]     group_id Group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @return 0 on success, negative errno on error.
+ */
+int ao_hvac_force_rotation(ao_hvac_t *self, uint8_t group_id);
+
+/**
+ * @brief Manually override compressor or fan state for an individual AC unit.
+ *
+ * @param[in,out] self           Active Object instance.
+ * @param[in]     unit_id        Unit ID (0 .. HVAC_MAX_UNITS_TOTAL - 1).
+ * @param[in]     enable         true to enable manual override, false to restore auto.
+ * @param[in]     run_compressor true to run compressor.
+ * @param[in]     run_fan        true to run fan purge.
+ * @return 0 on success, negative errno on error.
+ */
+int ao_hvac_set_unit_manual(ao_hvac_t *self, uint8_t unit_id, bool enable, bool run_compressor, bool run_fan);
 
 /**
  * @brief Check whether the Active Object execution thread is running.

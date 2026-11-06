@@ -77,6 +77,18 @@ int di_aggregator_init(di_aggregator_t *self,
                        void *reader_ctx);
 
 /**
+ * @brief Reconfigure channel descriptors without resetting the hardware reader.
+ *
+ * @param[in,out] self    Aggregator instance.
+ * @param[in]     configs New channel configurations.
+ * @param[in]     count   Number of channel configurations.
+ * @return 0 on success, negative errno on error.
+ */
+int di_aggregator_reconfigure(di_aggregator_t *self,
+                              const di_channel_config_t *configs,
+                              size_t count);
+
+/**
  * @brief Execute a periodic scan cycle across all configured channels.
  *
  * Dispatches hardware reads (if reader configured), normalizes polarity, updates

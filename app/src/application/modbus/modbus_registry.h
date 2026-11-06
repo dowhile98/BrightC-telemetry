@@ -102,12 +102,32 @@ int modbus_registry_get_bus_cfg(const modbus_registry_t *self, uint8_t bus_id,
                                 modbus_bus_cfg_t *out);
 
 /**
+ * @brief Set the electrical configuration applied to a bus.
+ *
+ * @return 0 on success, -EINVAL on bad arguments.
+ */
+int modbus_registry_set_bus_cfg(modbus_registry_t *self, uint8_t bus_id,
+                                const modbus_bus_cfg_t *cfg);
+
+/**
  * @brief Copy one descriptor by device id.
  *
  * @return 0 on success, -ENOENT when the device is unknown.
  */
 int modbus_registry_get(const modbus_registry_t *self, uint8_t device_id,
                         modbus_slave_descriptor_t *out);
+
+/**
+ * @brief Find the first slave descriptor matching a specific device type.
+ *
+ * @param[in]  self     Registry instance.
+ * @param[in]  dev_type Device type to search for.
+ * @param[out] out      Destination descriptor.
+ *
+ * @return 0 on success, -ENOENT if no matching device was found, -EINVAL.
+ */
+int modbus_registry_find_by_type(const modbus_registry_t *self, modbus_device_type_t dev_type,
+                                 modbus_slave_descriptor_t *out);
 
 /**
  * @brief Copy every device of a bus into a caller-provided array.

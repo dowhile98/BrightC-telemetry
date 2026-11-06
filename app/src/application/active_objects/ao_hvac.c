@@ -7,6 +7,7 @@
  */
 
 #include "application/active_objects/ao_hvac.h"
+#include "infrastructure/adapters/adapter_hvac_actuator.h"
 
 #include <errno.h>
 #include <string.h>
@@ -433,7 +434,64 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
     for (uint8_t g = 0U; g < count; g++) {
         hvac_group_entity_set_config(&self->groups[g], &cfg->groups[g]);
     }
+
+    /* Fix P0-2: Synchronize physical relay routing on runtime profile update */
+    if (self->actuator_adapter != NULL) {
+        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+            (void)adapter_hvac_actuator_set_hw_config(self->actuator_adapter, u, &cfg->units[u]);
+        }
+    }
     k_mutex_unlock(&self->lock);
 
     return 0;
 }
+
+int ao_hvac_get_config(ao_hvac_t *self, config_hvac_t *out_cfg)
+{
+    if (self == NULL || out_cfg == NULL) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    *out_cfg = self->config;
+    k_mutex_unlock(&self->lock);
+
+    return 0;
+}
+
+void ao_hvac_set_actuator_adapter(ao_hvac_t *self, adapter_hvac_actuator_t *actuator_adapter)
+{
+    if (self != NULL) {
+        self->actuator_adapter = actuator_adapter;
+    }
+}
+
+int ao_hvac_force_rotation(ao_hvac_t *self, uint8_t group_id)
+{
+    if (self == NULL || !self->is_initialized || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+    k_mutex_lock(&self->lock, K_FOREVER);
+    if (self->group_active[group_id]) {
+        hvac_group_entity_rotate_shift(&self->groups[group_id]);
+    }
+    k_mutex_unlock(&self->lock);
+    return 0;
+}
+
+int ao_hvac_set_unit_manual(ao_hvac_t *self, uint8_t unit_id, bool enable, bool run_compressor, bool run_fan)
+{
+    ARG_UNUSED(run_fan);
+    if (self == NULL || !self->is_initialized || unit_id >= HVAC_MAX_UNITS_TOTAL) {
+        return -EINVAL;
+    }
+    k_mutex_lock(&self->lock, K_FOREVER);
+    if (enable) {
+        hvac_unit_entity_set_manual(&self->units[unit_id], run_compressor);
+    } else {
+        hvac_unit_entity_request_stop(&self->units[unit_id], false);
+    }
+    k_mutex_unlock(&self->lock);
+    return 0;
+}
+

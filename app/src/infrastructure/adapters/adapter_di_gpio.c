@@ -119,5 +119,30 @@ int adapter_di_gpio_read(void *ctx,
         return 0;
     }
 
+    if (source == DI_SOURCE_EXTERNAL_MODBUS) {
+        if (pin_idx >= 32U) {
+            return -EINVAL;
+        }
+        k_spinlock_key_t key = k_spin_lock(&self->modbus_lock);
+        if (!self->modbus_valid) {
+            k_spin_unlock(&self->modbus_lock, key);
+            return -ENODATA;
+        }
+        *out_raw = ((self->modbus_raw_inputs & (1U << pin_idx)) != 0U);
+        k_spin_unlock(&self->modbus_lock, key);
+        return 0;
+    }
+
     return -ENOTSUP;
+}
+
+void adapter_di_gpio_set_modbus_raw(adapter_di_gpio_t *self, uint32_t raw_inputs, bool is_valid)
+{
+    if (self == NULL) {
+        return;
+    }
+    k_spinlock_key_t key = k_spin_lock(&self->modbus_lock);
+    self->modbus_raw_inputs = raw_inputs;
+    self->modbus_valid = is_valid;
+    k_spin_unlock(&self->modbus_lock, key);
 }
