@@ -164,6 +164,19 @@ ZTEST(composition_root_suite, test_init_rejects_bad_arguments)
 {
     zassert_equal(composition_root_init(NULL), -EINVAL, "NULL container must be rejected");
     zassert_equal(composition_root_start(NULL), -EINVAL, "NULL container must be rejected");
+    zassert_equal(composition_root_stop(NULL), -EINVAL, "NULL container must be rejected");
+    zassert_equal(composition_root_deinit(NULL), -EINVAL, "NULL container must be rejected");
+
+    /* DIP interface getters with NULL container must return NULL */
+    zassert_is_null(app_container_get_registry(NULL), "NULL container must yield NULL registry");
+    zassert_is_null(app_container_get_modbus_client(NULL, 0), "NULL container must yield NULL client");
+    zassert_is_null(app_container_get_relay(NULL), "NULL container must yield NULL relay");
+    zassert_is_null(app_container_get_network_eth(NULL), "NULL container must yield NULL net_eth");
+    zassert_is_null(app_container_get_network_wifi(NULL), "NULL container must yield NULL net_wifi");
+    zassert_is_null(app_container_get_storage(NULL), "NULL container must yield NULL storage");
+    zassert_is_null(app_container_get_digital_inputs(NULL), "NULL container must yield NULL digital_inputs");
+    zassert_is_null(app_container_get_led(NULL), "NULL container must yield NULL led");
+    zassert_is_null(app_container_get_buzzer(NULL), "NULL container must yield NULL buzzer");
 }
 
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
@@ -172,21 +185,38 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     (void) memset(&s_app, 0, sizeof(s_app));
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
-    zassert_equal(s_app.init_mask,
-                  APP_CONTAINER_INIT_REGISTRY | APP_CONTAINER_INIT_AO |
-                  APP_CONTAINER_INIT_STORAGE | APP_CONTAINER_INIT_NETWORK |
-                  APP_CONTAINER_INIT_INDICATORS | APP_CONTAINER_INIT_DIGITAL_INPUT,
-                  "Init mask mismatch");
-    zassert_true(i_slave_registry_is_bound(&s_app.registry), "Registry port must be bound");
-    zassert_true(i_config_storage_is_bound(&s_app.storage), "Storage port must be bound");
-    zassert_true(i_led_is_bound(&s_app.led), "LED port must be bound");
-    zassert_true(i_buzzer_is_bound(&s_app.buzzer), "Buzzer port must be bound");
-    zassert_true(i_digital_input_is_bound(&s_app.digital_inputs), "Digital input port must be bound");
+    zassert_true(s_app.is_initialized, "is_initialized must be true");
+    zassert_true(s_app.modbus.initialized, "modbus subsystem must be initialized");
+    zassert_true(s_app.storage.initialized, "storage subsystem must be initialized");
+    zassert_true(s_app.network.initialized, "network subsystem must be initialized");
+    zassert_true(s_app.indicators.initialized, "indicators subsystem must be initialized");
+    zassert_true(s_app.di.initialized, "di subsystem must be initialized");
+
+    /* DIP Getters verification */
+    const i_slave_registry_t *registry = app_container_get_registry(&s_app);
+    zassert_not_null(registry, "Registry port must not be NULL");
+    zassert_true(i_slave_registry_is_bound(registry), "Registry port must be bound");
+
+    const i_config_storage_t *storage = app_container_get_storage(&s_app);
+    zassert_not_null(storage, "Storage port must not be NULL");
+    zassert_true(i_config_storage_is_bound(storage), "Storage port must be bound");
+
+    const i_led_t *led = app_container_get_led(&s_app);
+    zassert_not_null(led, "LED port must not be NULL");
+    zassert_true(i_led_is_bound(led), "LED port must be bound");
+
+    const i_buzzer_t *buzzer = app_container_get_buzzer(&s_app);
+    zassert_not_null(buzzer, "Buzzer port must not be NULL");
+    zassert_true(i_buzzer_is_bound(buzzer), "Buzzer port must be bound");
+
+    const i_digital_input_t *di = app_container_get_digital_inputs(&s_app);
+    zassert_not_null(di, "Digital input port must not be NULL");
+    zassert_true(i_digital_input_is_bound(di), "Digital input port must be bound");
 
     modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
 
-    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
     zassert_equal(count, 4U, "The default devices must be registered");
     zassert_equal(snap[0].descriptor.dev_type, MODBUS_DEV_TYPE_CWT_TM16PT, "Device 1 type mismatch");
@@ -195,24 +225,30 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_equal(snap[3].descriptor.dev_type, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, "Device 4 type mismatch");
 
     /* Relay ports verification */
-    zassert_true(i_relay_is_bound(&s_app.relay_ext), "relay_ext must be bound");
-    zassert_false(i_relay_is_bound(&s_app.relay_int), "relay_int placeholder must not be bound yet");
+    const i_relay_t *relay_ext = app_container_get_relay(&s_app);
+    zassert_not_null(relay_ext, "relay_ext must not be NULL");
+    zassert_true(i_relay_is_bound(relay_ext), "relay_ext must be bound");
+    zassert_false(i_relay_is_bound(&s_app.modbus.relay_int_port), "relay_int placeholder must not be bound yet");
 
     relay_state_t rstate = RELAY_STATE_CLOSED;
-    zassert_equal(i_relay_get_state(&s_app.relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
+    zassert_equal(i_relay_get_state(relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
     zassert_equal(rstate, RELAY_STATE_OPEN, "Initial state for relay 0 must be OPEN");
 
-    zassert_equal(i_relay_set_state(&s_app.relay_ext, RELAY_CHANNEL_0, RELAY_STATE_CLOSED), 0, "set_state failed");
-    zassert_equal(i_relay_get_state(&s_app.relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
+    zassert_equal(i_relay_set_state(relay_ext, RELAY_CHANNEL_0, RELAY_STATE_CLOSED), 0, "set_state failed");
+    zassert_equal(i_relay_get_state(relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
     zassert_equal(rstate, RELAY_STATE_CLOSED, "Relay 0 must now be CLOSED in cache");
 
     /* Network ports and AO verification */
-    zassert_true(i_network_is_bound(&s_app.net_eth), "net_eth port must be bound");
-    zassert_true(i_network_is_bound(&s_app.net_wifi), "net_wifi port must be bound");
-    zassert_equal(s_app.ao_net.eth_cfg.ip_mode, NET_IP_MODE_DHCP, "ETH default ip_mode must be DHCP");
-    zassert_equal(s_app.ao_net.eth_cfg.ip_addr, 0xC0A80164, "ETH fallback IP mismatch");
-    zassert_equal(s_app.ao_net.wifi_cfg.mode, NET_WIFI_MODE_AP, "WiFi default mode must be AP");
-    zassert_str_equal(s_app.ao_net.wifi_cfg.ap.ssid, "BrightC-AP", "WiFi default SSID mismatch");
+    const i_network_t *net_eth = app_container_get_network_eth(&s_app);
+    const i_network_t *net_wifi = app_container_get_network_wifi(&s_app);
+    zassert_not_null(net_eth, "net_eth port must not be NULL");
+    zassert_not_null(net_wifi, "net_wifi port must not be NULL");
+    zassert_true(i_network_is_bound(net_eth), "net_eth port must be bound");
+    zassert_true(i_network_is_bound(net_wifi), "net_wifi port must be bound");
+    zassert_equal(s_app.network.ao.eth_cfg.ip_mode, NET_IP_MODE_DHCP, "ETH default ip_mode must be DHCP");
+    zassert_equal(s_app.network.ao.eth_cfg.ip_addr, 0xC0A80164, "ETH fallback IP mismatch");
+    zassert_equal(s_app.network.ao.wifi_cfg.mode, NET_WIFI_MODE_AP, "WiFi default mode must be AP");
+    zassert_str_equal(s_app.network.ao.wifi_cfg.ap.ssid, "BrightC-AP", "WiFi default SSID mismatch");
 
     /* Idempotent. */
     zassert_equal(composition_root_init(&s_app), 0, "Second init must be a no-op");
@@ -229,8 +265,12 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     /* The transport is bound after the container exists, as the adapter is
      * created by the composition root in the firmware build. */
-    s_app.client[FAKE_BUS].api = &k_fake_api;
-    s_app.client[FAKE_BUS].impl = &s_fake;
+    s_app.modbus.client_port[FAKE_BUS].api = &k_fake_api;
+    s_app.modbus.client_port[FAKE_BUS].impl = &s_fake;
+
+    const i_modbus_client_t *client = app_container_get_modbus_client(&s_app, FAKE_BUS);
+    zassert_not_null(client, "Modbus client port must not be NULL");
+    zassert_true(i_modbus_client_is_bound(client), "Modbus client port must be bound");
 
     zassert_equal(composition_root_start(&s_app), 0, "Start failed");
 
@@ -247,7 +287,10 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
 
-    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
+    const i_slave_registry_t *registry = app_container_get_registry(&s_app);
+    zassert_not_null(registry, "Registry port must not be NULL");
+
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
     zassert_equal(count, 4U, "Snapshot count mismatch");
     zassert_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
@@ -270,7 +313,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     s_fake.next_result = MODBUS_RESULT_TIMEOUT;
     k_msleep(1200);
 
-    zassert_equal(i_slave_registry_snapshot(&s_app.registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
     zassert_equal(count, 4U, "Snapshot count mismatch after failure");
     zassert_true(snap[0].runtime.timeout_count > 0U, "Timeouts not recorded");
@@ -294,8 +337,8 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
 
-    s_app.client[FAKE_BUS].api = &k_fake_api;
-    s_app.client[FAKE_BUS].impl = &s_fake;
+    s_app.modbus.client_port[FAKE_BUS].api = &k_fake_api;
+    s_app.modbus.client_port[FAKE_BUS].impl = &s_fake;
 
     zassert_equal(composition_root_start(&s_app), 0, "Start failed");
     k_msleep(100);
@@ -310,11 +353,11 @@ ZTEST(composition_root_suite, test_stop_then_start_keeps_polling)
     zassert_equal(s_fake.calls, calls_after_stop, "A stopped thread must not poll");
 
     /* Restarting must not inherit a stale STOP from the previous run. */
-    zassert_equal(ao_modbus_start(&s_app.ao[0]), 0, "Restart failed");
-    zassert_equal(ao_storage_start(&s_app.ao_store), 0, "Restart ao_store failed");
-    zassert_equal(ao_network_start(&s_app.ao_net), 0, "Restart ao_network failed");
-    zassert_equal(ao_system_indicator_start(&s_app.ao_indicator), 0, "Restart ao_indicator failed");
-    zassert_equal(ao_digital_input_start(&s_app.ao_di), 0, "Restart ao_di failed");
+    zassert_equal(ao_modbus_start(&s_app.modbus.ao[0]), 0, "Restart failed");
+    zassert_equal(ao_storage_start(&s_app.storage.ao), 0, "Restart ao_store failed");
+    zassert_equal(ao_network_start(&s_app.network.ao), 0, "Restart ao_network failed");
+    zassert_equal(ao_system_indicator_start(&s_app.indicators.ao), 0, "Restart ao_indicator failed");
+    zassert_equal(ao_digital_input_start(&s_app.di.ao), 0, "Restart ao_di failed");
 
     k_msleep(1200); /* The default slave polls every 1000 ms. */
 
@@ -330,26 +373,67 @@ ZTEST(composition_root_suite, test_digital_inputs_bound_and_queryable)
     (void) memset(&s_app, 0, sizeof(s_app));
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
-    zassert_true(i_digital_input_is_bound(&s_app.digital_inputs), "Digital input port must be bound");
+
+    const i_digital_input_t *di = app_container_get_digital_inputs(&s_app);
+    zassert_not_null(di, "Digital input port must not be NULL");
+    zassert_true(i_digital_input_is_bound(di), "Digital input port must be bound");
 
     bool is_active = true;
-    zassert_equal(i_digital_input_get_state(&s_app.digital_inputs, DI_ROLE_USER_BUTTON, &is_active), 0,
+    zassert_equal(i_digital_input_get_state(di, DI_ROLE_USER_BUTTON, &is_active), 0,
                   "Query DI_ROLE_USER_BUTTON state failed");
     zassert_false(is_active, "Initial button state must be inactive");
 
-    zassert_equal(i_digital_input_get_state(&s_app.digital_inputs, DI_ROLE_BYPASS_SWITCH, &is_active), 0,
+    zassert_equal(i_digital_input_get_state(di, DI_ROLE_BYPASS_SWITCH, &is_active), 0,
                   "Query DI_ROLE_BYPASS_SWITCH state failed");
     zassert_false(is_active, "Initial bypass switch state must be inactive");
 
     bool raw_level = true;
-    zassert_equal(i_digital_input_get_raw_level(&s_app.digital_inputs, DI_ROLE_USER_BUTTON, &raw_level), 0,
+    zassert_equal(i_digital_input_get_raw_level(di, DI_ROLE_USER_BUTTON, &raw_level), 0,
                   "Query raw level failed");
     zassert_false(raw_level, "Initial raw level must be false");
 
     uint64_t mask = 0xFFFFFFFFULL;
-    zassert_equal(i_digital_input_get_active_mask(&s_app.digital_inputs, &mask), 0,
+    zassert_equal(i_digital_input_get_active_mask(di, &mask), 0,
                   "Query active mask failed");
     zassert_equal(mask, 0ULL, "Active mask must initially be 0");
 
     (void) composition_root_deinit(&s_app);
+}
+
+ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
+{
+    app_container_t isolated_app;
+    (void) memset(&isolated_app, 0, sizeof(isolated_app));
+
+    /* Before any init, getters return NULL */
+    zassert_is_null(app_container_get_registry(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_modbus_client(&isolated_app, 0), "Must be NULL");
+    zassert_is_null(app_container_get_relay(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_storage(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_network_eth(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_network_wifi(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_digital_inputs(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_led(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_buzzer(&isolated_app), "Must be NULL");
+
+    /* Out of bounds bus must return NULL */
+    zassert_is_null(app_container_get_modbus_client(&isolated_app, MODBUS_BUS_MAX), "Out of bounds must be NULL");
+
+    /* Initialize ONLY storage subsystem */
+    int err = composition_root_init_storage(&isolated_app);
+    zassert_equal(err, 0, "Storage subsystem should initialize independently");
+    zassert_true(isolated_app.storage.initialized, "storage must be marked initialized");
+
+    const i_config_storage_t *storage = app_container_get_storage(&isolated_app);
+    zassert_not_null(storage, "Storage port must now be accessible");
+    zassert_true(i_config_storage_is_bound(storage), "Storage port must be bound");
+
+    /* Other subsystems remain uninitialized */
+    zassert_is_null(app_container_get_registry(&isolated_app), "Modbus still uninitialized");
+    zassert_is_null(app_container_get_network_eth(&isolated_app), "Network still uninitialized");
+
+    /* Clean up isolated storage AO */
+    (void) ao_storage_stop(&isolated_app.storage.ao);
+    (void) ao_storage_wait_stopped(&isolated_app.storage.ao, K_MSEC(200));
+    (void) ao_storage_deinit(&isolated_app.storage.ao);
 }

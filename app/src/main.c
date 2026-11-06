@@ -33,9 +33,12 @@ int main(void)
 #if defined(CONFIG_APP_MODBUS_BUS_PROBE)
 	/* Must run before composition_root_start(): the polling threads of this
 	 * bus would interleave their frames with the probe's. */
-	if (i_modbus_client_is_bound(&g_app.client[MODBUS_BUS_RS485_1]))
+	const i_modbus_client_t *probe_client =
+		app_container_get_modbus_client(&g_app, (uint8_t)MODBUS_BUS_RS485_1);
+
+	if (probe_client != NULL && i_modbus_client_is_bound(probe_client))
 	{
-		modbus_bus_probe_run(&g_app.client[MODBUS_BUS_RS485_1], (uint8_t) MODBUS_BUS_RS485_1);
+		modbus_bus_probe_run(probe_client, (uint8_t)MODBUS_BUS_RS485_1);
 	}
 #endif
 

@@ -10,6 +10,7 @@
 #ifndef APP_INFRASTRUCTURE_DI_COMPOSITION_ROOT_H_
 #define APP_INFRASTRUCTURE_DI_COMPOSITION_ROOT_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <zephyr/kernel.h>
@@ -52,17 +53,15 @@
 extern "C" {
 #endif
 
-/** Init mask bits. */
-#define APP_CONTAINER_INIT_REGISTRY 0x01U
-#define APP_CONTAINER_INIT_AO 0x02U
-#define APP_CONTAINER_INIT_TRANSPORT 0x04U
-#define APP_CONTAINER_INIT_NETWORK 0x08U
-#define APP_CONTAINER_INIT_STORAGE 0x10U
-#define APP_CONTAINER_INIT_INDICATORS 0x20U
-#define APP_CONTAINER_INIT_DIGITAL_INPUT 0x40U
-
 /**
  * @brief Every object of the application, wired together.
+ *
+ * Organized vertically by subsystem:
+ * - Subsystem 1: Modbus Master & Relays (`modbus`)
+ * - Subsystem 2: Digital Inputs & Contact Alarms (`di`)
+ * - Subsystem 3: Configuration & Persistent Storage (`storage`)
+ * - Subsystem 4: Network (`network`)
+ * - Subsystem 5: System Indicators (`indicators`)
  *
  * Declared once (`static app_container_t g_app` in main.c) and passed by
  * reference to every component. Adapters live here by value so that no module
@@ -74,66 +73,236 @@ extern "C" {
  * to satisfy MPU alignment and guard constraints.
  */
 typedef struct {
-    /* Ports exposed to the rest of the application */
-    i_slave_registry_t registry;              /**< Slave registry port */
-    i_modbus_client_t client[MODBUS_BUS_MAX]; /**< One client port per bus */
-    i_relay_t relay_ext;                      /**< External relay port (Waveshare Modbus 32CH) */
-    i_relay_t relay_int;                      /**< Internal relay port (placeholder for onboard GPIO / MCP23S17) */
-    i_network_t net_eth;                      /**< Ethernet network interface port */
-    i_network_t net_wifi;                     /**< WiFi network interface port */
-    i_config_storage_t storage;               /**< Persistent storage port */
-    i_led_t led;                              /**< Status LED port */
-    i_buzzer_t buzzer;                        /**< Buzzer acoustic port */
-    i_digital_input_t digital_inputs;         /**< Digital input and contact alarm port */
-
-    /* Adapters, stored by value */
-    modbus_registry_t registry_impl;          /**< Concrete registry */
-    di_aggregator_t di_aggregator;            /**< Concrete digital input aggregator */
+    /* Subsystem 1: Modbus Master & Relays */
+    struct {
+        i_slave_registry_t registry_port;              /**< Slave registry port */
+        i_modbus_client_t client_port[MODBUS_BUS_MAX]; /**< One client port per bus */
+        i_relay_t relay_ext_port;                      /**< External relay port (Waveshare Modbus 32CH) */
+        i_relay_t relay_int_port;                      /**< Internal relay port (placeholder) */
+        modbus_registry_t registry_impl;               /**< Concrete registry */
+        adapter_relay_modbus_t waveshare_relay;        /**< Waveshare relay module adapter */
 #ifdef CONFIG_NANOMODBUS
-    adapter_modbus_nmbs_t nmbs[MODBUS_BUS_MAX]; /**< nanoMODBUS client per bus */
+        adapter_modbus_nmbs_t nmbs[MODBUS_BUS_MAX];    /**< nanoMODBUS client per bus */
 #endif
-    adapter_relay_modbus_t waveshare_relay;   /**< Waveshare relay module adapter */
+        ao_modbus_t ao[MODBUS_BUS_MAX];                /**< One polling thread per bus */
+        struct k_msgq ao_queue[MODBUS_BUS_MAX];        /**< Command queues */
+        uint8_t ao_queue_buf[MODBUS_BUS_MAX][AO_MODBUS_QUEUE_DEPTH * sizeof(modbus_event_t)];
+        modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];      /**< Physical bus configurations */
+        bool initialized;                              /**< Subsystem initialization status */
+    } modbus;
+
+    /* Subsystem 2: Digital Inputs & Contact Alarms */
+    struct {
+        i_digital_input_t port;                        /**< Digital input and contact alarm port */
+        di_aggregator_t aggregator;                    /**< Concrete digital input aggregator */
 #ifndef CONFIG_ZTEST
-    adapter_eth_stm32_t eth_adapter;          /**< STM32 Ethernet adapter */
-    adapter_wifi_esp_hosted_t wifi_adapter;   /**< ESP-Hosted-MCU WiFi adapter */
-    adapter_storage_microconf_t storage_adapter; /**< microconf EEPROM storage adapter */
-    adapter_led_gpio_t led_adapter;           /**< GPIO Status LED adapter */
-    adapter_buzzer_pwm_t buzzer_adapter;      /**< PWM Buzzer adapter */
-    adapter_di_gpio_t di_adapter;             /**< GPIO Digital Input adapter */
+        adapter_di_gpio_t di_adapter;                  /**< GPIO Digital Input adapter */
 #endif
+        ao_digital_input_t ao;                         /**< Digital input active object */
+        struct k_msgq queue;                           /**< Digital input AO command queue */
+        uint8_t queue_buf[AO_DI_QUEUE_DEPTH * sizeof(ao_di_event_t)];
+        bool initialized;                              /**< Subsystem initialization status */
+    } di;
 
-    /* Active objects and their static resources */
-    ao_modbus_t ao[MODBUS_BUS_MAX];             /**< One polling thread per bus */
-    struct k_msgq ao_queue[MODBUS_BUS_MAX];     /**< Command queues */
-    uint8_t ao_queue_buf[MODBUS_BUS_MAX][AO_MODBUS_QUEUE_DEPTH * sizeof(modbus_event_t)];
+    /* Subsystem 3: Configuration & Persistent Storage */
+    struct {
+        i_config_storage_t port;                       /**< Persistent storage port */
+#ifndef CONFIG_ZTEST
+        adapter_storage_microconf_t storage_adapter;   /**< microconf EEPROM storage adapter */
+#endif
+        ao_storage_t ao;                               /**< Storage active object coordinator */
+        struct k_msgq queue;                           /**< Storage command queue */
+        uint8_t queue_buf[AO_STORAGE_QUEUE_DEPTH * sizeof(ao_storage_event_t)];
+        bool initialized;                              /**< Subsystem initialization status */
+    } storage;
 
-    ao_network_t ao_net;                        /**< Network active object */
-    struct k_msgq ao_net_queue;                 /**< Network AO command queue */
-    uint8_t ao_net_queue_buf[AO_NETWORK_QUEUE_DEPTH * sizeof(ao_network_event_t)];
+    /* Subsystem 4: Network (Ethernet LAN8742 & WiFi ESP-Hosted) */
+    struct {
+        i_network_t eth_port;                          /**< Ethernet network interface port */
+        i_network_t wifi_port;                         /**< WiFi network interface port */
+#ifndef CONFIG_ZTEST
+        adapter_eth_stm32_t eth_adapter;               /**< STM32 Ethernet adapter */
+        adapter_wifi_esp_hosted_t wifi_adapter;        /**< ESP-Hosted-MCU WiFi adapter */
+#endif
+        ao_network_t ao;                               /**< Network active object */
+        struct k_msgq queue;                           /**< Network AO command queue */
+        uint8_t queue_buf[AO_NETWORK_QUEUE_DEPTH * sizeof(ao_network_event_t)];
+        bool initialized;                              /**< Subsystem initialization status */
+    } network;
 
-    ao_storage_t ao_store;                      /**< Storage active object coordinator */
-    struct k_msgq ao_store_queue;               /**< Storage command queue */
-    uint8_t ao_store_queue_buf[AO_STORAGE_QUEUE_DEPTH * sizeof(ao_storage_event_t)];
+    /* Subsystem 5: System Indicators (LED & Buzzer) */
+    struct {
+        i_led_t led_port;                              /**< Status LED port */
+        i_buzzer_t buzzer_port;                        /**< Buzzer acoustic port */
+#ifndef CONFIG_ZTEST
+        adapter_led_gpio_t led_adapter;                /**< GPIO Status LED adapter */
+        adapter_buzzer_pwm_t buzzer_adapter;           /**< PWM Buzzer adapter */
+#endif
+        ao_system_indicator_t ao;                      /**< System indicator active object */
+        struct k_msgq queue;                           /**< Indicator AO command queue */
+        uint8_t queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
+        bool initialized;                              /**< Subsystem initialization status */
+    } indicators;
 
-    ao_system_indicator_t ao_indicator;         /**< System indicator active object */
-    struct k_msgq ao_indicator_queue;           /**< Indicator AO command queue */
-    uint8_t ao_indicator_queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
-
-    ao_digital_input_t ao_di;                   /**< Digital input active object */
-    struct k_msgq ao_di_queue;                  /**< Digital input AO command queue */
-    uint8_t ao_di_queue_buf[AO_DI_QUEUE_DEPTH * sizeof(ao_di_event_t)];
-
-    /* Configuration of the physical buses */
-    modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];
-
-    uint8_t init_mask; /**< APP_CONTAINER_INIT_* bits already applied */
+    /* Container-level status */
+    bool is_initialized;                               /**< True when container is initialized */
+    bool is_running;                                   /**< True when Active Objects are running */
 } app_container_t;
 
+/* =========================================================================
+ * Modular Subsystem Initializers
+ * ========================================================================= */
+
 /**
- * @brief Create and wire every object. Idempotent.
+ * @brief Initialize the Modbus subsystem and relays.
+ *
+ * Configures transports, registry, Active Objects, and relay adapters.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_modbus(app_container_t *self);
+
+/**
+ * @brief Initialize the digital inputs subsystem.
+ *
+ * Configures aggregator, hardware adapter (or fake), and digital input AO.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_digital_inputs(app_container_t *self);
+
+/**
+ * @brief Initialize the persistent storage subsystem.
+ *
+ * Configures EEPROM storage adapter (or fake) and storage coordinator AO.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_storage(app_container_t *self);
+
+/**
+ * @brief Initialize the network subsystem.
+ *
+ * Configures Ethernet and WiFi adapters, loads persistent network configurations,
+ * and initializes the network coordinator AO.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_network(app_container_t *self);
+
+/**
+ * @brief Initialize the system indicators subsystem (LED & Buzzer).
+ *
+ * Configures GPIO LED and PWM buzzer adapters and indicator AO.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_indicators(app_container_t *self);
+
+/**
+ * @brief Establish cross-subsystem wiring and provider registrations.
+ *
+ * Decoupled from adapter creation. Registers storage domain providers
+ * and inter-subsystem bindings.
+ *
+ * @param[in,out] self Initialized container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_wire(app_container_t *self);
+
+/* =========================================================================
+ * Public Interface Getters (DIP Encapsulation)
+ * ========================================================================= */
+
+/**
+ * @brief Get the abstract slave registry port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to registry port, or NULL if uninitialized / invalid.
+ */
+const i_slave_registry_t *app_container_get_registry(const app_container_t *self);
+
+/**
+ * @brief Get the abstract Modbus client port for a given bus.
+ *
+ * @param[in] self Container instance.
+ * @param[in] bus Bus index (0 .. MODBUS_BUS_MAX - 1).
+ * @return Pointer to Modbus client port, or NULL if uninitialized / invalid bus.
+ */
+const i_modbus_client_t *app_container_get_modbus_client(const app_container_t *self, uint8_t bus);
+
+/**
+ * @brief Get the abstract external relay port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to relay port, or NULL if uninitialized / invalid.
+ */
+const i_relay_t *app_container_get_relay(const app_container_t *self);
+
+/**
+ * @brief Get the abstract Ethernet network port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to Ethernet network port, or NULL if uninitialized / invalid.
+ */
+const i_network_t *app_container_get_network_eth(const app_container_t *self);
+
+/**
+ * @brief Get the abstract WiFi network port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to WiFi network port, or NULL if uninitialized / invalid.
+ */
+const i_network_t *app_container_get_network_wifi(const app_container_t *self);
+
+/**
+ * @brief Get the abstract persistent config storage port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to storage port, or NULL if uninitialized / invalid.
+ */
+const i_config_storage_t *app_container_get_storage(const app_container_t *self);
+
+/**
+ * @brief Get the abstract digital input and contact alarm port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to digital input port, or NULL if uninitialized / invalid.
+ */
+const i_digital_input_t *app_container_get_digital_inputs(const app_container_t *self);
+
+/**
+ * @brief Get the abstract status LED port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to LED port, or NULL if uninitialized / invalid.
+ */
+const i_led_t *app_container_get_led(const app_container_t *self);
+
+/**
+ * @brief Get the abstract acoustic buzzer port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to buzzer port, or NULL if uninitialized / invalid.
+ */
+const i_buzzer_t *app_container_get_buzzer(const app_container_t *self);
+
+/* =========================================================================
+ * Full Lifecycle Management
+ * ========================================================================= */
+
+/**
+ * @brief Sequence orchestrator: create, configure, and wire every subsystem.
+ *
+ * Calls init_modbus, init_storage, init_network, init_indicators,
+ * init_digital_inputs, then composition_root_wire. Idempotent.
  *
  * @param[out] self Container to initialise.
- *
  * @return 0 on success, negative errno on failure.
  */
 int composition_root_init(app_container_t *self);
@@ -142,16 +311,14 @@ int composition_root_init(app_container_t *self);
  * @brief Start the Active Objects. Idempotent.
  *
  * @param[in,out] self Container previously initialised.
- *
  * @return 0 on success, -EINVAL when @p self is not initialised.
  */
 int composition_root_start(app_container_t *self);
 
 /**
- * @brief Stop the Active Objects. Idempotent.
+ * @brief Stop the Active Objects with coordinated timeouts. Idempotent.
  *
  * @param[in,out] self Container previously initialised.
- *
  * @return 0 on success, -EINVAL when @p self is not initialised.
  */
 int composition_root_stop(app_container_t *self);
