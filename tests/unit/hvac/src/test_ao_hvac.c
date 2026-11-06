@@ -316,3 +316,46 @@ ZTEST(ao_hvac_suite, test_ao_hvac_runtime_turn_count_update)
     zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be OFF (standby)");
 }
 
+ZTEST(ao_hvac_suite, test_ao_hvac_feed_temperatures_multi_sensor)
+{
+    config_hvac_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.total_groups = 1U;
+    cfg.total_units = 2U;
+    cfg.groups[0].temp_min = 20.0f;
+    cfg.groups[0].temp_max = 24.0f;
+    cfg.groups[0].temp_alarm = 28.0f;
+    cfg.groups[0].temp_bypass = 32.0f;
+    cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].unit_mask = 0x03U;
+    cfg.groups[0].active_turn_count = 1U;
+    cfg.groups[0].sensor_mask = 0x0007U; /* Probes 0, 1, 2 */
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "init failed");
+
+    /* Feed temperatures where sensor 0=22.0C (below max), sensor 1=25.5C (above max), sensor 2=23.0C */
+    float temps[4] = { 22.0f, 25.5f, 23.0f, 15.0f };
+    uint16_t valid_mask = 0x0007U;
+
+    ret = ao_hvac_feed_temperatures(&s_ao, temps, valid_mask, 4U);
+    zassert_equal(ret, 0, "ao_hvac_feed_temperatures failed");
+
+    /* Step ao_hvac */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "step failed");
+
+    /* Verify group transitions to GROUP_STATE_COOLING driven by ceiling temperature (25.5 C >= temp_max 24.0 C) */
+    hvac_status_msg_t status;
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group 0 should transition to COOLING");
+    zassert_within(status.highest_temp[0], 25.5f, 0.001f, "Highest temp should be 25.5 C");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be energized ON");
+
+    /* Test invalid arguments on ao_hvac_feed_temperatures */
+    zassert_equal(ao_hvac_feed_temperatures(NULL, temps, valid_mask, 4U), -EINVAL, "NULL self must return -EINVAL");
+    zassert_equal(ao_hvac_feed_temperatures(&s_ao, NULL, valid_mask, 4U), -EINVAL, "NULL temperatures must return -EINVAL");
+}
+
+

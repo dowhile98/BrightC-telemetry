@@ -65,6 +65,9 @@ typedef struct {
     /* Actuator port handle */
     i_hvac_unit_t actuator_port;
 
+    /* Configuration copy */
+    config_hvac_t config;
+
     /* Managed Domain Entities */
     hvac_unit_entity_t  units[HVAC_MAX_UNITS_TOTAL];
     hvac_group_entity_t groups[HVAC_MAX_GROUPS];
@@ -168,6 +171,24 @@ int ao_hvac_deinit(ao_hvac_t *self);
 int ao_hvac_set_group_metrics(ao_hvac_t *self,
                               uint8_t group_id,
                               const group_temperature_metrics_t *metrics);
+
+/**
+ * @brief Feed fresh temperature readings into the HVAC Active Object.
+ *
+ * Ingests temperature readings regardless of physical origin (on-board ADC RTD or
+ * external Modbus RTU). Automatically computes per-group metrics (highest, lowest,
+ * average, valid count) based on each group's configured sensor_mask.
+ *
+ * @param[in,out] self         Active Object instance.
+ * @param[in]     temperatures Array of temperature readings in °C.
+ * @param[in]     valid_mask   Bitmask of healthy sensor channels.
+ * @param[in]     count        Number of entries in @p temperatures.
+ * @return 0 on success, negative errno on invalid arguments.
+ */
+int ao_hvac_feed_temperatures(ao_hvac_t *self,
+                              const float *temperatures,
+                              uint16_t valid_mask,
+                              size_t count);
 
 /**
  * @brief Update physical safety alarms for an individual AC unit.

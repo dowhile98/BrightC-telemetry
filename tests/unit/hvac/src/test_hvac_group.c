@@ -374,3 +374,51 @@ ZTEST(hvac_group_suite, test_sensor_fault_bypass)
     zassert_equal(s_group.state, GROUP_STATE_IDLE, "Restoring healthy sensors restores normal state");
     zassert_equal(s_group.bypass_causes_mask, 0U, "Sensor fault bypass cleared");
 }
+
+/*============================================================================*
+ * 7. Multi-Sensor Group Temperature Aggregation
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_hvac_compute_group_metrics_multi_sensor)
+{
+    float temperatures[4] = { 23.0f, 26.5f, 24.5f, 99.0f };
+    uint16_t sensor_mask = 0x0007U; /* Sensors 0, 1, 2 assigned to group */
+    group_temperature_metrics_t metrics;
+
+    /* 1. All assigned sensors healthy and valid (valid_mask = 0x0007) */
+    uint16_t valid_mask = 0x0007U;
+    int ret = hvac_compute_group_metrics(temperatures, valid_mask, 4U, sensor_mask, &metrics);
+    zassert_equal(ret, 0, "hvac_compute_group_metrics failed");
+    zassert_equal(metrics.total_sensors, 3U, "Total sensors must be 3");
+    zassert_equal(metrics.valid_sensors, 3U, "Valid sensors must be 3");
+    zassert_within(metrics.highest_temp, 26.5f, 0.001f, "Highest temp should be 26.5 C");
+    zassert_within(metrics.lowest_temp, 23.0f, 0.001f, "Lowest temp should be 23.0 C");
+    zassert_within(metrics.average_temp, 24.667f, 0.01f, "Average temp should be ~24.667 C");
+
+    /* 2. Invalidate Sensor 1 (valid_mask = 0x0005) */
+    valid_mask = 0x0005U;
+    ret = hvac_compute_group_metrics(temperatures, valid_mask, 4U, sensor_mask, &metrics);
+    zassert_equal(ret, 0, "hvac_compute_group_metrics failed");
+    zassert_equal(metrics.total_sensors, 3U, "Total sensors must remain 3");
+    zassert_equal(metrics.valid_sensors, 2U, "Valid sensors must be 2");
+    zassert_within(metrics.highest_temp, 24.5f, 0.001f, "Highest temp should be 24.5 C");
+    zassert_within(metrics.lowest_temp, 23.0f, 0.001f, "Lowest temp should be 23.0 C");
+    zassert_within(metrics.average_temp, 23.75f, 0.001f, "Average temp should be 23.75 C");
+
+    /* 3. Invalidate all assigned sensors (valid_mask = 0x0000) */
+    valid_mask = 0x0000U;
+    ret = hvac_compute_group_metrics(temperatures, valid_mask, 4U, sensor_mask, &metrics);
+    zassert_equal(ret, 0, "hvac_compute_group_metrics failed");
+    zassert_equal(metrics.total_sensors, 3U, "Total sensors must remain 3");
+    zassert_equal(metrics.valid_sensors, 0U, "Valid sensors must be 0");
+    zassert_within(metrics.highest_temp, 0.0f, 0.001f, "Highest temp should reset to 0.0 C");
+    zassert_within(metrics.lowest_temp, 0.0f, 0.001f, "Lowest temp should reset to 0.0 C");
+    zassert_within(metrics.average_temp, 0.0f, 0.001f, "Average temp should reset to 0.0 C");
+
+    /* 4. Invalid arguments check */
+    zassert_equal(hvac_compute_group_metrics(NULL, valid_mask, 4U, sensor_mask, &metrics), -EINVAL,
+                  "NULL temperatures must return -EINVAL");
+    zassert_equal(hvac_compute_group_metrics(temperatures, valid_mask, 4U, sensor_mask, NULL), -EINVAL,
+                  "NULL metrics must return -EINVAL");
+}
+

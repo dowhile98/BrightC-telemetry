@@ -15,6 +15,7 @@
 #ifndef APP_DOMAIN_MODELS_HVAC_GROUP_ENTITY_H_
 #define APP_DOMAIN_MODELS_HVAC_GROUP_ENTITY_H_
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -147,6 +148,25 @@ void hvac_group_entity_tick_1s(hvac_group_entity_t *self);
  * @param[in,out] self Group entity instance.
  */
 void hvac_group_entity_rotate_shift(hvac_group_entity_t *self);
+
+/**
+ * @brief Compute aggregated group temperature metrics from a raw/calibrated sensor array.
+ *
+ * Aggregates readings for all channels enabled in @p sensor_mask.
+ * Hardware-agnostic: operates strictly on floating-point temperatures in Celsius.
+ *
+ * @param[in]  temperatures Temperature array in °C.
+ * @param[in]  valid_mask   Bitmask indicating healthy/valid sensors (bit s = 1).
+ * @param[in]  temp_count   Number of elements in @p temperatures.
+ * @param[in]  sensor_mask  Bitmask of sensors assigned to this group.
+ * @param[out] out_metrics  Destination for computed metrics.
+ * @return 0 on success, -EINVAL on invalid arguments.
+ */
+int hvac_compute_group_metrics(const float *temperatures,
+                               uint16_t valid_mask,
+                               size_t temp_count,
+                               uint16_t sensor_mask,
+                               group_temperature_metrics_t *out_metrics);
 
 #ifdef __cplusplus
 }

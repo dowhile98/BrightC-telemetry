@@ -91,6 +91,7 @@ int ao_hvac_init(ao_hvac_t *self,
 
     /* Initialize entities */
     if (config != NULL) {
+        self->config = *config;
         uint8_t groups_to_init = (config->total_groups > 0U && config->total_groups <= HVAC_MAX_GROUPS)
                                  ? config->total_groups : 1U;
 
@@ -122,6 +123,12 @@ int ao_hvac_init(ao_hvac_t *self,
         }
     } else {
         /* Default configuration: Group 0 active with all units assigned */
+        self->config.total_groups = 1U;
+        self->config.total_units = HVAC_MAX_UNITS_TOTAL;
+        self->config.groups[0].sensor_mask = 0xFFFFU;
+        self->config.groups[0].unit_mask = 0xFFU;
+        self->config.groups[0].active_turn_count = 1U;
+
         self->group_active[0] = true;
         hvac_group_entity_init(&self->groups[0], 0U);
 
@@ -292,6 +299,30 @@ int ao_hvac_set_group_metrics(ao_hvac_t *self,
     return 0;
 }
 
+int ao_hvac_feed_temperatures(ao_hvac_t *self,
+                              const float *temperatures,
+                              uint16_t valid_mask,
+                              size_t count)
+{
+    if (self == NULL || !self->is_initialized || temperatures == NULL) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        if (self->group_active[g]) {
+            (void)hvac_compute_group_metrics(temperatures,
+                                             valid_mask,
+                                             count,
+                                             self->config.groups[g].sensor_mask,
+                                             &self->group_metrics[g]);
+        }
+    }
+    k_mutex_unlock(&self->lock);
+
+    return 0;
+}
+
 int ao_hvac_set_unit_alarms(ao_hvac_t *self,
                             uint8_t unit_id,
                             bool hp,
@@ -378,6 +409,7 @@ int ao_hvac_set_group_config(ao_hvac_t *self, uint8_t group_id, const config_hva
     }
 
     k_mutex_lock(&self->lock, K_FOREVER);
+    self->config.groups[group_id] = *cfg;
     hvac_group_entity_set_config(&self->groups[group_id], cfg);
     k_mutex_unlock(&self->lock);
 
@@ -395,6 +427,7 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
     }
 
     k_mutex_lock(&self->lock, K_FOREVER);
+    self->config = *cfg;
     uint8_t count = (cfg->total_groups > 0U && cfg->total_groups <= HVAC_MAX_GROUPS)
                     ? cfg->total_groups : 1U;
     for (uint8_t g = 0U; g < count; g++) {

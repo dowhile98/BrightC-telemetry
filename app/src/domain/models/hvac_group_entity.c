@@ -346,3 +346,52 @@ void hvac_group_entity_rotate_shift(hvac_group_entity_t *self)
         }
     }
 }
+
+int hvac_compute_group_metrics(const float *temperatures,
+                               uint16_t valid_mask,
+                               size_t temp_count,
+                               uint16_t sensor_mask,
+                               group_temperature_metrics_t *out_metrics)
+{
+    if (temperatures == NULL || out_metrics == NULL) {
+        return -EINVAL;
+    }
+
+    out_metrics->highest_temp = -999.0f;
+    out_metrics->lowest_temp = 999.0f;
+    out_metrics->valid_sensors = 0U;
+    out_metrics->total_sensors = 0U;
+    out_metrics->average_temp = 0.0f;
+
+    float sum = 0.0f;
+    size_t limit = temp_count < 16U ? temp_count : 16U;
+
+    for (size_t s = 0U; s < limit; s++) {
+        uint16_t bit = (uint16_t)(1U << s);
+        if ((sensor_mask & bit) != 0U) {
+            out_metrics->total_sensors++;
+            if ((valid_mask & bit) != 0U) {
+                out_metrics->valid_sensors++;
+                float t = temperatures[s];
+                sum += t;
+                if (t > out_metrics->highest_temp) {
+                    out_metrics->highest_temp = t;
+                }
+                if (t < out_metrics->lowest_temp) {
+                    out_metrics->lowest_temp = t;
+                }
+            }
+        }
+    }
+
+    if (out_metrics->valid_sensors > 0U) {
+        out_metrics->average_temp = sum / (float)out_metrics->valid_sensors;
+    } else {
+        out_metrics->highest_temp = 0.0f;
+        out_metrics->lowest_temp = 0.0f;
+        out_metrics->average_temp = 0.0f;
+    }
+
+    return 0;
+}
+
