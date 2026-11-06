@@ -49,7 +49,8 @@ Base Offset   Total Size    Logical Domain             Structure and Purpose
 0x1400        1024 B (1 KB)  CONFIG_DOMAIN_CALIBRATION  2 slots of 512 B (Offsets and ADC Factors)
 0x1800        2048 B (2 KB)  CONFIG_DOMAIN_SENSOR_CFG   2 slots of 1 KB (Sensor Channel Routing & Roles)
 0x2000        2048 B (2 KB)  CONFIG_DOMAIN_BASELINE     2 slots of 1 KB (OLS 64-bit Betas & Baseline Signatures)
-0x2800        6144 B (6 KB)  RESERVED                   Future expansions (SNMP, Certificates)
+0x2800        2048 B (2 KB)  CONFIG_DOMAIN_HVAC         2 slots of 1 KB (HVAC Sequencer, N+M, HW Endpoints)
+0x3000        4096 B (4 KB)  RESERVED                   Future expansions (SNMP, Certificates)
 0x4000       16384 B (16 KB) EVENT LOG / HISTORY        Circular storage for auditing
 ───────────────────────────────────────────────────────────────────────────────────────────
 ```
@@ -58,6 +59,16 @@ Base Offset   Total Size    Logical Domain             Structure and Purpose
 - Each region contains its own ping-pong slot pair managed by `microconf`.
 - A change in network structure **does not invalidate** the fingerprint nor CRC of the Modbus region.
 - If a region suffers corruption due to hardware failure, the other regions remain intact and readable.
+
+### 2.2 CONFIG_DOMAIN_HVAC Specification & Lifecycle
+- **Payload Structure**: [`config_hvac_t`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/include/common/hvac_types.h) defined in `app/include/common/hvac_types.h`.
+- **Payload Size**: ~460–476 bytes (including `hvac_operation_mode_t`, 4 thermal groups with temperature setpoints, safety timers, $N+M$ redundancy metrics, 8 unit hardware routing endpoints for GPIO/SPI/Modbus, and safety interlocks).
+- **Allocated Memory**: 2048 bytes at base address `0x2800` organized into 2 ping-pong slots of 1024 bytes each, leaving ample headroom over the 32-byte `microconf` header plus payload.
+- **Lifecycle & Synchronization**:
+  1. **Bootstrapping**: Loaded synchronously during `composition_root_init()` before Active Object threads start. If empty or corrupted CRC, defaults are loaded.
+  2. **Runtime Mutation**: Modifications (via HMI, CLI, or cloud command) update RAM and emit `CONFIG_EVENT_DIRTY` on `chan_system_config`.
+  3. **Debounced Commit**: `ao_storage` coalesces writes over a 500 ms debounce window and performs an atomic ping-pong commit with CRC32 calculation.
+  4. **Notification**: Broadcasts `CONFIG_EVENT_PERSISTED` upon completion to inform all subsystems that configuration is safe in silicon.
 
 ---
 
@@ -127,6 +138,7 @@ typedef enum {
     CONFIG_DOMAIN_CALIBRATION,   /**< Analog input calibration constants */
     CONFIG_DOMAIN_SENSOR_CFG,    /**< Physical to semantic sensor routing table */
     CONFIG_DOMAIN_BASELINE,      /**< 7-day learned OLS coefficients and thermal baseline */
+    CONFIG_DOMAIN_HVAC,          /**< Industrial HVAC sequencer & hardware routing config */
     CONFIG_DOMAIN_MAX            /**< Upper limit of domains */
 } config_domain_t;
 ```

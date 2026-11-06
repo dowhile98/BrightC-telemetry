@@ -26,7 +26,8 @@ ZTEST(storage_suite, test_config_domain_enum_and_validation)
     zassert_equal(CONFIG_DOMAIN_CALIBRATION, 4, "CONFIG_DOMAIN_CALIBRATION should be 4");
     zassert_equal(CONFIG_DOMAIN_SENSOR_CFG, 5, "CONFIG_DOMAIN_SENSOR_CFG should be 5");
     zassert_equal(CONFIG_DOMAIN_BASELINE, 6, "CONFIG_DOMAIN_BASELINE should be 6");
-    zassert_equal(CONFIG_DOMAIN_MAX, 7, "CONFIG_DOMAIN_MAX should be 7");
+    zassert_equal(CONFIG_DOMAIN_HVAC, 7, "CONFIG_DOMAIN_HVAC should be 7");
+    zassert_equal(CONFIG_DOMAIN_MAX, 8, "CONFIG_DOMAIN_MAX should be 8");
 
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_DEVICE), "DEVICE must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_MODBUS), "MODBUS must be valid");
@@ -35,6 +36,7 @@ ZTEST(storage_suite, test_config_domain_enum_and_validation)
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_CALIBRATION), "CALIBRATION must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_SENSOR_CFG), "SENSOR_CFG must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_BASELINE), "BASELINE must be valid");
+    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_HVAC), "HVAC must be valid");
 
     zassert_false(config_domain_is_valid(CONFIG_DOMAIN_MAX), "MAX must be invalid");
     zassert_false(config_domain_is_valid((config_domain_t)-1), "-1 must be invalid");
@@ -101,6 +103,12 @@ ZTEST(storage_suite, test_config_domain_layout)
     zassert_equal(base, 0x2000, "BASELINE base");
     zassert_equal(total, 2048, "BASELINE total");
     zassert_equal(slot, 1024, "BASELINE slot");
+
+    /* HVAC: 0x2800, 2048, 1024 */
+    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_HVAC, &base, &total, &slot), 0, "HVAC layout error");
+    zassert_equal(base, 0x2800, "HVAC base");
+    zassert_equal(total, 2048, "HVAC total");
+    zassert_equal(slot, 1024, "HVAC slot");
 
     /* Invalid domain */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_MAX, &base, &total, &slot), -EINVAL, "MAX invalid");

@@ -24,5 +24,6 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Integrated `CONFIG_DOMAIN_HVAC` (base `0x2800`, total `2048` B, 2 ping-pong slots of `1024` B) into `config_types.h` and `adapter_storage_microconf.c` (`"hvac"` key); updated storage unit test suite to validate domain enumerators and EEPROM layout.
 - **2026-11-05**: Refactored `ao_storage` to 5-phase canonical lifecycle.
 - **2026-11-05**: Fixed `s_storage_bounce_buffer` file-scope variable; embedded within `ao_storage_t`.

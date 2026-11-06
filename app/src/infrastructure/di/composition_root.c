@@ -142,6 +142,7 @@ static K_THREAD_STACK_DEFINE(s_ao_net_stack, AO_NETWORK_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_store_stack, AO_STORAGE_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_indicator_stack, AO_INDICATOR_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_hvac_stack, AO_HVAC_STACK_SIZE);
 
 static const net_eth_config_t k_default_eth_cfg = {
     .ip_mode = NET_IP_MODE_DHCP,
@@ -161,6 +162,85 @@ static const net_wifi_config_t k_default_wifi_cfg = {
         .max_clients = 5U,
         .ap_ip_addr = 0xC0A80401,     /* 192.168.4.1 */
         .ap_subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
+    },
+};
+
+static const config_hvac_t k_default_hvac_cfg = {
+    .operation_mode = (uint8_t)HVAC_MODE_HYBRID_FULL,
+    .total_units = 8U,
+    .total_groups = 1U,
+    .fire_interlock = {
+        .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO,
+        .device_id = 0U,
+        .channel = 0U,
+    },
+    .bypass_switch = {
+        .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO,
+        .device_id = 0U,
+        .channel = 1U,
+    },
+    .groups = {
+        [0] = {
+            .temp_min = 20.0f,
+            .temp_max = 24.0f,
+            .temp_alarm = 28.0f,
+            .temp_bypass = 32.0f,
+            .time_to_cool_s = 1800U,
+            .delay_on_s = 10U,
+            .fan_delay_s = 30U,
+            .pressure_retry_s = 180U,
+            .manual_timeout_s = 3600U,
+            .rotation_interval_hours = 24U,
+            .sensor_mask = 0x00FFU,
+            .unit_mask = 0xFFU,
+            .active_turn_count = 4U,
+            .max_allowed_faults = 3U,
+            .enable_fan_delay = 1U,
+            .hum_min = 40U,
+            .hum_max = 70U,
+        },
+    },
+    .units = {
+        [0] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 0U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 1U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 2U },
+        },
+        [1] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 3U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 4U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 5U },
+        },
+        [2] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 6U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 7U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 8U },
+        },
+        [3] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 9U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 10U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 11U },
+        },
+        [4] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 12U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 13U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 14U },
+        },
+        [5] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 15U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 16U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 17U },
+        },
+        [6] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 18U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 19U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 20U },
+        },
+        [7] = {
+            .relay_aa = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 21U },
+            .relay_sm = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 22U },
+            .relay_g  = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, .device_id = 4U, .channel = 23U },
+        },
     },
 };
 
@@ -223,6 +303,26 @@ static int storage_provider_modbus(void *ctx, config_domain_t domain,
         return -EINVAL;
     }
     return modbus_registry_export(&app->modbus.registry_impl, out_buf, max_size, out_size);
+}
+
+static int storage_provider_hvac(void *ctx, config_domain_t domain,
+                                 void *out_buf, size_t max_size, size_t *out_size)
+{
+    app_container_t *app = (app_container_t *)ctx;
+    if (app == NULL || domain != CONFIG_DOMAIN_HVAC || out_buf == NULL)
+    {
+        return -EINVAL;
+    }
+    if (max_size < sizeof(config_hvac_t))
+    {
+        return -ENOMEM;
+    }
+    (void)memcpy(out_buf, &app->hvac.config, sizeof(config_hvac_t));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(config_hvac_t);
+    }
+    return 0;
 }
 
 #if defined(CONFIG_ZTEST)
@@ -768,6 +868,85 @@ int composition_root_init_digital_inputs(app_container_t *self)
     return 0;
 }
 
+int composition_root_init_hvac(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->hvac.initialized)
+    {
+        return 0;
+    }
+
+    /* 1. Synchronous boot read from storage for HVAC configuration */
+    config_hvac_t loaded_hvac_cfg;
+    const config_hvac_t *hvac_cfg_ptr = &k_default_hvac_cfg;
+    size_t loaded_hvac_size = 0;
+    int hvac_load_res = -1;
+
+    if (i_config_storage_is_bound(&self->storage.port))
+    {
+        hvac_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                             &loaded_hvac_cfg, sizeof(loaded_hvac_cfg),
+                                             &loaded_hvac_size);
+        if (hvac_load_res == 0 && loaded_hvac_size == sizeof(config_hvac_t) &&
+            config_hvac_is_valid(&loaded_hvac_cfg))
+        {
+            LOG_INF("Loaded HVAC config from storage");
+            hvac_cfg_ptr = &loaded_hvac_cfg;
+        }
+        else
+        {
+            LOG_INF("No valid HVAC config in storage (%d), applying defaults", hvac_load_res);
+            (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                        &k_default_hvac_cfg, sizeof(k_default_hvac_cfg));
+        }
+    }
+    (void)memcpy(&self->hvac.config, hvac_cfg_ptr, sizeof(config_hvac_t));
+
+    /* 2. Bind remote relay port to waveshare relay */
+    i_relay_t remote_relay;
+    int err = adapter_relay_modbus_port(&self->modbus.waveshare_relay, &remote_relay);
+    if (err != 0)
+    {
+        LOG_WRN("hvac: failed to obtain waveshare relay port: %d", err);
+    }
+
+    /* 3. Initialize actuator adapter */
+    err = adapter_hvac_actuator_init(&self->hvac.actuator_adapter,
+                                     self->hvac.config.units,
+                                     HVAC_MAX_UNITS_TOTAL,
+                                     &remote_relay,
+                                     NULL);
+    if (err != 0)
+    {
+        LOG_ERR("adapter_hvac_actuator_init failed (%d)", err);
+        return err;
+    }
+    self->hvac.actuator_port = adapter_hvac_actuator_port(&self->hvac.actuator_adapter);
+
+    /* 4. Initialize message queue and Active Object */
+    k_msgq_init(&self->hvac.queue, (char *)self->hvac.queue_buf,
+                sizeof(ao_hvac_event_t), AO_HVAC_QUEUE_DEPTH);
+
+    err = ao_hvac_init(&self->hvac.ao,
+                       &self->hvac.config,
+                       &self->hvac.actuator_port,
+                       &self->hvac.queue,
+                       s_ao_hvac_stack,
+                       K_THREAD_STACK_SIZEOF(s_ao_hvac_stack));
+    if (err != 0)
+    {
+        LOG_ERR("ao_hvac_init failed (%d)", err);
+        return err;
+    }
+
+    self->hvac.initialized = true;
+    return 0;
+}
+
 int composition_root_wire(app_container_t *self)
 {
     if (self == NULL)
@@ -783,6 +962,11 @@ int composition_root_wire(app_container_t *self)
                                            storage_provider_wifi, self);
         (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_MODBUS,
                                            storage_provider_modbus, self);
+        if (self->hvac.initialized)
+        {
+            (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_HVAC,
+                                               storage_provider_hvac, self);
+        }
     }
 
     if (self->network.initialized)
@@ -843,6 +1027,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_digital_inputs(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_hvac(self);
     if (err != 0)
     {
         return err;
@@ -927,6 +1117,16 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+    if (self->hvac.initialized)
+    {
+        int err = ao_hvac_start(&self->hvac.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("hvac active object start failed (%d)", err);
+            return err;
+        }
+    }
+
     self->is_running = true;
     return 0;
 }
@@ -976,6 +1176,13 @@ int composition_root_stop(app_container_t *self)
         (void)ao_system_indicator_wait_stopped(&self->indicators.ao, K_MSEC(200));
     }
 
+    /* 6. Stop HVAC coordinator (wait up to 1000 ms) */
+    if (self->hvac.initialized)
+    {
+        (void)ao_hvac_stop(&self->hvac.ao);
+        (void)ao_hvac_wait_stopped(&self->hvac.ao, K_MSEC(1000));
+    }
+
     self->is_running = false;
     return 0;
 }
@@ -996,6 +1203,12 @@ int composition_root_deinit(app_container_t *self)
     (void)composition_root_stop(self);
 
     /* Deinitialize subsystems in reverse order of initialization */
+    if (self->hvac.initialized)
+    {
+        (void)ao_hvac_deinit(&self->hvac.ao);
+        self->hvac.initialized = false;
+    }
+
     if (self->di.initialized)
     {
         (void)ao_digital_input_deinit(&self->di.ao);
@@ -1126,4 +1339,75 @@ const i_buzzer_t *app_container_get_buzzer(const app_container_t *self)
         return NULL;
     }
     return &self->indicators.buzzer_port;
+}
+
+ao_hvac_t *app_container_get_hvac_ao(app_container_t *self)
+{
+    if (self == NULL || !self->hvac.initialized)
+    {
+        return NULL;
+    }
+    return &self->hvac.ao;
+}
+
+int app_container_set_hvac_group_config(app_container_t *self, uint8_t group_id, const config_hvac_group_t *cfg)
+{
+    if (self == NULL || group_id >= HVAC_MAX_GROUPS || cfg == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (!config_hvac_group_is_valid(cfg))
+    {
+        return -EINVAL;
+    }
+
+    if (self->hvac.initialized)
+    {
+        int err = ao_hvac_set_group_config(&self->hvac.ao, group_id, cfg);
+        if (err != 0)
+        {
+            return err;
+        }
+    }
+
+    self->hvac.config.groups[group_id] = *cfg;
+
+    if (self->storage.initialized)
+    {
+        (void)ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
+    }
+
+    return 0;
+}
+
+int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cfg)
+{
+    if (self == NULL || cfg == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (!config_hvac_is_valid(cfg))
+    {
+        return -EINVAL;
+    }
+
+    if (self->hvac.initialized)
+    {
+        int err = ao_hvac_apply_config(&self->hvac.ao, cfg);
+        if (err != 0)
+        {
+            return err;
+        }
+    }
+
+    self->hvac.config = *cfg;
+
+    if (self->storage.initialized)
+    {
+        (void)ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, 0U);
+    }
+
+    return 0;
 }

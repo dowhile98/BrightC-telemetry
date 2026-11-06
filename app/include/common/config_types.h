@@ -31,6 +31,7 @@ typedef enum {
     CONFIG_DOMAIN_CALIBRATION,   /**< Analog input calibration constants */
     CONFIG_DOMAIN_SENSOR_CFG,    /**< Physical to semantic sensor routing table */
     CONFIG_DOMAIN_BASELINE,      /**< 7-day learned OLS coefficients and thermal baseline */
+    CONFIG_DOMAIN_HVAC,          /**< Industrial HVAC sequencer & hardware routing config */
     CONFIG_DOMAIN_MAX            /**< Upper limit of domains */
 } config_domain_t;
 
@@ -88,6 +89,7 @@ static inline bool config_event_type_is_valid(config_event_type_t type)
  * - CONFIG_DOMAIN_CALIBRATION: 0x1400, 1024 B (2 slots of 512 B)
  * - CONFIG_DOMAIN_SENSOR_CFG:  0x1800, 2048 B (2 slots of 1024 B)
  * - CONFIG_DOMAIN_BASELINE:    0x2000, 2048 B (2 slots of 1024 B)
+ * - CONFIG_DOMAIN_HVAC:        0x2800, 2048 B (2 slots of 1024 B)
  *
  * @param domain           Target domain.
  * @param out_base_offset  Output pointer for starting offset in bytes.
@@ -141,6 +143,11 @@ static inline int config_domain_get_layout(config_domain_t domain,
         break;
     case CONFIG_DOMAIN_BASELINE:
         base = 0x2000;
+        total = 2048;
+        slot = 1024;
+        break;
+    case CONFIG_DOMAIN_HVAC:
+        base = 0x2800;
         total = 2048;
         slot = 1024;
         break;

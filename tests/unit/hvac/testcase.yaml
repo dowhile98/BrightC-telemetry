@@ -1,0 +1,11 @@
+common:
+  tags:
+    - unit
+    - hvac
+  platform_allow:
+    - native_sim
+    - qemu_cortex_m3
+tests:
+  unit.hvac.all:
+    integration_platforms:
+      - native_sim

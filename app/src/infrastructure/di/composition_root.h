@@ -16,6 +16,7 @@
 #include <zephyr/kernel.h>
 
 #include "application/active_objects/ao_digital_input.h"
+#include "application/active_objects/ao_hvac.h"
 #include "application/active_objects/ao_modbus.h"
 #include "application/active_objects/ao_network.h"
 #include "application/active_objects/ao_storage.h"
@@ -23,6 +24,7 @@
 #include "application/modbus/modbus_registry.h"
 #include "common/config_types.h"
 #include "common/digital_input_types.h"
+#include "common/hvac_types.h"
 #include "common/indicator_types.h"
 #include "common/modbus_types.h"
 #include "common/network_types.h"
@@ -30,6 +32,7 @@
 #include "interfaces/i_buzzer.h"
 #include "interfaces/i_config_storage.h"
 #include "interfaces/i_digital_input.h"
+#include "interfaces/i_hvac_unit.h"
 #include "interfaces/i_led.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_network.h"
@@ -41,6 +44,7 @@
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
 #endif
 #include "infrastructure/adapters/adapter_relay_modbus.h"
+#include "infrastructure/adapters/adapter_hvac_actuator.h"
 #ifndef CONFIG_ZTEST
 #include "infrastructure/adapters/adapter_eth_stm32.h"
 #include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
@@ -146,6 +150,17 @@ typedef struct {
         bool initialized;                              /**< Subsystem initialization status */
     } indicators;
 
+    /* Subsystem 6: Industrial HVAC Control */
+    struct {
+        i_hvac_unit_t actuator_port;                   /**< Actuator port handle */
+        adapter_hvac_actuator_t actuator_adapter;      /**< Actuator adapter instance */
+        ao_hvac_t ao;                                  /**< HVAC Active Object coordinator */
+        struct k_msgq queue;                           /**< HVAC AO command queue */
+        uint8_t queue_buf[AO_HVAC_QUEUE_DEPTH * sizeof(ao_hvac_event_t)];
+        config_hvac_t config;                          /**< Persistent HVAC configuration */
+        bool initialized;                              /**< Subsystem initialization status */
+    } hvac;
+
     /* Container-level status */
     bool is_initialized;                               /**< True when container is initialized */
     bool is_running;                                   /**< True when Active Objects are running */
@@ -205,6 +220,16 @@ int composition_root_init_network(app_container_t *self);
  * @return 0 on success, negative errno on failure.
  */
 int composition_root_init_indicators(app_container_t *self);
+
+/**
+ * @brief Initialize the Industrial HVAC Control Subsystem.
+ *
+ * Configures default hardware routing, actuator adapter, and HVAC Active Object.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_hvac(app_container_t *self);
 
 /**
  * @brief Establish cross-subsystem wiring and provider registrations.
@@ -301,6 +326,39 @@ const i_led_t *app_container_get_led(const app_container_t *self);
  * @return Pointer to buzzer port, or NULL if uninitialized / invalid.
  */
 const i_buzzer_t *app_container_get_buzzer(const app_container_t *self);
+
+/**
+ * @brief Get the HVAC Active Object coordinator handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_hvac_t, or NULL if uninitialized.
+ */
+ao_hvac_t *app_container_get_hvac_ao(app_container_t *self);
+
+/**
+ * @brief Dynamically update HVAC group configuration at runtime.
+ *
+ * Updates RAM configuration in ao_hvac immediately and marks storage dirty
+ * for asynchronous debounced persistence to EEPROM.
+ *
+ * @param[in,out] self     Container instance.
+ * @param[in]     group_id Group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in]     cfg      New group configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_set_hvac_group_config(app_container_t *self, uint8_t group_id, const config_hvac_group_t *cfg);
+
+/**
+ * @brief Dynamically update complete HVAC configuration at runtime.
+ *
+ * Updates RAM configuration in ao_hvac immediately and marks storage dirty
+ * for asynchronous debounced persistence to EEPROM.
+ *
+ * @param[in,out] self Container instance.
+ * @param[in]     cfg  New HVAC configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cfg);
 
 /* =========================================================================
  * Full Lifecycle Management

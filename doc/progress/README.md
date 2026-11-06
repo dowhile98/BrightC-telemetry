@@ -22,6 +22,7 @@
 | **Telemetry Store & Forward** | [`telemetry_store_forward_progress.md`](telemetry_store_forward_progress.md) | **0%** | Spec approved. Pending dual-tier spooling & `ao_telemetry_spool` | 2026-11-05 |
 | **Self-Test & Diagnostics** | [`selftest_progress.md`](selftest_progress.md) | **0%** | Spec approved. Pending POST registry, rail/bus sanity checks | 2026-11-05 |
 | **OTA & MCUboot** | [`ota_mcuboot_progress.md`](ota_mcuboot_progress.md) | **0%** | Spec approved. Pending Sysbuild MCUboot, QSPI W25Q16, MCUmgr | 2026-11-05 |
+| **Industrial HVAC Control** | [`hvac_control_progress.md`](hvac_control_progress.md) | **100%** | Full domain FSMs, actuator adapter, ao_hvac, DI container, 22 unit tests | 2026-11-06 |
 
 ---
 
