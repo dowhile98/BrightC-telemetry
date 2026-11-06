@@ -2,7 +2,7 @@
  * Copyright (c) 2026 DAECGE
  * SPDX-License-Identifier: Apache-2.0
  *
- * Wi-Fi concrete adapter for ESP-Hosted-MCU (SPI4) behind i_network.
+ * Wi-Fi concrete adapter for ESP-Hosted-MCU (SPI4) behind i_network and i_wifi_control.
  */
 
 #include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
@@ -197,11 +197,15 @@ static int stop_ap(adapter_wifi_esp_hosted_t *ctx)
     return ret;
 }
 
-static int wifi_api_init(void *impl, network_interface_t iface)
+/* =========================================================================
+ * i_network_api_t implementations
+ * ========================================================================= */
+
+static int wifi_net_init(void *impl)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
@@ -213,14 +217,20 @@ static int wifi_api_init(void *impl, network_interface_t iface)
     ctx->status.link_up_ms = 0;
     ctx->link_up_time = 0;
 
+    if (ctx->sta_iface != NULL) {
+        ctx->fsm_state = NET_ADAPTER_STATE_TRANSPORT_READY;
+    } else {
+        ctx->fsm_state = NET_ADAPTER_STATE_INIT;
+    }
+
     return 0;
 }
 
-static int wifi_api_start(void *impl, network_interface_t iface)
+static int wifi_net_start(void *impl)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
@@ -245,20 +255,21 @@ static int wifi_api_start(void *impl, network_interface_t iface)
     }
 
     if (err == 0) {
-        ctx->is_started = true;
+        ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
         ctx->status.state = NET_IF_STATE_CONNECTING;
     } else {
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
         ctx->status.state = NET_IF_STATE_FAILED;
     }
 
     return err;
 }
 
-static int wifi_api_stop(void *impl, network_interface_t iface)
+static int wifi_net_stop(void *impl)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
@@ -277,7 +288,7 @@ static int wifi_api_stop(void *impl, network_interface_t iface)
         break;
     }
 
-    ctx->is_started = false;
+    ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
     ctx->status.state = NET_IF_STATE_DOWN;
     ctx->status.link_up_ms = 0;
     ctx->link_up_time = 0;
@@ -285,12 +296,11 @@ static int wifi_api_stop(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int wifi_api_get_config(void *impl, network_interface_t iface,
-                              void *out_data, size_t max_size, size_t *out_size)
+static int wifi_net_get_config(void *impl, void *out_data, size_t max_size, size_t *out_size)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI || out_data == NULL) {
+    if (ctx == NULL || out_data == NULL) {
         return -EINVAL;
     }
 
@@ -306,12 +316,11 @@ static int wifi_api_get_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int wifi_api_set_config(void *impl, network_interface_t iface,
-                              const void *data, size_t size)
+static int wifi_net_set_config(void *impl, const void *data, size_t size)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI || data == NULL) {
+    if (ctx == NULL || data == NULL) {
         return -EINVAL;
     }
 
@@ -333,12 +342,11 @@ static int wifi_api_set_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int wifi_api_get_status(void *impl, network_interface_t iface,
-                              net_status_t *out_status)
+static int wifi_net_get_status(void *impl, net_status_t *out_status)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI || out_status == NULL) {
+    if (ctx == NULL || out_status == NULL) {
         return -EINVAL;
     }
 
@@ -348,11 +356,12 @@ static int wifi_api_get_status(void *impl, network_interface_t iface,
 
     if (active_iface == NULL) {
         ctx->status.state = NET_IF_STATE_FAILED;
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
         *out_status = ctx->status;
         return 0;
     }
 
-    if (!ctx->is_started) {
+    if (ctx->fsm_state < NET_ADAPTER_STATE_LINK_UP) {
         ctx->status.state = NET_IF_STATE_DOWN;
         ctx->status.ip_addr = 0;
         ctx->status.subnet_mask = 0;
@@ -392,12 +401,14 @@ static int wifi_api_get_status(void *impl, network_interface_t iface,
             ctx->link_up_time = now;
         }
         ctx->status.link_up_ms = now - ctx->link_up_time;
+        ctx->fsm_state = NET_ADAPTER_STATE_IP_ACQUIRED;
     } else if (zephyr_status.state == WIFI_STATE_COMPLETED ||
                zephyr_status.state == WIFI_SAP_IFACE_ENABLED) {
         ctx->status.state = NET_IF_STATE_CONNECTING;
         ctx->status.ip_addr = 0;
         ctx->status.subnet_mask = 0;
         ctx->status.gateway = 0;
+        ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
     } else if (zephyr_status.state == WIFI_STATE_DISCONNECTED ||
                zephyr_status.state == WIFI_SAP_IFACE_DISABLED) {
         ctx->status.state = NET_IF_STATE_DISCONNECTED;
@@ -406,19 +417,34 @@ static int wifi_api_get_status(void *impl, network_interface_t iface,
         ctx->status.gateway = 0;
         ctx->status.link_up_ms = 0;
         ctx->link_up_time = 0;
+        ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
     } else {
         ctx->status.state = NET_IF_STATE_CONNECTING;
+        ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
     }
 
     *out_status = ctx->status;
     return 0;
 }
 
-static int wifi_api_scan(void *impl, network_interface_t iface)
+static const i_network_api_t s_adapter_wifi_esp_hosted_net_api = {
+    .init = wifi_net_init,
+    .start = wifi_net_start,
+    .stop = wifi_net_stop,
+    .get_config = wifi_net_get_config,
+    .set_config = wifi_net_set_config,
+    .get_status = wifi_net_get_status,
+};
+
+/* =========================================================================
+ * i_wifi_control_api_t implementations
+ * ========================================================================= */
+
+static int wifi_ctrl_scan(void *impl)
 {
     adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_WIFI) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
@@ -426,18 +452,77 @@ static int wifi_api_scan(void *impl, network_interface_t iface)
         return -ENODEV;
     }
 
-    int ret = net_mgmt(NET_REQUEST_WIFI_SCAN, ctx->sta_iface, NULL, 0);
+    return net_mgmt(NET_REQUEST_WIFI_SCAN, ctx->sta_iface, NULL, 0);
+}
+
+static int wifi_ctrl_connect_ap(void *impl, const char *ssid, const char *psk, net_wifi_security_t sec)
+{
+    adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
+
+    if (ctx == NULL || ssid == NULL || !net_wifi_security_is_valid(sec)) {
+        return -EINVAL;
+    }
+
+    if (sec != NET_WIFI_SEC_OPEN && psk == NULL) {
+        return -EINVAL;
+    }
+
+    strncpy(ctx->cfg.sta.ssid, ssid, sizeof(ctx->cfg.sta.ssid) - 1U);
+    ctx->cfg.sta.ssid[sizeof(ctx->cfg.sta.ssid) - 1U] = '\0';
+
+    if (psk != NULL) {
+        strncpy(ctx->cfg.sta.psk, psk, sizeof(ctx->cfg.sta.psk) - 1U);
+        ctx->cfg.sta.psk[sizeof(ctx->cfg.sta.psk) - 1U] = '\0';
+    } else {
+        ctx->cfg.sta.psk[0] = '\0';
+    }
+
+    ctx->cfg.sta.security = (uint8_t)sec;
+
+    int ret = start_sta(ctx);
+    if (ret == 0) {
+        ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
+        ctx->status.state = NET_IF_STATE_CONNECTING;
+    } else {
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
+        ctx->status.state = NET_IF_STATE_FAILED;
+    }
+
     return ret;
 }
 
-static const i_network_api_t s_adapter_wifi_esp_hosted_api = {
-    .init = wifi_api_init,
-    .start = wifi_api_start,
-    .stop = wifi_api_stop,
-    .get_config = wifi_api_get_config,
-    .set_config = wifi_api_set_config,
-    .get_status = wifi_api_get_status,
-    .scan = wifi_api_scan,
+static int wifi_ctrl_disconnect(void *impl)
+{
+    adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
+
+    if (ctx == NULL) {
+        return -EINVAL;
+    }
+
+    int ret = stop_sta(ctx);
+    ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
+    ctx->status.state = NET_IF_STATE_DISCONNECTED;
+
+    return ret;
+}
+
+static int wifi_ctrl_set_mode(void *impl, net_wifi_mode_t mode)
+{
+    adapter_wifi_esp_hosted_t *ctx = (adapter_wifi_esp_hosted_t *)impl;
+
+    if (ctx == NULL || !net_wifi_mode_is_valid(mode)) {
+        return -EINVAL;
+    }
+
+    ctx->cfg.mode = (uint8_t)mode;
+    return 0;
+}
+
+static const i_wifi_control_api_t s_adapter_wifi_esp_hosted_ctrl_api = {
+    .scan = wifi_ctrl_scan,
+    .connect_ap = wifi_ctrl_connect_ap,
+    .disconnect = wifi_ctrl_disconnect,
+    .set_mode = wifi_ctrl_set_mode,
 };
 
 int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct device *wifi_dev)
@@ -448,6 +533,7 @@ int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct de
 
     (void)memset(ctx, 0, sizeof(*ctx));
     ctx->wifi_dev = wifi_dev;
+    ctx->fsm_state = NET_ADAPTER_STATE_INIT;
 
     (void)network_default_wifi_config(&ctx->cfg);
 
@@ -479,14 +565,13 @@ int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct de
         if (link_addr != NULL && link_addr->len >= NET_MAC_ADDR_LEN) {
             (void)memcpy(ctx->cfg.mac_addr, link_addr->addr, NET_MAC_ADDR_LEN);
         }
+        ctx->fsm_state = NET_ADAPTER_STATE_TRANSPORT_READY;
     } else {
         LOG_WRN("WiFi: STA net_if not found at init");
     }
 
     ctx->status.state = NET_IF_STATE_DISCONNECTED;
     ctx->status.rssi = -128;
-    ctx->is_ready = true;
-    ctx->is_started = false;
 
     return 0;
 }
@@ -494,8 +579,25 @@ int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct de
 i_network_t adapter_wifi_esp_hosted_port(adapter_wifi_esp_hosted_t *ctx)
 {
     i_network_t port = {
-        .api = (ctx != NULL && ctx->is_ready) ? &s_adapter_wifi_esp_hosted_api : NULL,
+        .api = (ctx != NULL && ctx->fsm_state >= NET_ADAPTER_STATE_INIT) ? &s_adapter_wifi_esp_hosted_net_api : NULL,
         .impl = (void *)ctx,
     };
     return port;
+}
+
+i_wifi_control_t adapter_wifi_esp_hosted_wifi_control_port(adapter_wifi_esp_hosted_t *ctx)
+{
+    i_wifi_control_t port = {
+        .api = (ctx != NULL && ctx->fsm_state >= NET_ADAPTER_STATE_INIT) ? &s_adapter_wifi_esp_hosted_ctrl_api : NULL,
+        .impl = (void *)ctx,
+    };
+    return port;
+}
+
+net_adapter_fsm_state_t adapter_wifi_esp_hosted_get_fsm_state(const adapter_wifi_esp_hosted_t *ctx)
+{
+    if (ctx == NULL) {
+        return NET_ADAPTER_STATE_UNINITIALIZED;
+    }
+    return ctx->fsm_state;
 }

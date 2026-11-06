@@ -36,7 +36,7 @@ int ao_network_sync_step(ao_network_t *self)
 
     /* 1. Poll Ethernet status */
     net_status_t eth_status;
-    int err = i_network_get_status(self->net_eth, NETWORK_INTERFACE_ETHERNET, &eth_status);
+    int err = i_network_get_status(self->net_eth, &eth_status);
     if (err == 0) {
         if (!self->has_eth_status || status_changed(&self->last_eth_status, &eth_status)) {
             self->last_eth_status = eth_status;
@@ -54,7 +54,7 @@ int ao_network_sync_step(ao_network_t *self)
 
     /* 2. Poll WiFi status */
     net_status_t wifi_status;
-    err = i_network_get_status(self->net_wifi, NETWORK_INTERFACE_WIFI, &wifi_status);
+    err = i_network_get_status(self->net_wifi, &wifi_status);
     if (err == 0) {
         if (!self->has_wifi_status || status_changed(&self->last_wifi_status, &wifi_status)) {
             self->last_wifi_status = wifi_status;
@@ -110,14 +110,14 @@ static void ao_network_thread(void *p1, void *p2, void *p3)
 
                 if (event.type == AO_NETWORK_EVENT_CONFIG_ETH) {
                     self->eth_cfg = event.data.eth_cfg;
-                    (void)i_network_stop(self->net_eth, NETWORK_INTERFACE_ETHERNET);
-                    (void)i_network_set_config(self->net_eth, NETWORK_INTERFACE_ETHERNET, &self->eth_cfg, sizeof(self->eth_cfg));
-                    (void)i_network_start(self->net_eth, NETWORK_INTERFACE_ETHERNET);
+                    (void)i_network_stop(self->net_eth);
+                    (void)i_network_set_config(self->net_eth, &self->eth_cfg, sizeof(self->eth_cfg));
+                    (void)i_network_start(self->net_eth);
                 } else if (event.type == AO_NETWORK_EVENT_CONFIG_WIFI) {
                     self->wifi_cfg = event.data.wifi_cfg;
-                    (void)i_network_stop(self->net_wifi, NETWORK_INTERFACE_WIFI);
-                    (void)i_network_set_config(self->net_wifi, NETWORK_INTERFACE_WIFI, &self->wifi_cfg, sizeof(self->wifi_cfg));
-                    (void)i_network_start(self->net_wifi, NETWORK_INTERFACE_WIFI);
+                    (void)i_network_stop(self->net_wifi);
+                    (void)i_network_set_config(self->net_wifi, &self->wifi_cfg, sizeof(self->wifi_cfg));
+                    (void)i_network_start(self->net_wifi);
                 }
             }
 
@@ -127,10 +127,10 @@ static void ao_network_thread(void *p1, void *p2, void *p3)
 
         /* Stop network interfaces */
         if (self->net_eth) {
-            (void)i_network_stop(self->net_eth, NETWORK_INTERFACE_ETHERNET);
+            (void)i_network_stop(self->net_eth);
         }
         if (self->net_wifi) {
-            (void)i_network_stop(self->net_wifi, NETWORK_INTERFACE_WIFI);
+            (void)i_network_stop(self->net_wifi);
         }
 
         self->is_running = false;
@@ -200,16 +200,16 @@ int ao_network_start(ao_network_t *self)
     }
 
     /* 1. Initialize both adapters */
-    (void)i_network_init(self->net_eth, NETWORK_INTERFACE_ETHERNET);
-    (void)i_network_init(self->net_wifi, NETWORK_INTERFACE_WIFI);
+    (void)i_network_init(self->net_eth);
+    (void)i_network_init(self->net_wifi);
 
     /* 2. Configure both interfaces with default settings */
-    (void)i_network_set_config(self->net_eth, NETWORK_INTERFACE_ETHERNET, &self->eth_cfg, sizeof(self->eth_cfg));
-    (void)i_network_set_config(self->net_wifi, NETWORK_INTERFACE_WIFI, &self->wifi_cfg, sizeof(self->wifi_cfg));
+    (void)i_network_set_config(self->net_eth, &self->eth_cfg, sizeof(self->eth_cfg));
+    (void)i_network_set_config(self->net_wifi, &self->wifi_cfg, sizeof(self->wifi_cfg));
 
     /* 3. Start both interfaces */
-    (void)i_network_start(self->net_eth, NETWORK_INTERFACE_ETHERNET);
-    (void)i_network_start(self->net_wifi, NETWORK_INTERFACE_WIFI);
+    (void)i_network_start(self->net_eth);
+    (void)i_network_start(self->net_wifi);
 
     /* Purge stale messages in queue */
     k_msgq_purge(self->queue);

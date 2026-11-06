@@ -2,7 +2,7 @@
  * Copyright (c) 2026 DAECGE
  * SPDX-License-Identifier: Apache-2.0
  *
- * Wi-Fi concrete adapter for ESP-Hosted-MCU (SPI4) behind i_network.
+ * Wi-Fi concrete adapter for ESP-Hosted-MCU (SPI4) behind i_network and i_wifi_control.
  */
 
 #ifndef APP_INFRASTRUCTURE_ADAPTERS_ADAPTER_WIFI_ESP_HOSTED_H_
@@ -16,6 +16,7 @@
 
 #include "common/network_types.h"
 #include "interfaces/i_network.h"
+#include "interfaces/i_wifi_control.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,14 +28,13 @@ extern "C" {
  * Stored by value in app_container_t. Zero dynamic allocation.
  */
 typedef struct {
-    const struct device *wifi_dev; /**< Device pointer for esp_hosted_mcu_wifi */
-    struct net_if *sta_iface;      /**< Bound station interface */
-    struct net_if *ap_iface;       /**< Bound soft-AP interface (if supported) */
-    net_wifi_config_t cfg;         /**< Current Wi-Fi configuration */
-    net_status_t status;           /**< Last reported status */
-    uint32_t link_up_time;         /**< Timestamp (ms) when link became UP */
-    bool is_ready;                 /**< True once initialized */
-    bool is_started;               /**< True once started */
+    const struct device *wifi_dev;      /**< Device pointer for esp_hosted_mcu_wifi */
+    struct net_if *sta_iface;           /**< Bound station interface */
+    struct net_if *ap_iface;            /**< Bound soft-AP interface (if supported) */
+    net_wifi_config_t cfg;              /**< Current Wi-Fi configuration */
+    net_status_t status;                /**< Last reported status */
+    uint32_t link_up_time;              /**< Timestamp (ms) when link became UP */
+    net_adapter_fsm_state_t fsm_state;  /**< Explicit finite state machine state */
 } adapter_wifi_esp_hosted_t;
 
 /**
@@ -53,6 +53,22 @@ int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct de
  * @return Bound i_network_t port handle.
  */
 i_network_t adapter_wifi_esp_hosted_port(adapter_wifi_esp_hosted_t *ctx);
+
+/**
+ * @brief Produce an i_wifi_control_t port handle bound to this adapter instance.
+ *
+ * @param[in] ctx Adapter context instance.
+ * @return Bound i_wifi_control_t port handle.
+ */
+i_wifi_control_t adapter_wifi_esp_hosted_wifi_control_port(adapter_wifi_esp_hosted_t *ctx);
+
+/**
+ * @brief Get the current FSM state of the ESP-Hosted Wi-Fi adapter.
+ *
+ * @param[in] ctx Adapter context instance.
+ * @return Current net_adapter_fsm_state_t value.
+ */
+net_adapter_fsm_state_t adapter_wifi_esp_hosted_get_fsm_state(const adapter_wifi_esp_hosted_t *ctx);
 
 #ifdef __cplusplus
 }

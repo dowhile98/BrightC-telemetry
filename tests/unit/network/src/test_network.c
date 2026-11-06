@@ -12,6 +12,7 @@
 
 #include "common/network_types.h"
 #include "interfaces/i_network.h"
+#include "interfaces/i_wifi_control.h"
 #include "fake_network.h"
 #include "application/zbus/network_channels.h"
 #include "application/active_objects/ao_network.h"
@@ -174,6 +175,27 @@ ZTEST(network_suite, test_net_wifi_config_validators)
     zassert_false(net_wifi_config_is_valid(&cfg), "Password < 8 chars invalid for WPA2");
 }
 
+ZTEST(network_suite, test_net_adapter_fsm_state_enum_and_validation)
+{
+    zassert_equal(NET_ADAPTER_STATE_UNINITIALIZED, 0, "UNINITIALIZED must be 0");
+    zassert_equal(NET_ADAPTER_STATE_INIT, 1, "INIT must be 1");
+    zassert_equal(NET_ADAPTER_STATE_TRANSPORT_READY, 2, "TRANSPORT_READY must be 2");
+    zassert_equal(NET_ADAPTER_STATE_LINK_UP, 3, "LINK_UP must be 3");
+    zassert_equal(NET_ADAPTER_STATE_IP_ACQUIRED, 4, "IP_ACQUIRED must be 4");
+    zassert_equal(NET_ADAPTER_STATE_DISCONNECTED, 5, "DISCONNECTED must be 5");
+    zassert_equal(NET_ADAPTER_STATE_ERROR, 6, "ERROR must be 6");
+
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_UNINITIALIZED), "UNINITIALIZED valid");
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_INIT), "INIT valid");
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_TRANSPORT_READY), "TRANSPORT_READY valid");
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_LINK_UP), "LINK_UP valid");
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_IP_ACQUIRED), "IP_ACQUIRED valid");
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_DISCONNECTED), "DISCONNECTED valid");
+    zassert_true(net_adapter_fsm_state_is_valid(NET_ADAPTER_STATE_ERROR), "ERROR valid");
+    zassert_false(net_adapter_fsm_state_is_valid((net_adapter_fsm_state_t)7), "7 invalid");
+    zassert_false(net_adapter_fsm_state_is_valid((net_adapter_fsm_state_t)99), "99 invalid");
+}
+
 ZTEST(network_suite, test_i_network_wrappers_unbound_and_null)
 {
     i_network_t unbound = {0};
@@ -185,37 +207,107 @@ ZTEST(network_suite, test_i_network_wrappers_unbound_and_null)
     zassert_false(i_network_is_bound(&unbound), "Zero handle unbound");
 
     /* All wrappers return -EINVAL on unbound handle */
-    zassert_equal(i_network_init(&unbound, NETWORK_INTERFACE_ETHERNET), -EINVAL, "Unbound init");
-    zassert_equal(i_network_start(&unbound, NETWORK_INTERFACE_ETHERNET), -EINVAL, "Unbound start");
-    zassert_equal(i_network_stop(&unbound, NETWORK_INTERFACE_ETHERNET), -EINVAL, "Unbound stop");
-    zassert_equal(i_network_get_config(&unbound, NETWORK_INTERFACE_ETHERNET, &cfg, sizeof(cfg), &out_size), -EINVAL, "Unbound get_config");
-    zassert_equal(i_network_set_config(&unbound, NETWORK_INTERFACE_ETHERNET, &cfg, sizeof(cfg)), -EINVAL, "Unbound set_config");
-    zassert_equal(i_network_get_status(&unbound, NETWORK_INTERFACE_ETHERNET, &status), -EINVAL, "Unbound get_status");
-    zassert_equal(i_network_scan(&unbound, NETWORK_INTERFACE_WIFI), -EINVAL, "Unbound scan");
+    zassert_equal(i_network_init(&unbound), -EINVAL, "Unbound init");
+    zassert_equal(i_network_start(&unbound), -EINVAL, "Unbound start");
+    zassert_equal(i_network_stop(&unbound), -EINVAL, "Unbound stop");
+    zassert_equal(i_network_get_config(&unbound, &cfg, sizeof(cfg), &out_size), -EINVAL, "Unbound get_config");
+    zassert_equal(i_network_set_config(&unbound, &cfg, sizeof(cfg)), -EINVAL, "Unbound set_config");
+    zassert_equal(i_network_get_status(&unbound, &status), -EINVAL, "Unbound get_status");
 
-    /* Bound handle with invalid interface returns -EINVAL */
+    /* Missing mandatory methods in v-table */
     int dummy_ctx = 0;
     i_network_api_t dummy_api = {0};
-    i_network_t bound = {
+    i_network_t incomplete_bound = {
         .api = &dummy_api,
         .impl = &dummy_ctx,
     };
-    zassert_true(i_network_is_bound(&bound), "Bound check true");
+    zassert_false(i_network_is_bound(&incomplete_bound), "Incomplete API must not be bound");
 
-    zassert_equal(i_network_init(&bound, NETWORK_INTERFACE_MAX), -EINVAL, "Invalid iface init");
-    zassert_equal(i_network_start(&bound, NETWORK_INTERFACE_MAX), -EINVAL, "Invalid iface start");
-    zassert_equal(i_network_stop(&bound, NETWORK_INTERFACE_MAX), -EINVAL, "Invalid iface stop");
-    zassert_equal(i_network_get_config(&bound, NETWORK_INTERFACE_MAX, &cfg, sizeof(cfg), &out_size), -EINVAL, "Invalid iface get_cfg");
-    zassert_equal(i_network_set_config(&bound, NETWORK_INTERFACE_MAX, &cfg, sizeof(cfg)), -EINVAL, "Invalid iface set_cfg");
-    zassert_equal(i_network_get_status(&bound, NETWORK_INTERFACE_MAX, &status), -EINVAL, "Invalid iface get_status");
-    zassert_equal(i_network_scan(&bound, NETWORK_INTERFACE_MAX), -EINVAL, "Invalid iface scan");
+    /* Fully bound handle */
+    i_network_t eth_port = fake_network_get_eth_port();
+    zassert_true(i_network_is_bound(&eth_port), "Bound check true");
 
     /* Bound handle with null output pointers returns -EINVAL */
-    zassert_equal(i_network_get_config(&bound, NETWORK_INTERFACE_ETHERNET, NULL, sizeof(cfg), &out_size), -EINVAL, "NULL out_data");
-    zassert_equal(i_network_get_config(&bound, NETWORK_INTERFACE_ETHERNET, &cfg, 0, &out_size), -EINVAL, "Zero max_size");
-    zassert_equal(i_network_set_config(&bound, NETWORK_INTERFACE_ETHERNET, NULL, sizeof(cfg)), -EINVAL, "NULL set data");
-    zassert_equal(i_network_set_config(&bound, NETWORK_INTERFACE_ETHERNET, &cfg, 0), -EINVAL, "Zero set size");
-    zassert_equal(i_network_get_status(&bound, NETWORK_INTERFACE_ETHERNET, NULL), -EINVAL, "NULL out_status");
+    zassert_equal(i_network_get_config(&eth_port, NULL, sizeof(cfg), &out_size), -EINVAL, "NULL out_data");
+    zassert_equal(i_network_get_config(&eth_port, &cfg, 0, &out_size), -EINVAL, "Zero max_size");
+    zassert_equal(i_network_set_config(&eth_port, NULL, sizeof(cfg)), -EINVAL, "NULL set data");
+    zassert_equal(i_network_set_config(&eth_port, &cfg, 0), -EINVAL, "Zero set size");
+    zassert_equal(i_network_get_status(&eth_port, NULL), -EINVAL, "NULL out_status");
+}
+
+ZTEST(network_suite, test_i_wifi_control_wrappers_unbound_and_null)
+{
+    fake_network_reset();
+
+    i_wifi_control_t unbound = {0};
+
+    zassert_false(i_wifi_control_is_bound(NULL), "NULL handle unbound");
+    zassert_false(i_wifi_control_is_bound(&unbound), "Zero handle unbound");
+
+    /* All wrappers return -EINVAL on unbound handle */
+    zassert_equal(i_wifi_control_scan(&unbound), -EINVAL, "Unbound scan");
+    zassert_equal(i_wifi_control_connect_ap(&unbound, "ssid", "psk", NET_WIFI_SEC_WPA2_PSK), -EINVAL, "Unbound connect_ap");
+    zassert_equal(i_wifi_control_disconnect(&unbound), -EINVAL, "Unbound disconnect");
+    zassert_equal(i_wifi_control_set_mode(&unbound, NET_WIFI_MODE_STA), -EINVAL, "Unbound set_mode");
+
+    /* Incomplete API check */
+    int dummy_ctx = 0;
+    i_wifi_control_api_t incomplete_api = {0};
+    i_wifi_control_t incomplete_bound = {
+        .api = &incomplete_api,
+        .impl = &dummy_ctx,
+    };
+    zassert_false(i_wifi_control_is_bound(&incomplete_bound), "Incomplete API not bound");
+
+    /* Bound handle validation with invalid arguments */
+    i_wifi_control_t wifi_ctrl = fake_network_get_wifi_control_port();
+    zassert_true(i_wifi_control_is_bound(&wifi_ctrl), "Fake wifi control port bound");
+
+    zassert_equal(i_wifi_control_connect_ap(&wifi_ctrl, NULL, "psk", NET_WIFI_SEC_WPA2_PSK), -EINVAL, "NULL ssid");
+    zassert_equal(i_wifi_control_connect_ap(&wifi_ctrl, "ssid", "psk", (net_wifi_security_t)99), -EINVAL, "Invalid sec");
+    zassert_equal(i_wifi_control_connect_ap(&wifi_ctrl, "ssid", NULL, NET_WIFI_SEC_WPA2_PSK), -EINVAL, "NULL psk with WPA2");
+    zassert_equal(i_wifi_control_connect_ap(&wifi_ctrl, "ssid", NULL, NET_WIFI_SEC_OPEN), 0, "NULL psk with OPEN allowed");
+
+    zassert_equal(i_wifi_control_set_mode(&wifi_ctrl, (net_wifi_mode_t)99), -EINVAL, "Invalid mode");
+}
+
+ZTEST(network_suite, test_fake_wifi_control_operations)
+{
+    fake_network_reset();
+
+    i_wifi_control_t wifi_ctrl = fake_network_get_wifi_control_port();
+    zassert_true(i_wifi_control_is_bound(&wifi_ctrl), "WiFi control port bound");
+
+    /* Scan */
+    zassert_ok(i_wifi_control_scan(&wifi_ctrl), "Scan call");
+    const fake_network_state_t *state = fake_network_get_state();
+    zassert_equal(state->wifi_scan_calls, 1U, "wifi_scan_calls must be 1");
+
+    /* Connect AP */
+    zassert_ok(i_wifi_control_connect_ap(&wifi_ctrl, "AccessPoint", "Pass1234", NET_WIFI_SEC_WPA2_PSK), "Connect AP");
+    state = fake_network_get_state();
+    zassert_equal(state->wifi_connect_ap_calls, 1U, "wifi_connect_ap_calls must be 1");
+    zassert_str_equal(state->last_connect_ssid, "AccessPoint", "Recorded SSID matches");
+    zassert_str_equal(state->last_connect_psk, "Pass1234", "Recorded PSK matches");
+    zassert_equal(state->last_connect_sec, NET_WIFI_SEC_WPA2_PSK, "Recorded Sec matches");
+
+    /* Disconnect */
+    zassert_ok(i_wifi_control_disconnect(&wifi_ctrl), "Disconnect");
+    state = fake_network_get_state();
+    zassert_equal(state->wifi_disconnect_calls, 1U, "wifi_disconnect_calls must be 1");
+
+    /* Set mode */
+    zassert_ok(i_wifi_control_set_mode(&wifi_ctrl, NET_WIFI_MODE_STA_AP), "Set mode");
+    state = fake_network_get_state();
+    zassert_equal(state->wifi_set_mode_calls, 1U, "wifi_set_mode_calls must be 1");
+    zassert_equal(state->last_mode, NET_WIFI_MODE_STA_AP, "Recorded mode matches");
+
+    /* Injected error */
+    fake_network_set_wifi_ctrl_return_code(-EIO);
+    zassert_equal(i_wifi_control_scan(&wifi_ctrl), -EIO, "Injected error on scan");
+    zassert_equal(i_wifi_control_connect_ap(&wifi_ctrl, "AP", "Pass1234", NET_WIFI_SEC_WPA2_PSK), -EIO, "Injected error on connect_ap");
+    zassert_equal(i_wifi_control_disconnect(&wifi_ctrl), -EIO, "Injected error on disconnect");
+    zassert_equal(i_wifi_control_set_mode(&wifi_ctrl, NET_WIFI_MODE_AP), -EIO, "Injected error on set_mode");
 }
 
 ZTEST(network_suite, test_fake_network_lifecycle_and_operations)
@@ -230,22 +322,22 @@ ZTEST(network_suite, test_fake_network_lifecycle_and_operations)
 
     /* Initial state is DOWN */
     net_status_t status;
-    zassert_ok(i_network_get_status(&eth_port, NETWORK_INTERFACE_ETHERNET, &status), "Get ETH status");
+    zassert_ok(i_network_get_status(&eth_port, &status), "Get ETH status");
     zassert_equal(status.state, NET_IF_STATE_DOWN, "Initial ETH state DOWN");
 
-    zassert_ok(i_network_get_status(&wifi_port, NETWORK_INTERFACE_WIFI, &status), "Get WiFi status");
+    zassert_ok(i_network_get_status(&wifi_port, &status), "Get WiFi status");
     zassert_equal(status.state, NET_IF_STATE_DOWN, "Initial WiFi state DOWN");
 
     /* Init & Start */
-    zassert_ok(i_network_init(&eth_port, NETWORK_INTERFACE_ETHERNET), "Init ETH");
-    zassert_ok(i_network_start(&eth_port, NETWORK_INTERFACE_ETHERNET), "Start ETH");
+    zassert_ok(i_network_init(&eth_port), "Init ETH");
+    zassert_ok(i_network_start(&eth_port), "Start ETH");
 
-    zassert_ok(i_network_get_status(&eth_port, NETWORK_INTERFACE_ETHERNET, &status), "Get ETH status");
+    zassert_ok(i_network_get_status(&eth_port, &status), "Get ETH status");
     zassert_equal(status.state, NET_IF_STATE_CONNECTING, "Started ETH state CONNECTING");
 
     /* Simulate link up / IP connected */
     fake_network_set_state(NETWORK_INTERFACE_ETHERNET, NET_IF_STATE_CONNECTED, 0xC0A80164, 0xFFFFFF00, 0xC0A80101);
-    zassert_ok(i_network_get_status(&eth_port, NETWORK_INTERFACE_ETHERNET, &status), "Get ETH status after connect");
+    zassert_ok(i_network_get_status(&eth_port, &status), "Get ETH status after connect");
     zassert_equal(status.state, NET_IF_STATE_CONNECTED, "ETH connected");
     zassert_equal(status.ip_addr, 0xC0A80164, "ETH IP verified");
 
@@ -258,23 +350,18 @@ ZTEST(network_suite, test_fake_network_lifecycle_and_operations)
         .gateway = 0x0A000001,
         .auto_dhcpv4 = false,
     };
-    zassert_ok(i_network_set_config(&eth_port, NETWORK_INTERFACE_ETHERNET, &eth_cfg, sizeof(eth_cfg)), "Set ETH config");
+    zassert_ok(i_network_set_config(&eth_port, &eth_cfg, sizeof(eth_cfg)), "Set ETH config");
 
     net_eth_config_t eth_cfg_read;
     size_t out_len = 0;
-    zassert_ok(i_network_get_config(&eth_port, NETWORK_INTERFACE_ETHERNET, &eth_cfg_read, sizeof(eth_cfg_read), &out_len), "Get ETH config");
+    zassert_ok(i_network_get_config(&eth_port, &eth_cfg_read, sizeof(eth_cfg_read), &out_len), "Get ETH config");
     zassert_equal(out_len, sizeof(net_eth_config_t), "Config length matches");
     zassert_equal(eth_cfg_read.ip_addr, 0x0A000005, "IP matches configured static IP");
 
-    /* Scan on Ethernet must return -ENOSYS */
-    zassert_equal(i_network_scan(&eth_port, NETWORK_INTERFACE_ETHERNET), -ENOSYS, "Scan on ETH must return -ENOSYS");
-
-    /* Scan on WiFi succeeds */
-    zassert_ok(i_network_init(&wifi_port, NETWORK_INTERFACE_WIFI), "Init WiFi");
-    zassert_ok(i_network_start(&wifi_port, NETWORK_INTERFACE_WIFI), "Start WiFi");
-    zassert_ok(i_network_scan(&wifi_port, NETWORK_INTERFACE_WIFI), "Scan on WiFi must return 0");
-
     /* Config WiFi */
+    zassert_ok(i_network_init(&wifi_port), "Init WiFi");
+    zassert_ok(i_network_start(&wifi_port), "Start WiFi");
+
     net_wifi_config_t wifi_cfg;
     memset(&wifi_cfg, 0, sizeof(wifi_cfg));
     wifi_cfg.mode = NET_WIFI_MODE_STA;
@@ -282,16 +369,16 @@ ZTEST(network_suite, test_fake_network_lifecycle_and_operations)
     strncpy(wifi_cfg.sta.psk, "PasswordSecret", sizeof(wifi_cfg.sta.psk) - 1);
     wifi_cfg.sta.security = NET_WIFI_SEC_WPA2_PSK;
     wifi_cfg.sta.ip_mode = NET_IP_MODE_DHCP;
-    zassert_ok(i_network_set_config(&wifi_port, NETWORK_INTERFACE_WIFI, &wifi_cfg, sizeof(wifi_cfg)), "Set WiFi config");
+    zassert_ok(i_network_set_config(&wifi_port, &wifi_cfg, sizeof(wifi_cfg)), "Set WiFi config");
 
     net_wifi_config_t wifi_cfg_read;
-    zassert_ok(i_network_get_config(&wifi_port, NETWORK_INTERFACE_WIFI, &wifi_cfg_read, sizeof(wifi_cfg_read), &out_len), "Get WiFi config");
+    zassert_ok(i_network_get_config(&wifi_port, &wifi_cfg_read, sizeof(wifi_cfg_read), &out_len), "Get WiFi config");
     zassert_equal(out_len, sizeof(net_wifi_config_t), "WiFi config length matches");
     zassert_str_equal(wifi_cfg_read.sta.ssid, "TestRouter", "SSID matches");
 
     /* Stop */
-    zassert_ok(i_network_stop(&eth_port, NETWORK_INTERFACE_ETHERNET), "Stop ETH");
-    zassert_ok(i_network_get_status(&eth_port, NETWORK_INTERFACE_ETHERNET, &status), "Status after stop");
+    zassert_ok(i_network_stop(&eth_port), "Stop ETH");
+    zassert_ok(i_network_get_status(&eth_port, &status), "Status after stop");
     zassert_equal(status.state, NET_IF_STATE_DOWN, "State DOWN after stop");
 
     /* Inspect fake counters */
@@ -299,11 +386,12 @@ ZTEST(network_suite, test_fake_network_lifecycle_and_operations)
     zassert_true(state->eth_init_calls >= 1, "ETH init call count");
     zassert_true(state->eth_start_calls >= 1, "ETH start call count");
     zassert_true(state->eth_stop_calls >= 1, "ETH stop call count");
-    zassert_true(state->wifi_scan_calls >= 1, "WiFi scan call count");
+    zassert_true(state->wifi_init_calls >= 1, "WiFi init call count");
+    zassert_true(state->wifi_start_calls >= 1, "WiFi start call count");
 
     /* Injected error check */
     fake_network_set_return_code(NETWORK_INTERFACE_ETHERNET, -EIO);
-    zassert_equal(i_network_start(&eth_port, NETWORK_INTERFACE_ETHERNET), -EIO, "Injected error returned");
+    zassert_equal(i_network_start(&eth_port), -EIO, "Injected error returned");
 }
 
 ZTEST(network_suite, test_network_defaults_factory)

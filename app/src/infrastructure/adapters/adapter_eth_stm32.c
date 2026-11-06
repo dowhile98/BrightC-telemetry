@@ -62,11 +62,11 @@ static int apply_ip_config(adapter_eth_stm32_t *ctx)
     return 0;
 }
 
-static int eth_api_init(void *impl, network_interface_t iface)
+static int eth_api_init(void *impl)
 {
     adapter_eth_stm32_t *ctx = (adapter_eth_stm32_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_ETHERNET) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
@@ -78,18 +78,25 @@ static int eth_api_init(void *impl, network_interface_t iface)
     ctx->status.link_up_ms = 0;
     ctx->link_up_time = 0;
 
+    if (ctx->iface != NULL) {
+        ctx->fsm_state = NET_ADAPTER_STATE_TRANSPORT_READY;
+    } else {
+        ctx->fsm_state = NET_ADAPTER_STATE_INIT;
+    }
+
     return 0;
 }
 
-static int eth_api_start(void *impl, network_interface_t iface)
+static int eth_api_start(void *impl)
 {
     adapter_eth_stm32_t *ctx = (adapter_eth_stm32_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_ETHERNET) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
     if (ctx->iface == NULL) {
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
         return -ENODEV;
     }
 
@@ -97,30 +104,33 @@ static int eth_api_start(void *impl, network_interface_t iface)
     if (err != 0 && err != -EALREADY) {
         LOG_ERR("Ethernet: net_if_up failed (%d)", err);
         ctx->status.state = NET_IF_STATE_FAILED;
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
         return err;
     }
 
-    ctx->is_started = true;
     (void)apply_ip_config(ctx);
 
     if (net_if_is_carrier_ok(ctx->iface)) {
         ctx->status.state = NET_IF_STATE_CONNECTING;
+        ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
     } else {
         ctx->status.state = NET_IF_STATE_DISCONNECTED;
+        ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
     }
 
     return 0;
 }
 
-static int eth_api_stop(void *impl, network_interface_t iface)
+static int eth_api_stop(void *impl)
 {
     adapter_eth_stm32_t *ctx = (adapter_eth_stm32_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_ETHERNET) {
+    if (ctx == NULL) {
         return -EINVAL;
     }
 
     if (ctx->iface == NULL) {
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
         return -ENODEV;
     }
 
@@ -131,7 +141,7 @@ static int eth_api_stop(void *impl, network_interface_t iface)
 #endif
 
     int err = net_if_down(ctx->iface);
-    ctx->is_started = false;
+    ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
     ctx->status.state = NET_IF_STATE_DOWN;
     ctx->link_up_time = 0;
     ctx->status.link_up_ms = 0;
@@ -139,12 +149,11 @@ static int eth_api_stop(void *impl, network_interface_t iface)
     return err;
 }
 
-static int eth_api_get_config(void *impl, network_interface_t iface,
-                             void *out_data, size_t max_size, size_t *out_size)
+static int eth_api_get_config(void *impl, void *out_data, size_t max_size, size_t *out_size)
 {
     adapter_eth_stm32_t *ctx = (adapter_eth_stm32_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_ETHERNET || out_data == NULL) {
+    if (ctx == NULL || out_data == NULL) {
         return -EINVAL;
     }
 
@@ -160,12 +169,11 @@ static int eth_api_get_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int eth_api_set_config(void *impl, network_interface_t iface,
-                             const void *data, size_t size)
+static int eth_api_set_config(void *impl, const void *data, size_t size)
 {
     adapter_eth_stm32_t *ctx = (adapter_eth_stm32_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_ETHERNET || data == NULL) {
+    if (ctx == NULL || data == NULL) {
         return -EINVAL;
     }
 
@@ -184,35 +192,36 @@ static int eth_api_set_config(void *impl, network_interface_t iface,
     (void)memcpy(&ctx->cfg, new_cfg, sizeof(net_eth_config_t));
     (void)memcpy(ctx->cfg.mac_addr, saved_mac, sizeof(ctx->cfg.mac_addr));
 
-    if (ctx->is_started && ctx->iface != NULL) {
+    if (ctx->fsm_state >= NET_ADAPTER_STATE_LINK_UP && ctx->iface != NULL) {
         (void)apply_ip_config(ctx);
     }
 
     return 0;
 }
 
-static int eth_api_get_status(void *impl, network_interface_t iface,
-                             net_status_t *out_status)
+static int eth_api_get_status(void *impl, net_status_t *out_status)
 {
     adapter_eth_stm32_t *ctx = (adapter_eth_stm32_t *)impl;
 
-    if (ctx == NULL || iface != NETWORK_INTERFACE_ETHERNET || out_status == NULL) {
+    if (ctx == NULL || out_status == NULL) {
         return -EINVAL;
     }
 
     if (ctx->iface == NULL) {
         ctx->status.state = NET_IF_STATE_FAILED;
+        ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
         *out_status = ctx->status;
         return 0;
     }
 
-    if (!ctx->is_started || !net_if_is_up(ctx->iface)) {
+    if (!net_if_is_up(ctx->iface)) {
         ctx->status.state = NET_IF_STATE_DOWN;
         ctx->status.ip_addr = 0;
         ctx->status.subnet_mask = 0;
         ctx->status.gateway = 0;
         ctx->status.link_up_ms = 0;
         ctx->link_up_time = 0;
+        ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
         *out_status = ctx->status;
         return 0;
     }
@@ -227,6 +236,7 @@ static int eth_api_get_status(void *impl, network_interface_t iface,
         ctx->status.gateway = 0;
         ctx->link_up_time = 0;
         ctx->status.link_up_ms = 0;
+        ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
     } else {
         if (ctx->link_up_time == 0) {
             ctx->link_up_time = now;
@@ -243,24 +253,20 @@ static int eth_api_get_status(void *impl, network_interface_t iface,
 
             struct net_in_addr gw = net_if_ipv4_get_gw(ctx->iface);
             ctx->status.gateway = net_ntohl(gw.s_addr);
+
+            ctx->fsm_state = NET_ADAPTER_STATE_IP_ACQUIRED;
         } else {
             ctx->status.state = NET_IF_STATE_CONNECTING;
             ctx->status.ip_addr = 0;
             ctx->status.subnet_mask = 0;
             ctx->status.gateway = 0;
+            ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
         }
     }
 
     ctx->status.rssi = -128;
     *out_status = ctx->status;
     return 0;
-}
-
-static int eth_api_scan(void *impl, network_interface_t iface)
-{
-    ARG_UNUSED(impl);
-    ARG_UNUSED(iface);
-    return -ENOSYS;
 }
 
 static const i_network_api_t s_adapter_eth_stm32_api = {
@@ -270,7 +276,6 @@ static const i_network_api_t s_adapter_eth_stm32_api = {
     .get_config = eth_api_get_config,
     .set_config = eth_api_set_config,
     .get_status = eth_api_get_status,
-    .scan = eth_api_scan,
 };
 
 int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_dev)
@@ -281,6 +286,7 @@ int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_de
 
     (void)memset(ctx, 0, sizeof(*ctx));
     ctx->eth_dev = eth_dev;
+    ctx->fsm_state = NET_ADAPTER_STATE_INIT;
 
     (void)network_default_eth_config(&ctx->cfg);
 
@@ -299,14 +305,13 @@ int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_de
         if (link_addr != NULL && link_addr->len >= NET_MAC_ADDR_LEN) {
             (void)memcpy(ctx->cfg.mac_addr, link_addr->addr, NET_MAC_ADDR_LEN);
         }
+        ctx->fsm_state = NET_ADAPTER_STATE_TRANSPORT_READY;
     } else {
         LOG_WRN("Ethernet: net_if not found at init");
     }
 
     ctx->status.state = NET_IF_STATE_DISCONNECTED;
     ctx->status.rssi = -128;
-    ctx->is_ready = true;
-    ctx->is_started = false;
 
     return 0;
 }
@@ -314,8 +319,16 @@ int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_de
 i_network_t adapter_eth_stm32_port(adapter_eth_stm32_t *ctx)
 {
     i_network_t port = {
-        .api = (ctx != NULL && ctx->is_ready) ? &s_adapter_eth_stm32_api : NULL,
+        .api = (ctx != NULL && ctx->fsm_state >= NET_ADAPTER_STATE_INIT) ? &s_adapter_eth_stm32_api : NULL,
         .impl = (void *)ctx,
     };
     return port;
+}
+
+net_adapter_fsm_state_t adapter_eth_stm32_get_fsm_state(const adapter_eth_stm32_t *ctx)
+{
+    if (ctx == NULL) {
+        return NET_ADAPTER_STATE_UNINITIALIZED;
+    }
+    return ctx->fsm_state;
 }

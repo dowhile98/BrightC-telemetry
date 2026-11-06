@@ -16,7 +16,9 @@
 
 LOG_MODULE_REGISTER(adapter_di_gpio, LOG_LEVEL_INF);
 
-int adapter_di_gpio_init(adapter_di_gpio_t *self)
+int adapter_di_gpio_init(adapter_di_gpio_t *self,
+                         const struct device *mcp23s17_0,
+                         const struct device *mcp23s17_1)
 {
     if (self == NULL) {
         return -EINVAL;
@@ -42,17 +44,8 @@ int adapter_di_gpio_init(adapter_di_gpio_t *self)
 
     memcpy(self->onchip_gpios, s_default_onchip_gpios, sizeof(self->onchip_gpios));
 
-#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_0))
-    self->mcp23s17[0] = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_0));
-#else
-    self->mcp23s17[0] = NULL;
-#endif
-
-#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_1))
-    self->mcp23s17[1] = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_1));
-#else
-    self->mcp23s17[1] = NULL;
-#endif
+    self->mcp23s17[0] = mcp23s17_0;
+    self->mcp23s17[1] = mcp23s17_1;
 
     for (size_t i = 0U; i < (size_t)ONCHIP_DI_COUNT; i++) {
         if (self->onchip_gpios[i].port != NULL && gpio_is_ready_dt(&self->onchip_gpios[i])) {

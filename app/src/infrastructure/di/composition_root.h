@@ -33,6 +33,7 @@
 #include "interfaces/i_led.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_network.h"
+#include "interfaces/i_wifi_control.h"
 #include "interfaces/i_relay.h"
 #include "interfaces/i_slave_registry.h"
 
@@ -120,6 +121,7 @@ typedef struct {
     struct {
         i_network_t eth_port;                          /**< Ethernet network interface port */
         i_network_t wifi_port;                         /**< WiFi network interface port */
+        i_wifi_control_t wifi_ctrl_port;               /**< WiFi control port */
 #ifndef CONFIG_ZTEST
         adapter_eth_stm32_t eth_adapter;               /**< STM32 Ethernet adapter */
         adapter_wifi_esp_hosted_t wifi_adapter;        /**< ESP-Hosted-MCU WiFi adapter */
@@ -259,6 +261,14 @@ const i_network_t *app_container_get_network_eth(const app_container_t *self);
  * @return Pointer to WiFi network port, or NULL if uninitialized / invalid.
  */
 const i_network_t *app_container_get_network_wifi(const app_container_t *self);
+
+/**
+ * @brief Get the abstract WiFi control port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to WiFi control port, or NULL if uninitialized / invalid.
+ */
+const i_wifi_control_t *app_container_get_wifi_control(const app_container_t *self);
 
 /**
  * @brief Get the abstract persistent config storage port.

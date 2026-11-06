@@ -27,13 +27,12 @@ extern "C" {
  * Stored by value in app_container_t. Zero dynamic allocation.
  */
 typedef struct {
-    const struct device *eth_dev; /**< Device pointer (e.g. eth0 / mac) */
-    struct net_if *iface;         /**< Bound Zephyr network interface */
-    net_eth_config_t cfg;         /**< Current Ethernet configuration */
-    net_status_t status;          /**< Last reported status */
-    uint32_t link_up_time;        /**< Timestamp (ms) when carrier link came UP */
-    bool is_ready;                /**< True once initialized */
-    bool is_started;              /**< True once started (link UP requested) */
+    const struct device *eth_dev;      /**< Device pointer (e.g. eth0 / mac) */
+    struct net_if *iface;              /**< Bound Zephyr network interface */
+    net_eth_config_t cfg;              /**< Current Ethernet configuration */
+    net_status_t status;               /**< Last reported status */
+    uint32_t link_up_time;             /**< Timestamp (ms) when carrier link came UP */
+    net_adapter_fsm_state_t fsm_state; /**< Explicit finite state machine state */
 } adapter_eth_stm32_t;
 
 /**
@@ -52,6 +51,14 @@ int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_de
  * @return Bound i_network_t port handle.
  */
 i_network_t adapter_eth_stm32_port(adapter_eth_stm32_t *ctx);
+
+/**
+ * @brief Get the current FSM state of the STM32 Ethernet adapter.
+ *
+ * @param[in] ctx Adapter context instance.
+ * @return Current net_adapter_fsm_state_t value.
+ */
+net_adapter_fsm_state_t adapter_eth_stm32_get_fsm_state(const adapter_eth_stm32_t *ctx);
 
 #ifdef __cplusplus
 }

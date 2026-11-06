@@ -34,12 +34,16 @@ typedef struct {
 /**
  * @brief Initialize the GPIO Digital Input adapter.
  *
- * Probes and configures on-chip GPIOs (button, bypass switch) and MCP23S17 SPI expanders.
+ * Configures on-chip GPIOs (button, bypass switch) and MCP23S17 SPI expanders.
  *
  * @param[out] self Adapter instance.
+ * @param[in]  mcp23s17_0 Device pointer for first MCP23S17 SPI expander (may be NULL).
+ * @param[in]  mcp23s17_1 Device pointer for second MCP23S17 SPI expander (may be NULL).
  * @return 0 on success, negative errno on failure.
  */
-int adapter_di_gpio_init(adapter_di_gpio_t *self);
+int adapter_di_gpio_init(adapter_di_gpio_t *self,
+                         const struct device *mcp23s17_0,
+                         const struct device *mcp23s17_1);
 
 /**
  * @brief Raw hardware reader function matching di_raw_reader_fn_t.

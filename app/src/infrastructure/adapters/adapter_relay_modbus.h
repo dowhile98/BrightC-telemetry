@@ -37,6 +37,9 @@ typedef struct {
     int32_t timeout_ms;              /**< Per-transaction timeout */
     relay_state_t cache[WAVESHARE_RELAY_32CH_CHANNEL_COUNT]; /**< Last known state */
     bool cache_valid;                /**< True after at least one successful poll */
+    uint32_t cycle_count[RELAY_CHANNEL_MAX];    /**< Accumulated switching cycle count */
+    uint32_t last_toggle_ms[RELAY_CHANNEL_MAX]; /**< System uptime (ms) of last actuation */
+    bool is_fault[RELAY_CHANNEL_MAX];           /**< Fault flag per channel */
 } adapter_relay_modbus_t;
 
 /**

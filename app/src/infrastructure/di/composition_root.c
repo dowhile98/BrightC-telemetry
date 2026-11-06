@@ -174,7 +174,7 @@ static int storage_provider_eth(void *ctx, config_domain_t domain,
     }
     if (i_network_is_bound(&app->network.eth_port))
     {
-        return i_network_get_config(&app->network.eth_port, NETWORK_INTERFACE_ETHERNET,
+        return i_network_get_config(&app->network.eth_port,
                                     out_buf, max_size, out_size);
     }
     if (max_size < sizeof(net_eth_config_t))
@@ -199,7 +199,7 @@ static int storage_provider_wifi(void *ctx, config_domain_t domain,
     }
     if (i_network_is_bound(&app->network.wifi_port))
     {
-        return i_network_get_config(&app->network.wifi_port, NETWORK_INTERFACE_WIFI,
+        return i_network_get_config(&app->network.wifi_port,
                                     out_buf, max_size, out_size);
     }
     if (max_size < sizeof(net_wifi_config_t))
@@ -428,6 +428,10 @@ int composition_root_init_network(app_container_t *self)
     {
         self->network.wifi_port = fake_network_get_wifi_port();
     }
+    if (!i_wifi_control_is_bound(&self->network.wifi_ctrl_port))
+    {
+        self->network.wifi_ctrl_port = fake_network_get_wifi_control_port();
+    }
 #else
     const struct device *eth_dev = NULL;
 #if DT_NODE_EXISTS(DT_NODELABEL(mac))
@@ -451,6 +455,7 @@ int composition_root_init_network(app_container_t *self)
     if (wifi_err == 0)
     {
         self->network.wifi_port = adapter_wifi_esp_hosted_port(&self->network.wifi_adapter);
+        self->network.wifi_ctrl_port = adapter_wifi_esp_hosted_wifi_control_port(&self->network.wifi_adapter);
     }
     else
     {
@@ -714,7 +719,17 @@ int composition_root_init_digital_inputs(app_container_t *self)
                 sizeof(ao_di_event_t), AO_DI_QUEUE_DEPTH);
 
 #if !defined(CONFIG_ZTEST)
-    int adp_err = adapter_di_gpio_init(&self->di.di_adapter);
+    const struct device *mcp_dev0 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_0))
+    mcp_dev0 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_0));
+#endif
+
+    const struct device *mcp_dev1 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_1))
+    mcp_dev1 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_1));
+#endif
+
+    int adp_err = adapter_di_gpio_init(&self->di.di_adapter, mcp_dev0, mcp_dev1);
     if (adp_err != 0)
     {
         LOG_WRN("adapter_di_gpio_init failed (%d)", adp_err);
@@ -768,6 +783,18 @@ int composition_root_wire(app_container_t *self)
                                            storage_provider_wifi, self);
         (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_MODBUS,
                                            storage_provider_modbus, self);
+    }
+
+    if (self->network.initialized)
+    {
+#if !defined(CONFIG_ZTEST)
+        self->network.wifi_ctrl_port = adapter_wifi_esp_hosted_wifi_control_port(&self->network.wifi_adapter);
+#else
+        if (!i_wifi_control_is_bound(&self->network.wifi_ctrl_port))
+        {
+            self->network.wifi_ctrl_port = fake_network_get_wifi_control_port();
+        }
+#endif
     }
 
     return 0;
@@ -1054,6 +1081,15 @@ const i_network_t *app_container_get_network_wifi(const app_container_t *self)
         return NULL;
     }
     return &self->network.wifi_port;
+}
+
+const i_wifi_control_t *app_container_get_wifi_control(const app_container_t *self)
+{
+    if (self == NULL || !self->network.initialized)
+    {
+        return NULL;
+    }
+    return &self->network.wifi_ctrl_port;
 }
 
 const i_config_storage_t *app_container_get_storage(const app_container_t *self)

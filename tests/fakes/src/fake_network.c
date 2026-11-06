@@ -12,7 +12,7 @@
 static fake_network_state_t s_fake_net;
 
 /* Ethernet Adapter Implementation */
-static int fake_eth_init(void *impl, network_interface_t iface)
+static int fake_eth_init(void *impl)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->eth_init_calls++;
@@ -23,7 +23,7 @@ static int fake_eth_init(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int fake_eth_start(void *impl, network_interface_t iface)
+static int fake_eth_start(void *impl)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->eth_start_calls++;
@@ -34,7 +34,7 @@ static int fake_eth_start(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int fake_eth_stop(void *impl, network_interface_t iface)
+static int fake_eth_stop(void *impl)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->eth_stop_calls++;
@@ -45,8 +45,7 @@ static int fake_eth_stop(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int fake_eth_get_config(void *impl, network_interface_t iface,
-                               void *out_data, size_t max_size, size_t *out_size)
+static int fake_eth_get_config(void *impl, void *out_data, size_t max_size, size_t *out_size)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->eth_get_config_calls++;
@@ -63,8 +62,7 @@ static int fake_eth_get_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int fake_eth_set_config(void *impl, network_interface_t iface,
-                               const void *data, size_t size)
+static int fake_eth_set_config(void *impl, const void *data, size_t size)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->eth_set_config_calls++;
@@ -78,8 +76,7 @@ static int fake_eth_set_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int fake_eth_get_status(void *impl, network_interface_t iface,
-                               net_status_t *out_status)
+static int fake_eth_get_status(void *impl, net_status_t *out_status)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->eth_get_status_calls++;
@@ -90,14 +87,6 @@ static int fake_eth_get_status(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int fake_eth_scan(void *impl, network_interface_t iface)
-{
-    fake_network_state_t *s = (fake_network_state_t *)impl;
-    s->eth_scan_calls++;
-    /* Ethernet does not support scanning */
-    return -ENOSYS;
-}
-
 static const i_network_api_t s_fake_eth_api = {
     .init = fake_eth_init,
     .start = fake_eth_start,
@@ -105,11 +94,10 @@ static const i_network_api_t s_fake_eth_api = {
     .get_config = fake_eth_get_config,
     .set_config = fake_eth_set_config,
     .get_status = fake_eth_get_status,
-    .scan = fake_eth_scan,
 };
 
 /* WiFi Adapter Implementation */
-static int fake_wifi_init(void *impl, network_interface_t iface)
+static int fake_wifi_init(void *impl)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->wifi_init_calls++;
@@ -120,7 +108,7 @@ static int fake_wifi_init(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int fake_wifi_start(void *impl, network_interface_t iface)
+static int fake_wifi_start(void *impl)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->wifi_start_calls++;
@@ -131,7 +119,7 @@ static int fake_wifi_start(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int fake_wifi_stop(void *impl, network_interface_t iface)
+static int fake_wifi_stop(void *impl)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->wifi_stop_calls++;
@@ -142,8 +130,7 @@ static int fake_wifi_stop(void *impl, network_interface_t iface)
     return 0;
 }
 
-static int fake_wifi_get_config(void *impl, network_interface_t iface,
-                                void *out_data, size_t max_size, size_t *out_size)
+static int fake_wifi_get_config(void *impl, void *out_data, size_t max_size, size_t *out_size)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->wifi_get_config_calls++;
@@ -160,8 +147,7 @@ static int fake_wifi_get_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int fake_wifi_set_config(void *impl, network_interface_t iface,
-                                const void *data, size_t size)
+static int fake_wifi_set_config(void *impl, const void *data, size_t size)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->wifi_set_config_calls++;
@@ -175,8 +161,7 @@ static int fake_wifi_set_config(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int fake_wifi_get_status(void *impl, network_interface_t iface,
-                                net_status_t *out_status)
+static int fake_wifi_get_status(void *impl, net_status_t *out_status)
 {
     fake_network_state_t *s = (fake_network_state_t *)impl;
     s->wifi_get_status_calls++;
@@ -187,16 +172,6 @@ static int fake_wifi_get_status(void *impl, network_interface_t iface,
     return 0;
 }
 
-static int fake_wifi_scan(void *impl, network_interface_t iface)
-{
-    fake_network_state_t *s = (fake_network_state_t *)impl;
-    s->wifi_scan_calls++;
-    if (s->wifi_return_code != 0) {
-        return s->wifi_return_code;
-    }
-    return 0;
-}
-
 static const i_network_api_t s_fake_wifi_api = {
     .init = fake_wifi_init,
     .start = fake_wifi_start,
@@ -204,7 +179,72 @@ static const i_network_api_t s_fake_wifi_api = {
     .get_config = fake_wifi_get_config,
     .set_config = fake_wifi_set_config,
     .get_status = fake_wifi_get_status,
-    .scan = fake_wifi_scan,
+};
+
+/* WiFi Control Implementation */
+static int fake_wifi_ctrl_scan(void *impl)
+{
+    fake_network_state_t *s = (fake_network_state_t *)impl;
+    s->wifi_scan_calls++;
+    if (s->wifi_ctrl_return_code != 0) {
+        return s->wifi_ctrl_return_code;
+    }
+    return 0;
+}
+
+static int fake_wifi_ctrl_connect_ap(void *impl, const char *ssid, const char *psk, net_wifi_security_t sec)
+{
+    fake_network_state_t *s = (fake_network_state_t *)impl;
+    s->wifi_connect_ap_calls++;
+
+    if (ssid != NULL) {
+        strncpy(s->last_connect_ssid, ssid, sizeof(s->last_connect_ssid) - 1U);
+        s->last_connect_ssid[sizeof(s->last_connect_ssid) - 1U] = '\0';
+    } else {
+        s->last_connect_ssid[0] = '\0';
+    }
+
+    if (psk != NULL) {
+        strncpy(s->last_connect_psk, psk, sizeof(s->last_connect_psk) - 1U);
+        s->last_connect_psk[sizeof(s->last_connect_psk) - 1U] = '\0';
+    } else {
+        s->last_connect_psk[0] = '\0';
+    }
+
+    s->last_connect_sec = sec;
+
+    if (s->wifi_ctrl_return_code != 0) {
+        return s->wifi_ctrl_return_code;
+    }
+    return 0;
+}
+
+static int fake_wifi_ctrl_disconnect(void *impl)
+{
+    fake_network_state_t *s = (fake_network_state_t *)impl;
+    s->wifi_disconnect_calls++;
+    if (s->wifi_ctrl_return_code != 0) {
+        return s->wifi_ctrl_return_code;
+    }
+    return 0;
+}
+
+static int fake_wifi_ctrl_set_mode(void *impl, net_wifi_mode_t mode)
+{
+    fake_network_state_t *s = (fake_network_state_t *)impl;
+    s->wifi_set_mode_calls++;
+    s->last_mode = mode;
+    if (s->wifi_ctrl_return_code != 0) {
+        return s->wifi_ctrl_return_code;
+    }
+    return 0;
+}
+
+static const i_wifi_control_api_t s_fake_wifi_ctrl_api = {
+    .scan = fake_wifi_ctrl_scan,
+    .connect_ap = fake_wifi_ctrl_connect_ap,
+    .disconnect = fake_wifi_ctrl_disconnect,
+    .set_mode = fake_wifi_ctrl_set_mode,
 };
 
 void fake_network_reset(void)
@@ -234,6 +274,15 @@ i_network_t fake_network_get_wifi_port(void)
     return port;
 }
 
+i_wifi_control_t fake_network_get_wifi_control_port(void)
+{
+    i_wifi_control_t port = {
+        .api = &s_fake_wifi_ctrl_api,
+        .impl = &s_fake_net,
+    };
+    return port;
+}
+
 const fake_network_state_t *fake_network_get_state(void)
 {
     return &s_fake_net;
@@ -246,6 +295,11 @@ void fake_network_set_return_code(network_interface_t iface, int ret_code)
     } else if (iface == NETWORK_INTERFACE_WIFI) {
         s_fake_net.wifi_return_code = ret_code;
     }
+}
+
+void fake_network_set_wifi_ctrl_return_code(int ret_code)
+{
+    s_fake_net.wifi_ctrl_return_code = ret_code;
 }
 
 void fake_network_set_state(network_interface_t iface,

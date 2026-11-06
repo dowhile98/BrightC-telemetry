@@ -56,6 +56,19 @@ typedef enum {
 } net_if_state_t;
 
 /**
+ * @brief Explicit finite state machine states for network connectivity adapters.
+ */
+typedef enum {
+    NET_ADAPTER_STATE_UNINITIALIZED = 0,
+    NET_ADAPTER_STATE_INIT,
+    NET_ADAPTER_STATE_TRANSPORT_READY,
+    NET_ADAPTER_STATE_LINK_UP,
+    NET_ADAPTER_STATE_IP_ACQUIRED,
+    NET_ADAPTER_STATE_DISCONNECTED,
+    NET_ADAPTER_STATE_ERROR
+} net_adapter_fsm_state_t;
+
+/**
  * @brief IPv4 address configuration mode.
  */
 typedef enum {
@@ -190,6 +203,14 @@ static inline bool network_interface_is_valid(network_interface_t iface)
 static inline bool net_if_state_is_valid(net_if_state_t state)
 {
     return (unsigned int)state <= (unsigned int)NET_IF_STATE_FAILED;
+}
+
+/**
+ * @brief Check if network adapter FSM state is in valid range.
+ */
+static inline bool net_adapter_fsm_state_is_valid(net_adapter_fsm_state_t state)
+{
+    return (unsigned int)state <= (unsigned int)NET_ADAPTER_STATE_ERROR;
 }
 
 /**

@@ -33,40 +33,32 @@ typedef struct {
     /**
      * @brief Initialize hardware and driver context for the network interface.
      */
-    int (*init)(void *impl, network_interface_t iface);
+    int (*init)(void *impl);
 
     /**
      * @brief Bring interface up and initiate network connection/AP.
      */
-    int (*start)(void *impl, network_interface_t iface);
+    int (*start)(void *impl);
 
     /**
      * @brief Disconnect / disable interface and bring link down.
      */
-    int (*stop)(void *impl, network_interface_t iface);
+    int (*stop)(void *impl);
 
     /**
      * @brief Read active configuration for the network interface.
      */
-    int (*get_config)(void *impl, network_interface_t iface,
-                      void *out_data, size_t max_size, size_t *out_size);
+    int (*get_config)(void *impl, void *out_data, size_t max_size, size_t *out_size);
 
     /**
      * @brief Apply new configuration to the network interface.
      */
-    int (*set_config)(void *impl, network_interface_t iface,
-                      const void *data, size_t size);
+    int (*set_config)(void *impl, const void *data, size_t size);
 
     /**
      * @brief Obtain current runtime status (link state, IP, RSSI).
      */
-    int (*get_status)(void *impl, network_interface_t iface,
-                      net_status_t *out_status);
-
-    /**
-     * @brief Trigger wireless AP scan (WiFi only; ETH returns -ENOSYS).
-     */
-    int (*scan)(void *impl, network_interface_t iface);
+    int (*get_status)(void *impl, net_status_t *out_status);
 } i_network_api_t;
 
 /*============================================================================*
@@ -82,11 +74,13 @@ typedef struct {
  * @brief Check that a network port handle is bound to a concrete implementation.
  *
  * @param[in] net Port handle to check (may be NULL).
- * @return true if both api and impl pointers are non-NULL.
+ * @return true if both api and impl pointers are non-NULL and core operations are present.
  */
 static inline bool i_network_is_bound(const i_network_t *net)
 {
-    return net != NULL && net->api != NULL && net->impl != NULL;
+    return net != NULL && net->api != NULL && net->impl != NULL &&
+           net->api->init != NULL && net->api->start != NULL &&
+           net->api->stop != NULL && net->api->get_status != NULL;
 }
 
 /*============================================================================*
@@ -97,144 +91,102 @@ static inline bool i_network_is_bound(const i_network_t *net)
  * @brief Initialize network interface hardware/driver.
  *
  * @param[in] net Bound network port handle.
- * @param[in] iface Logical network interface.
  * @return 0 on success, negative errno on failure.
  */
-static inline int i_network_init(const i_network_t *net, network_interface_t iface)
+static inline int i_network_init(const i_network_t *net)
 {
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface)) {
+    if (!i_network_is_bound(net)) {
         return -EINVAL;
     }
-    if (net->api->init == NULL) {
-        return -ENOSYS;
-    }
-    return net->api->init(net->impl, iface);
+    return net->api->init(net->impl);
 }
 
 /**
  * @brief Start network interface and begin connection.
  *
  * @param[in] net Bound network port handle.
- * @param[in] iface Logical network interface.
  * @return 0 on success, negative errno on failure.
  */
-static inline int i_network_start(const i_network_t *net, network_interface_t iface)
+static inline int i_network_start(const i_network_t *net)
 {
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface)) {
+    if (!i_network_is_bound(net)) {
         return -EINVAL;
     }
-    if (net->api->start == NULL) {
-        return -ENOSYS;
-    }
-    return net->api->start(net->impl, iface);
+    return net->api->start(net->impl);
 }
 
 /**
  * @brief Stop network interface and release link.
  *
  * @param[in] net Bound network port handle.
- * @param[in] iface Logical network interface.
  * @return 0 on success, negative errno on failure.
  */
-static inline int i_network_stop(const i_network_t *net, network_interface_t iface)
+static inline int i_network_stop(const i_network_t *net)
 {
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface)) {
+    if (!i_network_is_bound(net)) {
         return -EINVAL;
     }
-    if (net->api->stop == NULL) {
-        return -ENOSYS;
-    }
-    return net->api->stop(net->impl, iface);
+    return net->api->stop(net->impl);
 }
 
 /**
  * @brief Retrieve configuration of a network interface.
  *
  * @param[in]  net      Bound network port handle.
- * @param[in]  iface    Logical network interface.
  * @param[out] out_data Destination buffer for config struct.
  * @param[in]  max_size Size of destination buffer.
  * @param[out] out_size Actual written size (may be NULL).
  * @return 0 on success, negative errno on failure.
  */
 static inline int i_network_get_config(const i_network_t *net,
-                                       network_interface_t iface,
                                        void *out_data,
                                        size_t max_size,
                                        size_t *out_size)
 {
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface) ||
-        out_data == NULL || max_size == 0U) {
+    if (!i_network_is_bound(net) || out_data == NULL || max_size == 0U) {
         return -EINVAL;
     }
     if (net->api->get_config == NULL) {
         return -ENOSYS;
     }
-    return net->api->get_config(net->impl, iface, out_data, max_size, out_size);
+    return net->api->get_config(net->impl, out_data, max_size, out_size);
 }
 
 /**
  * @brief Store and apply configuration to a network interface.
  *
- * @param[in] net   Bound network port handle.
- * @param[in] iface Logical network interface.
- * @param[in] data  Source buffer with configuration.
- * @param[in] size  Size of configuration structure.
+ * @param[in] net  Bound network port handle.
+ * @param[in] data Source buffer with configuration.
+ * @param[in] size Size of configuration structure.
  * @return 0 on success, negative errno on failure.
  */
 static inline int i_network_set_config(const i_network_t *net,
-                                       network_interface_t iface,
                                        const void *data,
                                        size_t size)
 {
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface) ||
-        data == NULL || size == 0U) {
+    if (!i_network_is_bound(net) || data == NULL || size == 0U) {
         return -EINVAL;
     }
     if (net->api->set_config == NULL) {
         return -ENOSYS;
     }
-    return net->api->set_config(net->impl, iface, data, size);
+    return net->api->set_config(net->impl, data, size);
 }
 
 /**
  * @brief Query runtime status of a network interface.
  *
  * @param[in]  net        Bound network port handle.
- * @param[in]  iface      Logical network interface.
  * @param[out] out_status Destination status structure.
  * @return 0 on success, negative errno on failure.
  */
 static inline int i_network_get_status(const i_network_t *net,
-                                       network_interface_t iface,
                                        net_status_t *out_status)
 {
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface) ||
-        out_status == NULL) {
+    if (!i_network_is_bound(net) || out_status == NULL) {
         return -EINVAL;
     }
-    if (net->api->get_status == NULL) {
-        return -ENOSYS;
-    }
-    return net->api->get_status(net->impl, iface, out_status);
-}
-
-/**
- * @brief Trigger an AP scan on wireless interface.
- *
- * @param[in] net   Bound network port handle.
- * @param[in] iface Logical network interface.
- * @return 0 on success, -ENOSYS if unsupported (e.g. Ethernet), negative errno on error.
- */
-static inline int i_network_scan(const i_network_t *net, network_interface_t iface)
-{
-    if (!i_network_is_bound(net) || !network_interface_is_valid(iface)) {
-        return -EINVAL;
-    }
-    if (net->api->scan == NULL) {
-        return -ENOSYS;
-    }
-    return net->api->scan(net->impl, iface);
+    return net->api->get_status(net->impl, out_status);
 }
 
 #ifdef __cplusplus

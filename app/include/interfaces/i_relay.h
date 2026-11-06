@@ -80,6 +80,16 @@ typedef enum {
 } relay_state_t;
 
 /**
+ * @brief Diagnostic and telemetry status of a relay channel.
+ */
+typedef struct {
+    relay_state_t state;           /**< Current contact state */
+    uint32_t      cycle_count;     /**< Accumulated switching cycle count */
+    uint32_t      last_toggle_ms;  /**< System uptime (ms) of last actuation */
+    bool          is_fault;        /**< Bus communication or hardware fault flag */
+} relay_channel_status_t;
+
+/**
  * @brief Check that a channel index is within range.
  *
  * The adapter decides whether the channel exists on its physical module;
@@ -123,6 +133,17 @@ typedef struct {
      * @return 0 on success, negative errno on failure.
      */
     int (*get_state)(void *impl, relay_channel_t channel, relay_state_t *out_state);
+
+    /**
+     * @brief Read the diagnostic status and telemetry of one relay channel.
+     *
+     * @param[in]  impl       Implementation context.
+     * @param[in]  channel    Channel to query.
+     * @param[out] out_status Destination for channel status.
+     *
+     * @return 0 on success, negative errno on failure.
+     */
+    int (*get_status)(void *impl, relay_channel_t channel, relay_channel_status_t *out_status);
 } i_relay_api_t;
 
 /**
@@ -149,7 +170,9 @@ typedef struct {
  */
 static inline bool i_relay_is_bound(const i_relay_t *relay)
 {
-    return relay != NULL && relay->api != NULL && relay->impl != NULL;
+    return relay != NULL && relay->api != NULL && relay->impl != NULL &&
+           relay->api->set_state != NULL && relay->api->get_state != NULL &&
+           relay->api->get_status != NULL;
 }
 
 /*============================================================================*
@@ -196,6 +219,28 @@ static inline int i_relay_get_state(const i_relay_t *relay,
     }
 
     return relay->api->get_state(relay->impl, channel, out_state);
+}
+
+/**
+ * @brief Read the diagnostic status and telemetry of one relay channel.
+ *
+ * @param[in]  relay      Bound relay handle.
+ * @param[in]  channel    Channel to query.
+ * @param[out] out_status Destination for observed status; must not be NULL.
+ *
+ * @return 0 on success, -EINVAL on an unbound handle, an invalid channel, a
+ *         NULL output, or the adapter error.
+ */
+static inline int i_relay_get_status(const i_relay_t *relay,
+                                     relay_channel_t channel,
+                                     relay_channel_status_t *out_status)
+{
+    if (!i_relay_is_bound(relay) || !relay_channel_is_valid(channel) ||
+        out_status == NULL) {
+        return -EINVAL;
+    }
+
+    return relay->api->get_status(relay->impl, channel, out_status);
 }
 
 #ifdef __cplusplus

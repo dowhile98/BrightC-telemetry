@@ -45,12 +45,20 @@ ZTEST(adapter_relay_modbus_suite, test_init_and_port_binding)
     zassert_equal(err, 0, "adapter_relay_modbus_port failed (%d)", err);
     zassert_true(i_relay_is_bound(&s_relay), "Port must be bound");
 
-    /* Default states must be OPEN */
+    /* Default states must be OPEN and status initialised */
     for (relay_channel_t ch = 0; ch < WAVESHARE_RELAY_32CH_CHANNEL_COUNT; ch++) {
         relay_state_t state = RELAY_STATE_CLOSED;
         err = i_relay_get_state(&s_relay, ch, &state);
         zassert_equal(err, 0, "get_state failed for channel %d", ch);
         zassert_equal(state, RELAY_STATE_OPEN, "Default state for channel %d must be OPEN", ch);
+
+        relay_channel_status_t status;
+        err = i_relay_get_status(&s_relay, ch, &status);
+        zassert_equal(err, 0, "get_status failed for channel %d", ch);
+        zassert_equal(status.state, RELAY_STATE_OPEN, "Default status state for channel %d must be OPEN", ch);
+        zassert_equal(status.cycle_count, 0U, "Default cycle_count for channel %d must be 0", ch);
+        zassert_equal(status.last_toggle_ms, 0U, "Default last_toggle_ms for channel %d must be 0", ch);
+        zassert_false(status.is_fault, "Default is_fault for channel %d must be false", ch);
     }
 }
 
@@ -215,4 +223,67 @@ ZTEST(adapter_relay_modbus_suite, test_update_from_raw_parses_and_synchronizes)
 
     /* Short buffer rejected */
     zassert_equal(adapter_relay_modbus_update_from_raw(&s_adapter, raw_bytes, 3U), -EINVAL, "Short buffer");
+}
+
+ZTEST(adapter_relay_modbus_suite, test_get_status_tracks_cycle_count_and_timing)
+{
+    int err = adapter_relay_modbus_init(&s_adapter, &s_test_ao, TEST_SLAVE_ADDR, TEST_TIMEOUT_MS);
+    zassert_equal(err, 0, "Init failed");
+    err = adapter_relay_modbus_port(&s_adapter, &s_relay);
+    zassert_equal(err, 0, "Port failed");
+
+    relay_channel_status_t status;
+
+    /* First toggle */
+    err = i_relay_set_state(&s_relay, (relay_channel_t) 7, RELAY_STATE_CLOSED);
+    zassert_equal(err, 0, "set_state channel 7 CLOSED failed");
+
+    err = i_relay_get_status(&s_relay, (relay_channel_t) 7, &status);
+    zassert_equal(err, 0, "get_status failed");
+    zassert_equal(status.state, RELAY_STATE_CLOSED, "State mismatch");
+    zassert_equal(status.cycle_count, 1U, "Cycle count must be 1");
+    zassert_false(status.is_fault, "is_fault must be false");
+
+    /* Second toggle */
+    err = i_relay_set_state(&s_relay, (relay_channel_t) 7, RELAY_STATE_OPEN);
+    zassert_equal(err, 0, "set_state channel 7 OPEN failed");
+
+    err = i_relay_get_status(&s_relay, (relay_channel_t) 7, &status);
+    zassert_equal(err, 0, "get_status failed");
+    zassert_equal(status.state, RELAY_STATE_OPEN, "State mismatch");
+    zassert_equal(status.cycle_count, 2U, "Cycle count must be 2");
+    zassert_false(status.is_fault, "is_fault must be false");
+
+    /* Other channel remains unaffected */
+    err = i_relay_get_status(&s_relay, (relay_channel_t) 8, &status);
+    zassert_equal(err, 0, "get_status failed");
+    zassert_equal(status.state, RELAY_STATE_OPEN, "Channel 8 must remain OPEN");
+    zassert_equal(status.cycle_count, 0U, "Channel 8 cycle count must be 0");
+}
+
+ZTEST(adapter_relay_modbus_suite, test_get_status_rejects_invalid_arguments)
+{
+    int err = adapter_relay_modbus_init(&s_adapter, &s_test_ao, TEST_SLAVE_ADDR, TEST_TIMEOUT_MS);
+    zassert_equal(err, 0, "Init failed");
+    err = adapter_relay_modbus_port(&s_adapter, &s_relay);
+    zassert_equal(err, 0, "Port failed");
+
+    relay_channel_status_t status;
+
+    /* Out of range channel */
+    zassert_equal(i_relay_get_status(&s_relay, (relay_channel_t) 32, &status),
+                  -EINVAL, "Channel 32 must be rejected");
+
+    /* NULL output */
+    zassert_equal(i_relay_get_status(&s_relay, (relay_channel_t) 0, NULL),
+                  -EINVAL, "NULL out_status must be rejected");
+
+    /* Unbound port */
+    i_relay_t unbound = {0};
+    zassert_equal(i_relay_get_status(&unbound, (relay_channel_t) 0, &status),
+                  -EINVAL, "Unbound port must be rejected");
+
+    /* NULL handle */
+    zassert_equal(i_relay_get_status(NULL, (relay_channel_t) 0, &status),
+                  -EINVAL, "NULL handle must be rejected");
 }

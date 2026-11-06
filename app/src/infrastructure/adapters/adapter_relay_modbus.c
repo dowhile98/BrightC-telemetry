@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(adapter_relay_modbus, LOG_LEVEL_INF);
@@ -51,6 +52,8 @@ static int relay_modbus_set_state(void *impl, relay_channel_t channel,
      * reconcile with the real device state. */
     self->cache[channel] = state;
     self->cache_valid = true;
+    self->cycle_count[channel]++;
+    self->last_toggle_ms[channel] = (uint32_t)k_uptime_get();
 
     if (ao_modbus_post(self->ao, &event) != 0) {
         LOG_WRN("relay: command queue full, write not submitted");
@@ -74,9 +77,28 @@ static int relay_modbus_get_state(void *impl, relay_channel_t channel,
     return 0;
 }
 
+static int relay_api_get_status(void *impl, relay_channel_t channel,
+                                relay_channel_status_t *out_status)
+{
+    adapter_relay_modbus_t *self = (adapter_relay_modbus_t *) impl;
+
+    if (self == NULL || out_status == NULL ||
+        channel >= WAVESHARE_RELAY_32CH_CHANNEL_COUNT) {
+        return -EINVAL;
+    }
+
+    out_status->state = self->cache[channel];
+    out_status->cycle_count = self->cycle_count[channel];
+    out_status->last_toggle_ms = self->last_toggle_ms[channel];
+    out_status->is_fault = self->is_fault[channel];
+
+    return 0;
+}
+
 static const i_relay_api_t k_adapter_api = {
     .set_state = relay_modbus_set_state,
     .get_state = relay_modbus_get_state,
+    .get_status = relay_api_get_status,
 };
 
 int adapter_relay_modbus_init(adapter_relay_modbus_t *self,

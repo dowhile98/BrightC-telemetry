@@ -177,6 +177,7 @@ ZTEST(composition_root_suite, test_init_rejects_bad_arguments)
     zassert_is_null(app_container_get_digital_inputs(NULL), "NULL container must yield NULL digital_inputs");
     zassert_is_null(app_container_get_led(NULL), "NULL container must yield NULL led");
     zassert_is_null(app_container_get_buzzer(NULL), "NULL container must yield NULL buzzer");
+    zassert_is_null(app_container_get_wifi_control(NULL), "NULL container must yield NULL wifi_control");
 }
 
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
@@ -238,13 +239,22 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_equal(i_relay_get_state(relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
     zassert_equal(rstate, RELAY_STATE_CLOSED, "Relay 0 must now be CLOSED in cache");
 
+    relay_channel_status_t rstatus;
+    zassert_equal(i_relay_get_status(relay_ext, RELAY_CHANNEL_0, &rstatus), 0, "get_status failed");
+    zassert_equal(rstatus.state, RELAY_STATE_CLOSED, "Relay 0 status state must be CLOSED");
+    zassert_equal(rstatus.cycle_count, 1U, "Relay 0 cycle_count must be 1");
+    zassert_false(rstatus.is_fault, "Relay 0 must not be in fault");
+
     /* Network ports and AO verification */
     const i_network_t *net_eth = app_container_get_network_eth(&s_app);
     const i_network_t *net_wifi = app_container_get_network_wifi(&s_app);
+    const i_wifi_control_t *wifi_ctrl = app_container_get_wifi_control(&s_app);
     zassert_not_null(net_eth, "net_eth port must not be NULL");
     zassert_not_null(net_wifi, "net_wifi port must not be NULL");
+    zassert_not_null(wifi_ctrl, "wifi_ctrl port must not be NULL");
     zassert_true(i_network_is_bound(net_eth), "net_eth port must be bound");
     zassert_true(i_network_is_bound(net_wifi), "net_wifi port must be bound");
+    zassert_true(i_wifi_control_is_bound(wifi_ctrl), "wifi_ctrl port must be bound");
     zassert_equal(s_app.network.ao.eth_cfg.ip_mode, NET_IP_MODE_DHCP, "ETH default ip_mode must be DHCP");
     zassert_equal(s_app.network.ao.eth_cfg.ip_addr, 0xC0A80164, "ETH fallback IP mismatch");
     zassert_equal(s_app.network.ao.wifi_cfg.mode, NET_WIFI_MODE_AP, "WiFi default mode must be AP");
@@ -412,6 +422,7 @@ ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
     zassert_is_null(app_container_get_storage(&isolated_app), "Must be NULL");
     zassert_is_null(app_container_get_network_eth(&isolated_app), "Must be NULL");
     zassert_is_null(app_container_get_network_wifi(&isolated_app), "Must be NULL");
+    zassert_is_null(app_container_get_wifi_control(&isolated_app), "Must be NULL");
     zassert_is_null(app_container_get_digital_inputs(&isolated_app), "Must be NULL");
     zassert_is_null(app_container_get_led(&isolated_app), "Must be NULL");
     zassert_is_null(app_container_get_buzzer(&isolated_app), "Must be NULL");
