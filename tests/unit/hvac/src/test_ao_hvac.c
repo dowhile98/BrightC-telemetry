@@ -383,19 +383,19 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     zassert_equal(g0->pressure_retry_s, 180U, "pressure_retry_s must be 180");
     zassert_equal(g0->rotation_interval_hours, 24U, "rotation_interval_hours must be 24");
 
-    /* 2. Verify relay actuator endpoints (Waveshare 32CH relay, device_id = 4) */
+    /* 2. Verify relay actuator endpoints (Internal relays on mcp23s17_2, device_id = 2) */
     for (uint8_t u = 0; u < 4U; u++) {
         const hvac_unit_hw_config_t *u_cfg = &k_default_hvac_config_hybrid_4units.units[u];
-        zassert_equal(u_cfg->relay_aa.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Relay backend");
-        zassert_equal(u_cfg->relay_aa.device_id, 4U, "Relay device_id 4");
+        zassert_equal(u_cfg->relay_aa.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Relay backend");
+        zassert_equal(u_cfg->relay_aa.device_id, 2U, "Relay device_id 2");
         zassert_equal(u_cfg->relay_aa.channel, (uint8_t)(u * 3U + 0U), "Cooling AA channel");
 
-        zassert_equal(u_cfg->relay_sm.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Fan backend");
-        zassert_equal(u_cfg->relay_sm.device_id, 4U, "Fan device_id 4");
+        zassert_equal(u_cfg->relay_sm.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Fan backend");
+        zassert_equal(u_cfg->relay_sm.device_id, 2U, "Fan device_id 2");
         zassert_equal(u_cfg->relay_sm.channel, (uint8_t)(u * 3U + 1U), "Fan SM channel");
 
-        zassert_equal(u_cfg->relay_g.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Alarm relay backend");
-        zassert_equal(u_cfg->relay_g.device_id, 4U, "Alarm relay device_id 4");
+        zassert_equal(u_cfg->relay_g.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Alarm relay backend");
+        zassert_equal(u_cfg->relay_g.device_id, 2U, "Alarm relay device_id 2");
         zassert_equal(u_cfg->relay_g.channel, (uint8_t)(u * 3U + 2U), "Alarm G channel");
 
         /* Alarms (MBSL32DI, device_id = 3, channels 0..15) */

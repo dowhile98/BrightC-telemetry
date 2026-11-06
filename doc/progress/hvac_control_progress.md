@@ -16,11 +16,12 @@
 | **AC Unit Domain Entity** | `app/src/domain/models/hvac_unit_entity.h`, `.c` | 100% | Pure C99/C11 FSM: staggered anti-inrush, 180s lockout, eviction after max faults, fan purge sub-FSM |
 | **HVAC Group Domain Entity** | `app/src/domain/models/hvac_group_entity.h`, `.c` | 100% | Pure C99/C11 aggregate root: generic $N+M$ rotation, 2-stage cooling timeout rescue, bypass hysteresis, fire interlock |
 | **Actuator Infrastructure Adapter** | `app/src/infrastructure/adapters/adapter_hvac_actuator.h`, `.c` | 100% | Implements `i_hvac_unit_api_t`: translates tri-states into physical relays across Modbus or local backends |
+| **On-Board Relay GPIO Adapter** | `app/src/infrastructure/adapters/adapter_relay_gpio.h`, `.c` | 100% | Concrete adapter implementing `i_relay_t` for the 18 internal on-board relays across `mcp23s17_2` and `mcp23s17_3` |
 | **Zbus Status & Event Channels** | `app/src/application/zbus/hvac_channels.h`, `.c` | 100% | Defines `chan_hvac_status` carrying snapshot message `hvac_status_msg_t` |
 | **HVAC Active Object Coordinator** | `app/src/application/active_objects/ao_hvac.h`, `.c` | 100% | Canonical 5-phase lifecycle Active Object with dynamic runtime configuration update support (`ao_hvac_set_group_config`, `ao_hvac_apply_config`) |
 | **Composition Root Integration** | `app/src/infrastructure/di/composition_root.h`, `.c` | 100% | Subsystem 6 integrated in `app_container_t`: boot-time storage loading with default fallback (`k_default_hvac_cfg`), debounced dirty-marking via `ao_storage` |
 | **In-Memory Fakes** | `tests/fakes/include/fake_hvac_unit.h`, `.c`, `fake_relay.h`, `.c` | 100% | In-memory `i_hvac_unit_t` and `i_relay_t` implementations with call tracking and fault injection |
-| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **27/27 tests passing on `native_sim`** (unit, group, actuator, and Active Object suites) |
+| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **31/31 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
 
 ---
 
@@ -34,7 +35,7 @@
 - [x] Implement Zbus status channels `hvac_channels.c` & `.h`.
 - [x] Implement Active Object coordinator `ao_hvac.c` & `.h` adhering to 5-phase canonical lifecycle.
 - [x] Wire declarative hardware routing and operational modes in `composition_root.c` & `.h`.
-- [x] Create comprehensive unit test suite in `tests/unit/hvac/` (27/27 PASS on `native_sim`).
+- [x] Create comprehensive unit test suite in `tests/unit/hvac/` (31/31 PASS on `native_sim` across 5 test suites).
 - [x] Boot-load persisted HVAC config from EEPROM with fallback defaults and debounced dirty marking.
 - [x] Support zero-reboot runtime configuration updates without disturbing running state machines.
 - [x] Implement multi-sensor group temperature aggregation (`hvac_compute_group_metrics` and `ao_hvac_feed_temperatures`).
@@ -43,6 +44,11 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Internal On-Board Relay Hardware Integration:
+  - Implemented `adapter_relay_gpio.h/.c` providing concrete `i_relay_t` implementation for the 18 internal on-board relays via GPIO expanders (`mcp23s17_2` and `mcp23s17_3`).
+  - Configured `mcp23s17_2` channels 0..11 to drive 4 primary AC units x 3 relays each (AA, SM, G) and `mcp23s17_3` channels 0..5 for 6 dedicated alarm outputs, preserving Waveshare 32CH Modbus RTU adapter for optional expansion units 5..8.
+  - Added unit test suite `test_adapter_relay_gpio.c` in `tests/unit/hvac/src/` verifying binding, active-high channel actuation, pulse operations, cycle counters, and hardware error handling across both expanders.
+  - Updated unit test verification: **31/31 tests passing on `native_sim` across 5 test suites** (100% PASS).
 - **2026-11-06**: Implemented Hybrid Default Storage Profile & Verification:
   - Added centralized immutable profiles in `app/include/common/default_config_profiles.h` for Hybrid 4-unit baseline, Control-only 8-unit, Telemetry-only, DI mappings, and profile switchers.
   - Implemented Hybrid Default Storage Profile: 1 group of 4 AC units, 2+2 redundancy, 5 internal RTDs on `sensor_mask = 0x001F`, 16 unit alarms (HP, LP, Flow, Volt on DI 1..16 / MBSL32DI CH0..15), fire on DI 17 (CH16), door on DI 18 (CH17), fan/comp feedbacks on DI 19..26 (CH18..25), and OTA recompilation readiness.

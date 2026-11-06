@@ -736,12 +736,44 @@ int composition_root_init_hvac(app_container_t *self)
         LOG_WRN("hvac: failed to obtain waveshare relay port: %d", err);
     }
 
-    /* 3. Initialize actuator adapter */
+    /* 3. Initialize local GPIO relay adapter (BrightC internal relays) */
+#if !defined(CONFIG_ZTEST)
+    const struct device *mcp_dev2 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_2))
+    mcp_dev2 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_2));
+#endif
+
+    const struct device *mcp_dev3 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_3))
+    mcp_dev3 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_3));
+#endif
+
+    int local_relay_err = adapter_relay_gpio_init(&self->hvac.local_relay_adapter, mcp_dev2, mcp_dev3);
+    if (local_relay_err != 0)
+    {
+        LOG_WRN("adapter_relay_gpio_init failed (%d)", local_relay_err);
+    }
+#else
+    int local_relay_err = adapter_relay_gpio_init(&self->hvac.local_relay_adapter, NULL, NULL);
+    if (local_relay_err != 0)
+    {
+        LOG_WRN("adapter_relay_gpio_init failed (%d)", local_relay_err);
+    }
+#endif
+
+    local_relay_err = adapter_relay_gpio_port(&self->hvac.local_relay_adapter, &self->hvac.local_relay_port);
+    if (local_relay_err != 0)
+    {
+        LOG_WRN("adapter_relay_gpio_port failed (%d)", local_relay_err);
+    }
+    self->modbus.relay_int_port = self->hvac.local_relay_port;
+
+    /* 4. Initialize actuator adapter */
     err = adapter_hvac_actuator_init(&self->hvac.actuator_adapter,
                                      self->hvac.config.units,
                                      HVAC_MAX_UNITS_TOTAL,
                                      &remote_relay,
-                                     NULL);
+                                     &self->hvac.local_relay_port);
     if (err != 0)
     {
         LOG_ERR("adapter_hvac_actuator_init failed (%d)", err);

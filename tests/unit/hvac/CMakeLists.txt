@@ -9,10 +9,12 @@ target_sources(app PRIVATE
     src/test_hvac_unit.c
     src/test_hvac_group.c
     src/test_adapter_hvac_actuator.c
+    src/test_adapter_relay_gpio.c
     src/test_ao_hvac.c
     ${APP_DIR}/app/src/domain/models/hvac_unit_entity.c
     ${APP_DIR}/app/src/domain/models/hvac_group_entity.c
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_hvac_actuator.c
+    ${APP_DIR}/app/src/infrastructure/adapters/adapter_relay_gpio.c
     ${APP_DIR}/app/src/application/active_objects/ao_hvac.c
     ${APP_DIR}/app/src/application/zbus/hvac_channels.c
     ${APP_DIR}/tests/fakes/src/fake_hvac_unit.c

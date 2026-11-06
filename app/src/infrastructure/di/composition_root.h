@@ -46,6 +46,7 @@
 #endif
 #include "infrastructure/adapters/adapter_relay_modbus.h"
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
+#include "infrastructure/adapters/adapter_relay_gpio.h"
 #ifndef CONFIG_ZTEST
 #include "infrastructure/adapters/adapter_eth_stm32.h"
 #include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
@@ -155,6 +156,8 @@ typedef struct {
     struct {
         i_hvac_unit_t actuator_port;                   /**< Actuator port handle */
         adapter_hvac_actuator_t actuator_adapter;      /**< Actuator adapter instance */
+        i_relay_t local_relay_port;                    /**< Local internal relay port handle */
+        adapter_relay_gpio_t local_relay_adapter;      /**< Local internal GPIO relay adapter instance */
         ao_hvac_t ao;                                  /**< HVAC Active Object coordinator */
         struct k_msgq queue;                           /**< HVAC AO command queue */
         uint8_t queue_buf[AO_HVAC_QUEUE_DEPTH * sizeof(ao_hvac_event_t)];
