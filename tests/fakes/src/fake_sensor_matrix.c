@@ -40,6 +40,9 @@ static int fake_set_channel_config(void *impl, physical_channel_id_t ch, const s
     if (s->set_cfg_ret != 0) {
         return s->set_cfg_ret;
     }
+    if (!physical_channel_is_valid(ch)) {
+        return -EINVAL;
+    }
     s->configs[ch] = *cfg;
     s->channel_configured[ch] = true;
     return 0;
@@ -51,6 +54,9 @@ static int fake_get_channel_config(void *impl, physical_channel_id_t ch, sensor_
     s->get_cfg_calls++;
     if (s->get_cfg_ret != 0) {
         return s->get_cfg_ret;
+    }
+    if (!physical_channel_is_valid(ch)) {
+        return -EINVAL;
     }
     *out_cfg = s->configs[ch];
     return 0;

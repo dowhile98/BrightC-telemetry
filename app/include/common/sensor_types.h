@@ -18,16 +18,21 @@ extern "C" {
 #endif
 
 /** Maximum physical endpoints supported across hardware buses */
-#define SENSOR_PHYS_CH_MAX 31U
+#define SENSOR_PHYS_CH_MAX 79U
 
-/** Maximum paired supply/return couples supported (Pilot uses 6) */
-#define SENSOR_MATRIX_MAX_PAIRS 8U
+/** Maximum paired supply/return couples supported (up to 16 HVAC units) */
+#define SENSOR_MATRIX_MAX_PAIRS 16U         /**< Max supply/return pairs (up to 16 HVAC units) */
 
-/** Maximum room ambient monitoring probes supported (Pilot uses 2) */
-#define SENSOR_MATRIX_MAX_ROOM_PROBES 4U
+/** Maximum room ambient monitoring probes supported (up to 16 probes) */
+#define SENSOR_MATRIX_MAX_ROOM_PROBES 16U   /**< Max room ambient probes (up to 16 probes) */
 
-/** Maximum outdoor ambient condensing probes supported (Pilot uses 2) */
-#define SENSOR_MATRIX_MAX_OUTDOOR_PROBES 4U
+/** Maximum outdoor ambient condensing probes supported (up to 8 probes) */
+#define SENSOR_MATRIX_MAX_OUTDOOR_PROBES 8U /**< Max outdoor condenser probes (up to 8 probes) */
+
+/** Multi-concentrator Modbus constants */
+#define SENSOR_MAX_CWT_CONCENTRATORS 4U
+#define SENSOR_CWT_CHANNELS_PER_DEV 16U
+#define SENSOR_MAX_CWT_CHANNELS (SENSOR_MAX_CWT_CONCENTRATORS * SENSOR_CWT_CHANNELS_PER_DEV) /**< 64 Modbus channels */
 
 /** Temperature physical sanity bounds in degrees Celsius per Revision F */
 #define SENSOR_TEMP_MIN_VALID_C (-20.0f)
@@ -44,7 +49,7 @@ extern "C" {
  * @brief Fixed hardware acquisition endpoint identifiers.
  */
 typedef enum {
-    /* External RS-485 Modbus RTU Concentrator: CWT-TM-16PT (Channels 1 to 16) */
+    /* External RS-485 Modbus RTU Concentrator 1: CWT-TM-16PT (Channels 1 to 16) */
     PHYS_CH_CWT_1 = 0,
     PHYS_CH_CWT_2,
     PHYS_CH_CWT_3,
@@ -81,7 +86,62 @@ typedef enum {
     PHYS_CH_ANALOG_J9_CH9,
     PHYS_CH_ANALOG_J9_CH10,
 
-    PHYS_CH_MAX = 31
+    /* Extended External RS-485 Modbus RTU Concentrators 2..4 */
+    /* Concentrator 2 (channels 1..16) */
+    PHYS_CH_CWT2_1 = 31,
+    PHYS_CH_CWT2_2,
+    PHYS_CH_CWT2_3,
+    PHYS_CH_CWT2_4,
+    PHYS_CH_CWT2_5,
+    PHYS_CH_CWT2_6,
+    PHYS_CH_CWT2_7,
+    PHYS_CH_CWT2_8,
+    PHYS_CH_CWT2_9,
+    PHYS_CH_CWT2_10,
+    PHYS_CH_CWT2_11,
+    PHYS_CH_CWT2_12,
+    PHYS_CH_CWT2_13,
+    PHYS_CH_CWT2_14,
+    PHYS_CH_CWT2_15,
+    PHYS_CH_CWT2_16,
+
+    /* Concentrator 3 (channels 1..16) */
+    PHYS_CH_CWT3_1 = 47,
+    PHYS_CH_CWT3_2,
+    PHYS_CH_CWT3_3,
+    PHYS_CH_CWT3_4,
+    PHYS_CH_CWT3_5,
+    PHYS_CH_CWT3_6,
+    PHYS_CH_CWT3_7,
+    PHYS_CH_CWT3_8,
+    PHYS_CH_CWT3_9,
+    PHYS_CH_CWT3_10,
+    PHYS_CH_CWT3_11,
+    PHYS_CH_CWT3_12,
+    PHYS_CH_CWT3_13,
+    PHYS_CH_CWT3_14,
+    PHYS_CH_CWT3_15,
+    PHYS_CH_CWT3_16,
+
+    /* Concentrator 4 (channels 1..16) */
+    PHYS_CH_CWT4_1 = 63,
+    PHYS_CH_CWT4_2,
+    PHYS_CH_CWT4_3,
+    PHYS_CH_CWT4_4,
+    PHYS_CH_CWT4_5,
+    PHYS_CH_CWT4_6,
+    PHYS_CH_CWT4_7,
+    PHYS_CH_CWT4_8,
+    PHYS_CH_CWT4_9,
+    PHYS_CH_CWT4_10,
+    PHYS_CH_CWT4_11,
+    PHYS_CH_CWT4_12,
+    PHYS_CH_CWT4_13,
+    PHYS_CH_CWT4_14,
+    PHYS_CH_CWT4_15,
+    PHYS_CH_CWT4_16,
+
+    PHYS_CH_MAX = 79
 } physical_channel_id_t;
 
 /**
@@ -90,6 +150,47 @@ typedef enum {
 static inline bool physical_channel_is_valid(physical_channel_id_t ch)
 {
     return (unsigned int)ch < (unsigned int)PHYS_CH_MAX;
+}
+
+/**
+ * @brief Determine if a physical channel is a CWT Modbus concentrator channel,
+ *        and extract the 0-based concentrator index and channel index (0..15).
+ *
+ * @param[in]  ch               Physical channel ID.
+ * @param[out] out_concentrator Optional pointer to receive concentrator index (0..3).
+ * @param[out] out_channel      Optional pointer to receive channel index (0..15).
+ * @return true if channel is a CWT concentrator channel, false otherwise.
+ */
+static inline bool physical_channel_is_cwt(physical_channel_id_t ch,
+                                           uint8_t *out_concentrator,
+                                           uint8_t *out_channel)
+{
+    uint8_t conc = 0;
+    uint8_t dev_ch = 0;
+
+    if (ch >= PHYS_CH_CWT_1 && ch <= PHYS_CH_CWT_16) {
+        conc = 0;
+        dev_ch = (uint8_t)(ch - PHYS_CH_CWT_1);
+    } else if (ch >= PHYS_CH_CWT2_1 && ch <= PHYS_CH_CWT2_16) {
+        conc = 1;
+        dev_ch = (uint8_t)(ch - PHYS_CH_CWT2_1);
+    } else if (ch >= PHYS_CH_CWT3_1 && ch <= PHYS_CH_CWT3_16) {
+        conc = 2;
+        dev_ch = (uint8_t)(ch - PHYS_CH_CWT3_1);
+    } else if (ch >= PHYS_CH_CWT4_1 && ch <= PHYS_CH_CWT4_16) {
+        conc = 3;
+        dev_ch = (uint8_t)(ch - PHYS_CH_CWT4_1);
+    } else {
+        return false;
+    }
+
+    if (out_concentrator != NULL) {
+        *out_concentrator = conc;
+    }
+    if (out_channel != NULL) {
+        *out_channel = dev_ch;
+    }
+    return true;
 }
 
 /**
@@ -176,11 +277,11 @@ static inline uint16_t sensor_cal_gain_from_factor(float factor)
 typedef struct {
     uint64_t timestamp_us;
 
-    /* External Modbus CWT-TM-16PT readings (16 channels) */
-    float    cwt_temperatures_c[16];
-    uint16_t cwt_valid_mask;          /**< Bit k = 1 if channel reading is valid */
-    uint16_t cwt_open_probe_mask;     /**< Bit k = 1 if open/disconnected */
-    bool     cwt_comm_ok;             /**< True if Modbus query succeeded */
+    /* External Modbus CWT-TM-16PT readings (up to 4 concentrators x 16 channels) */
+    float    cwt_temperatures_c[SENSOR_MAX_CWT_CONCENTRATORS][16];
+    uint16_t cwt_valid_mask[SENSOR_MAX_CWT_CONCENTRATORS];          /**< Bit k = 1 if channel reading is valid */
+    uint16_t cwt_open_probe_mask[SENSOR_MAX_CWT_CONCENTRATORS];     /**< Bit k = 1 if open/disconnected */
+    bool     cwt_comm_ok[SENSOR_MAX_CWT_CONCENTRATORS];             /**< True if Modbus query succeeded */
 
     /* Internal Placa V3 RTD channels (Channels 0..4 -> PHYS_CH_INTERNAL_RTD_1..5) */
     float    internal_rtd_raw_adc[5]; /**< Raw ADC counts (0.0 to 65535.0) */
@@ -198,7 +299,7 @@ typedef struct {
     uint64_t timestamp_us;
 
     /* Paired Evaporator Temperatures */
-    uint8_t  configured_pairs;        /**< N (e.g., 6 in pilot) */
+    uint8_t  configured_pairs;        /**< N (e.g., 6 in pilot, up to 16) */
     float    t_inj[SENSOR_MATRIX_MAX_PAIRS];
     float    t_ret[SENSOR_MATRIX_MAX_PAIRS];
     uint8_t  pair_hvac_unit_map[SENSOR_MATRIX_MAX_PAIRS]; /**< HVAC Unit ID owning this pair */
@@ -206,12 +307,12 @@ typedef struct {
     uint16_t pair_open_probe_mask;    /**< Bit k = 1 if either probe is disconnected */
 
     /* Room Ambient Probes */
-    uint8_t  configured_room_probes;  /**< M (e.g., 2 in pilot) */
+    uint8_t  configured_room_probes;  /**< M (e.g., 2 in pilot, up to 16) */
     float    t_room[SENSOR_MATRIX_MAX_ROOM_PROBES];
-    uint8_t  room_valid_mask;         /**< Bit m = 1 if probe healthy */
+    uint16_t room_valid_mask;         /**< Bit m = 1 if probe healthy (uint16_t for 16 probes) */
 
     /* Outdoor Condenser Probes */
-    uint8_t  configured_outdoor_probes;/**< L (e.g., 2 in pilot) */
+    uint8_t  configured_outdoor_probes;/**< L (e.g., 2 in pilot, up to 8) */
     float    t_outdoor[SENSOR_MATRIX_MAX_OUTDOOR_PROBES];
     uint8_t  outdoor_valid_mask;      /**< Bit l = 1 if probe healthy */
 

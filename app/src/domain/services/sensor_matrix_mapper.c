@@ -109,6 +109,16 @@ int sensor_matrix_init_default_pilot_config(sensor_channel_cfg_t *configs, size_
         configs[idx].associated_hvac_unit = 0;
     }
 
+    /* 8. Extended Modbus Concentrators 2..4: Disabled by default */
+    for (uint8_t ch = 31; ch < SENSOR_PHYS_CH_MAX; ch++) {
+        configs[ch].physical_ch = ch;
+        configs[ch].role = (uint8_t)SENSOR_ROLE_DISABLED;
+        configs[ch].target_index = 0;
+        configs[ch].cal_offset_c_centi = 0;
+        configs[ch].cal_gain_ppm = 0;
+        configs[ch].associated_hvac_unit = 0;
+    }
+
     return 0;
 }
 
@@ -148,17 +158,17 @@ int sensor_matrix_map(const raw_sensor_readings_t *raw,
         bool is_valid = false;
         bool is_open = false;
 
-        /* A. External CWT Modbus Concentrator Channels */
-        if (cfg->physical_ch >= PHYS_CH_CWT_1 && cfg->physical_ch <= PHYS_CH_CWT_16) {
-            uint8_t cwt_idx = cfg->physical_ch - PHYS_CH_CWT_1;
-
-            if (!raw->cwt_comm_ok) {
+        /* A. External CWT Modbus Concentrator Channels (Concentrators 1..4) */
+        uint8_t cwt_conc = 0;
+        uint8_t cwt_ch = 0;
+        if (physical_channel_is_cwt((physical_channel_id_t)cfg->physical_ch, &cwt_conc, &cwt_ch)) {
+            if (!raw->cwt_comm_ok[cwt_conc]) {
                 is_valid = false;
                 is_open = true;
             } else {
-                is_open = (raw->cwt_open_probe_mask & (1U << cwt_idx)) != 0;
-                bool channel_valid = (raw->cwt_valid_mask & (1U << cwt_idx)) != 0;
-                raw_val = raw->cwt_temperatures_c[cwt_idx];
+                is_open = (raw->cwt_open_probe_mask[cwt_conc] & (1U << cwt_ch)) != 0;
+                bool channel_valid = (raw->cwt_valid_mask[cwt_conc] & (1U << cwt_ch)) != 0;
+                raw_val = raw->cwt_temperatures_c[cwt_conc][cwt_ch];
 
                 if (!channel_valid || is_open ||
                     raw_val < SENSOR_TEMP_MIN_VALID_C || raw_val > SENSOR_TEMP_MAX_VALID_C) {
@@ -271,7 +281,7 @@ int sensor_matrix_map(const raw_sensor_readings_t *raw,
             if (m < SENSOR_MATRIX_MAX_ROOM_PROBES) {
                 out_frame->t_room[m] = raw_val;
                 if (is_valid && !is_open) {
-                    out_frame->room_valid_mask |= (uint8_t)(1U << m);
+                    out_frame->room_valid_mask |= (uint16_t)(1U << m);
                 }
                 if ((m + 1U) > out_frame->configured_room_probes) {
                     out_frame->configured_room_probes = m + 1U;

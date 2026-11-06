@@ -27,33 +27,33 @@ static void setup_nominal_pilot_raw(raw_sensor_readings_t *raw)
 {
     memset(raw, 0, sizeof(*raw));
     raw->timestamp_us = 12345678000ULL;
-    raw->cwt_comm_ok = true;
-    raw->cwt_valid_mask = 0xFFFF;      /* All 16 CWT channels valid */
-    raw->cwt_open_probe_mask = 0x0000; /* No open probes */
+    raw->cwt_comm_ok[0] = true;
+    raw->cwt_valid_mask[0] = 0xFFFF;      /* All 16 CWT channels valid */
+    raw->cwt_open_probe_mask[0] = 0x0000; /* No open probes */
 
     /* Supply temperatures (Pairs 0 to 5): 12.0 C to 14.5 C */
-    raw->cwt_temperatures_c[0] = 12.0f;
-    raw->cwt_temperatures_c[1] = 12.5f;
-    raw->cwt_temperatures_c[2] = 13.0f;
-    raw->cwt_temperatures_c[3] = 13.5f;
-    raw->cwt_temperatures_c[4] = 14.0f;
-    raw->cwt_temperatures_c[5] = 14.5f;
+    raw->cwt_temperatures_c[0][0] = 12.0f;
+    raw->cwt_temperatures_c[0][1] = 12.5f;
+    raw->cwt_temperatures_c[0][2] = 13.0f;
+    raw->cwt_temperatures_c[0][3] = 13.5f;
+    raw->cwt_temperatures_c[0][4] = 14.0f;
+    raw->cwt_temperatures_c[0][5] = 14.5f;
 
     /* Return temperatures (Pairs 0 to 5): 22.0 C to 24.5 C */
-    raw->cwt_temperatures_c[6] = 22.0f;
-    raw->cwt_temperatures_c[7] = 22.5f;
-    raw->cwt_temperatures_c[8] = 23.0f;
-    raw->cwt_temperatures_c[9] = 23.5f;
-    raw->cwt_temperatures_c[10] = 24.0f;
-    raw->cwt_temperatures_c[11] = 24.5f;
+    raw->cwt_temperatures_c[0][6] = 22.0f;
+    raw->cwt_temperatures_c[0][7] = 22.5f;
+    raw->cwt_temperatures_c[0][8] = 23.0f;
+    raw->cwt_temperatures_c[0][9] = 23.5f;
+    raw->cwt_temperatures_c[0][10] = 24.0f;
+    raw->cwt_temperatures_c[0][11] = 24.5f;
 
     /* Room temperatures (0 and 1): 21.0 C, 21.5 C */
-    raw->cwt_temperatures_c[12] = 21.0f;
-    raw->cwt_temperatures_c[13] = 21.5f;
+    raw->cwt_temperatures_c[0][12] = 21.0f;
+    raw->cwt_temperatures_c[0][13] = 21.5f;
 
     /* Outdoor temperatures (0 and 1): 32.0 C, 32.5 C */
-    raw->cwt_temperatures_c[14] = 32.0f;
-    raw->cwt_temperatures_c[15] = 32.5f;
+    raw->cwt_temperatures_c[0][14] = 32.0f;
+    raw->cwt_temperatures_c[0][15] = 32.5f;
 
     /* J9 CH1: Return Humidity at 50% HR (12.0 mA)
      * For shunt 220 Ohm, gain 1.98, Vref 3.3V, scale_factor 3.0:
@@ -185,7 +185,7 @@ ZTEST(sensor_matrix_mapper_suite, test_pairing_consensus_both_probes_required)
     setup_nominal_pilot_raw(&raw);
 
     /* Open supply probe of pair 2 (CWT CH3 -> idx 2) */
-    raw.cwt_open_probe_mask |= (1U << 2);
+    raw.cwt_open_probe_mask[0] |= (1U << 2);
 
     thermal_matrix_frame_t frame;
     int err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
@@ -197,7 +197,7 @@ ZTEST(sensor_matrix_mapper_suite, test_pairing_consensus_both_probes_required)
     zassert_true((frame.pair_open_probe_mask & (1U << 2)) != 0, "Pair 2 open probe bit must be set");
 
     /* Open return probe of pair 4 (CWT CH11 -> idx 10) */
-    raw.cwt_open_probe_mask |= (1U << 10);
+    raw.cwt_open_probe_mask[0] |= (1U << 10);
 
     err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
     zassert_equal(err, 0, "Mapping returned error");
@@ -214,7 +214,7 @@ ZTEST(sensor_matrix_mapper_suite, test_modbus_comm_loss_masks_all_cwt_pairs)
 
     raw_sensor_readings_t raw;
     setup_nominal_pilot_raw(&raw);
-    raw.cwt_comm_ok = false; /* Modbus query failed */
+    raw.cwt_comm_ok[0] = false; /* Modbus query failed */
 
     thermal_matrix_frame_t frame;
     int err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
@@ -239,9 +239,9 @@ ZTEST(sensor_matrix_mapper_suite, test_temperature_boundary_violation)
     setup_nominal_pilot_raw(&raw);
 
     /* CWT CH1 reports -25 C (< -20.0 C minimum limit) */
-    raw.cwt_temperatures_c[0] = -25.0f;
+    raw.cwt_temperatures_c[0][0] = -25.0f;
     /* CWT CH14 reports +85 C (> +80.0 C maximum limit) */
-    raw.cwt_temperatures_c[13] = 85.0f;
+    raw.cwt_temperatures_c[0][13] = 85.0f;
 
     thermal_matrix_frame_t frame;
     sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
@@ -272,8 +272,8 @@ ZTEST(sensor_matrix_mapper_suite, test_calibration_offset_and_gain_application)
 
     raw_sensor_readings_t raw;
     setup_nominal_pilot_raw(&raw);
-    raw.cwt_temperatures_c[0] = 20.0f; /* Supply raw */
-    raw.cwt_temperatures_c[6] = 25.0f; /* Return raw */
+    raw.cwt_temperatures_c[0][0] = 20.0f; /* Supply raw */
+    raw.cwt_temperatures_c[0][6] = 25.0f; /* Return raw */
 
     thermal_matrix_frame_t frame;
     sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
@@ -407,4 +407,80 @@ ZTEST(sensor_matrix_mapper_suite, test_null_and_invalid_arguments)
     zassert_equal(sensor_matrix_map(NULL, configs, SENSOR_PHYS_CH_MAX, &frame), -EINVAL, "Null raw");
     zassert_equal(sensor_matrix_map(&raw, NULL, SENSOR_PHYS_CH_MAX, &frame), -EINVAL, "Null configs");
     zassert_equal(sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, NULL), -EINVAL, "Null frame");
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_multi_cwt_concentrator_mapping)
+{
+    sensor_channel_cfg_t configs[SENSOR_PHYS_CH_MAX];
+    sensor_matrix_init_default_pilot_config(configs, SENSOR_PHYS_CH_MAX);
+
+    /* Configure CWT 2 Channel 1 (PHYS_CH_CWT2_1 = 31) as Room Ambient Probe 2 */
+    configs[31].physical_ch = (uint8_t)PHYS_CH_CWT2_1;
+    configs[31].role = (uint8_t)SENSOR_ROLE_TEMP_ROOM_AMBIENT;
+    configs[31].target_index = 2;
+    configs[31].cal_offset_c_centi = 0;
+    configs[31].cal_gain_ppm = 0;
+    configs[31].associated_hvac_unit = 0;
+
+    /* Configure CWT 2 Channel 2 (PHYS_CH_CWT2_2 = 32) as Supply Air for Pair 6, HVAC Unit 4 */
+    configs[32].physical_ch = (uint8_t)PHYS_CH_CWT2_2;
+    configs[32].role = (uint8_t)SENSOR_ROLE_TEMP_SUPPLY_AIR;
+    configs[32].target_index = 6;
+    configs[32].cal_offset_c_centi = 0;
+    configs[32].cal_gain_ppm = 0;
+    configs[32].associated_hvac_unit = 4;
+
+    /* Configure CWT 2 Channel 3 (PHYS_CH_CWT2_3 = 33) as Return Air for Pair 6, HVAC Unit 4 */
+    configs[33].physical_ch = (uint8_t)PHYS_CH_CWT2_3;
+    configs[33].role = (uint8_t)SENSOR_ROLE_TEMP_RETURN_AIR;
+    configs[33].target_index = 6;
+    configs[33].cal_offset_c_centi = 0;
+    configs[33].cal_gain_ppm = 0;
+    configs[33].associated_hvac_unit = 4;
+
+    raw_sensor_readings_t raw;
+    setup_nominal_pilot_raw(&raw);
+
+    /* Setup CWT Concentrator 2 (index 1) raw readings */
+    raw.cwt_comm_ok[1] = true;
+    raw.cwt_valid_mask[1] = 0x0007; /* Channels 0, 1, 2 valid */
+    raw.cwt_open_probe_mask[1] = 0x0000;
+    raw.cwt_temperatures_c[1][0] = 22.8f; /* Room 2 */
+    raw.cwt_temperatures_c[1][1] = 13.2f; /* Pair 6 Supply */
+    raw.cwt_temperatures_c[1][2] = 23.4f; /* Pair 6 Return */
+
+    thermal_matrix_frame_t frame;
+    int err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
+    zassert_equal(err, 0, "Mapping returned error");
+
+    /* Verify CWT 1 channels still properly mapped */
+    zassert_within(frame.t_inj[0], 12.0f, 0.01f, "Inj 0 from CWT 1");
+    zassert_within(frame.t_room[0], 21.0f, 0.01f, "Room 0 from CWT 1");
+    zassert_within(frame.t_room[1], 21.5f, 0.01f, "Room 1 from CWT 1");
+
+    /* Verify CWT 2 channels mapped */
+    zassert_equal(frame.configured_room_probes, 3, "Total configured room probes");
+    zassert_true((frame.room_valid_mask & (1U << 2)) != 0, "Room 2 valid bit must be set");
+    zassert_within(frame.t_room[2], 22.8f, 0.01f, "Room 2 temperature");
+
+    zassert_equal(frame.configured_pairs, 7, "Total configured pairs");
+    zassert_true((frame.pair_valid_mask & (1U << 6)) != 0, "Pair 6 valid bit must be set");
+    zassert_false((frame.pair_open_probe_mask & (1U << 6)) != 0, "Pair 6 not open");
+    zassert_within(frame.t_inj[6], 13.2f, 0.01f, "Pair 6 supply temperature");
+    zassert_within(frame.t_ret[6], 23.4f, 0.01f, "Pair 6 return temperature");
+    zassert_equal(frame.pair_hvac_unit_map[6], 4, "Pair 6 unit map");
+
+    /* Test communication loss specifically on CWT 2 */
+    raw.cwt_comm_ok[1] = false;
+    err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
+    zassert_equal(err, 0, "Mapping returned error");
+
+    /* CWT 1 remains intact */
+    zassert_true((frame.pair_valid_mask & (1U << 0)) != 0, "Pair 0 from CWT 1 still valid");
+    zassert_true((frame.room_valid_mask & (1U << 0)) != 0, "Room 0 from CWT 1 still valid");
+
+    /* CWT 2 channels invalidated */
+    zassert_false((frame.pair_valid_mask & (1U << 6)) != 0, "Pair 6 invalid on CWT 2 comm loss");
+    zassert_true((frame.pair_open_probe_mask & (1U << 6)) != 0, "Pair 6 marked open on CWT 2 comm loss");
+    zassert_false((frame.room_valid_mask & (1U << 2)) != 0, "Room 2 invalid on CWT 2 comm loss");
 }

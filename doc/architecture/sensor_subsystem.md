@@ -105,9 +105,69 @@ typedef enum {
     PHYS_CH_ANALOG_J9_CH9,
     PHYS_CH_ANALOG_J9_CH10,
 
+    /* Extended External RS-485 Modbus RTU Concentrators 2..4 */
+    /* Concentrator 2 (channels 1..16) */
+    PHYS_CH_CWT2_1 = 31,
+    PHYS_CH_CWT2_2,
+    PHYS_CH_CWT2_3,
+    PHYS_CH_CWT2_4,
+    PHYS_CH_CWT2_5,
+    PHYS_CH_CWT2_6,
+    PHYS_CH_CWT2_7,
+    PHYS_CH_CWT2_8,
+    PHYS_CH_CWT2_9,
+    PHYS_CH_CWT2_10,
+    PHYS_CH_CWT2_11,
+    PHYS_CH_CWT2_12,
+    PHYS_CH_CWT2_13,
+    PHYS_CH_CWT2_14,
+    PHYS_CH_CWT2_15,
+    PHYS_CH_CWT2_16,
+
+    /* Concentrator 3 (channels 1..16) */
+    PHYS_CH_CWT3_1 = 47,
+    PHYS_CH_CWT3_2,
+    PHYS_CH_CWT3_3,
+    PHYS_CH_CWT3_4,
+    PHYS_CH_CWT3_5,
+    PHYS_CH_CWT3_6,
+    PHYS_CH_CWT3_7,
+    PHYS_CH_CWT3_8,
+    PHYS_CH_CWT3_9,
+    PHYS_CH_CWT3_10,
+    PHYS_CH_CWT3_11,
+    PHYS_CH_CWT3_12,
+    PHYS_CH_CWT3_13,
+    PHYS_CH_CWT3_14,
+    PHYS_CH_CWT3_15,
+    PHYS_CH_CWT3_16,
+
+    /* Concentrator 4 (channels 1..16) */
+    PHYS_CH_CWT4_1 = 63,
+    PHYS_CH_CWT4_2,
+    PHYS_CH_CWT4_3,
+    PHYS_CH_CWT4_4,
+    PHYS_CH_CWT4_5,
+    PHYS_CH_CWT4_6,
+    PHYS_CH_CWT4_7,
+    PHYS_CH_CWT4_8,
+    PHYS_CH_CWT4_9,
+    PHYS_CH_CWT4_10,
+    PHYS_CH_CWT4_11,
+    PHYS_CH_CWT4_12,
+    PHYS_CH_CWT4_13,
+    PHYS_CH_CWT4_14,
+    PHYS_CH_CWT4_15,
+    PHYS_CH_CWT4_16,
+
     /* Total physical endpoints supported */
-    PHYS_CH_MAX = 31
+    PHYS_CH_MAX = 79
 } physical_channel_id_t;
+```
+
+Multi-concentrator channel routing helper:
+```c
+bool physical_channel_is_cwt(physical_channel_id_t ch, uint8_t *out_concentrator, uint8_t *out_channel);
 ```
 
 ### 3.2 Semantic Role Classification (`sensor_role_t`)
@@ -148,15 +208,19 @@ typedef struct __attribute__((packed)) {
 Output delivered to the thermodynamic calculation engine:
 
 ```c
-#define SENSOR_MATRIX_MAX_PAIRS          8   /**< Supports up to 8 Supply/Return pairs (Pilot uses 6) */
-#define SENSOR_MATRIX_MAX_ROOM_PROBES    4   /**< Supports up to 4 Room probes (Pilot uses 2) */
-#define SENSOR_MATRIX_MAX_OUTDOOR_PROBES 4   /**< Supports up to 4 Outdoor probes (Pilot uses 2) */
+#define SENSOR_MATRIX_MAX_PAIRS          16U  /**< Supports up to 16 Supply/Return pairs (up to 16 HVAC units) */
+#define SENSOR_MATRIX_MAX_ROOM_PROBES    16U  /**< Supports up to 16 Room probes (expanded from 4) */
+#define SENSOR_MATRIX_MAX_OUTDOOR_PROBES 8U   /**< Supports up to 8 Outdoor condenser probes */
+
+#define SENSOR_MAX_CWT_CONCENTRATORS     4U
+#define SENSOR_CWT_CHANNELS_PER_DEV      16U
+#define SENSOR_MAX_CWT_CHANNELS          (SENSOR_MAX_CWT_CONCENTRATORS * SENSOR_CWT_CHANNELS_PER_DEV) /**< 64 Modbus channels */
 
 typedef struct {
     uint64_t timestamp_us;
 
     /* Paired Evaporator Temperatures */
-    uint8_t  configured_pairs;        /**< N (e.g., 6 in pilot) */
+    uint8_t  configured_pairs;        /**< N (e.g., 6 in pilot, up to 16) */
     float    t_inj[SENSOR_MATRIX_MAX_PAIRS];
     float    t_ret[SENSOR_MATRIX_MAX_PAIRS];
     uint8_t  pair_hvac_unit_map[SENSOR_MATRIX_MAX_PAIRS]; /**< HVAC Unit ID owning this pair */
@@ -164,12 +228,12 @@ typedef struct {
     uint16_t pair_open_probe_mask;    /**< Bit k = 1 if either probe is disconnected */
 
     /* Room Ambient Probes */
-    uint8_t  configured_room_probes;  /**< M (e.g., 2 in pilot) */
+    uint8_t  configured_room_probes;  /**< M (e.g., 2 in pilot, up to 16) */
     float    t_room[SENSOR_MATRIX_MAX_ROOM_PROBES];
-    uint8_t  room_valid_mask;         /**< Bit m = 1 if probe healthy */
+    uint16_t room_valid_mask;         /**< Bit m = 1 if probe healthy (uint16_t for 16 probes) */
 
     /* Outdoor Condenser Probes */
-    uint8_t  configured_outdoor_probes;/**< L (e.g., 2 in pilot) */
+    uint8_t  configured_outdoor_probes;/**< L (e.g., 2 in pilot, up to 8) */
     float    t_outdoor[SENSOR_MATRIX_MAX_OUTDOOR_PROBES];
     uint8_t  outdoor_valid_mask;      /**< Bit l = 1 if probe healthy */
 

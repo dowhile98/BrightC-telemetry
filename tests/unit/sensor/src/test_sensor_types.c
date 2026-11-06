@@ -22,15 +22,76 @@ ZTEST(sensor_types_suite, test_physical_channel_enumeration_and_validity)
     zassert_equal(PHYS_CH_INTERNAL_RTD_5, 20, "RTD CH5 must be 20");
     zassert_equal(PHYS_CH_ANALOG_J9_CH1, 21, "J9 CH1 must be 21");
     zassert_equal(PHYS_CH_ANALOG_J9_CH10, 30, "J9 CH10 must be 30");
-    zassert_equal(PHYS_CH_MAX, 31, "Total physical channels must be 31");
 
-    for (int i = 0; i < 31; i++) {
+    /* Extended CWT Modbus Concentrators */
+    zassert_equal(PHYS_CH_CWT2_1, 31, "CWT2 CH1 must be 31");
+    zassert_equal(PHYS_CH_CWT2_16, 46, "CWT2 CH16 must be 46");
+    zassert_equal(PHYS_CH_CWT3_1, 47, "CWT3 CH1 must be 47");
+    zassert_equal(PHYS_CH_CWT3_16, 62, "CWT3 CH16 must be 62");
+    zassert_equal(PHYS_CH_CWT4_1, 63, "CWT4 CH1 must be 63");
+    zassert_equal(PHYS_CH_CWT4_16, 78, "CWT4 CH16 must be 78");
+    zassert_equal(PHYS_CH_MAX, 79, "Total physical channels must be 79");
+    zassert_equal(SENSOR_PHYS_CH_MAX, 79, "SENSOR_PHYS_CH_MAX must be 79");
+
+    for (int i = 0; i < 79; i++) {
         zassert_true(physical_channel_is_valid((physical_channel_id_t)i), "Channel %d should be valid", i);
     }
 
     zassert_false(physical_channel_is_valid(PHYS_CH_MAX), "PHYS_CH_MAX must not be valid");
-    zassert_false(physical_channel_is_valid((physical_channel_id_t)32), "32 must not be valid");
+    zassert_false(physical_channel_is_valid((physical_channel_id_t)79), "79 must not be valid");
+    zassert_false(physical_channel_is_valid((physical_channel_id_t)80), "80 must not be valid");
     zassert_false(physical_channel_is_valid((physical_channel_id_t)255), "255 must not be valid");
+
+    /* Helper physical_channel_is_cwt() validation */
+    uint8_t conc = 0xFF;
+    uint8_t ch = 0xFF;
+
+    /* CWT Concentrator 1 (0..15) */
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT_1, &conc, &ch), "CWT_1 is CWT");
+    zassert_equal(conc, 0, "CWT_1 conc is 0");
+    zassert_equal(ch, 0, "CWT_1 ch is 0");
+
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT_16, &conc, &ch), "CWT_16 is CWT");
+    zassert_equal(conc, 0, "CWT_16 conc is 0");
+    zassert_equal(ch, 15, "CWT_16 ch is 15");
+
+    /* Internal RTD and J9 are NOT CWT */
+    zassert_false(physical_channel_is_cwt(PHYS_CH_INTERNAL_RTD_1, &conc, &ch), "RTD 1 is not CWT");
+    zassert_false(physical_channel_is_cwt(PHYS_CH_INTERNAL_RTD_5, &conc, &ch), "RTD 5 is not CWT");
+    zassert_false(physical_channel_is_cwt(PHYS_CH_ANALOG_J9_CH1, &conc, &ch), "J9 CH1 is not CWT");
+    zassert_false(physical_channel_is_cwt(PHYS_CH_ANALOG_J9_CH10, &conc, &ch), "J9 CH10 is not CWT");
+
+    /* CWT Concentrator 2 (31..46) */
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT2_1, &conc, &ch), "CWT2_1 is CWT");
+    zassert_equal(conc, 1, "CWT2_1 conc is 1");
+    zassert_equal(ch, 0, "CWT2_1 ch is 0");
+
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT2_16, &conc, &ch), "CWT2_16 is CWT");
+    zassert_equal(conc, 1, "CWT2_16 conc is 1");
+    zassert_equal(ch, 15, "CWT2_16 ch is 15");
+
+    /* CWT Concentrator 3 (47..62) */
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT3_1, &conc, &ch), "CWT3_1 is CWT");
+    zassert_equal(conc, 2, "CWT3_1 conc is 2");
+    zassert_equal(ch, 0, "CWT3_1 ch is 0");
+
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT3_16, &conc, &ch), "CWT3_16 is CWT");
+    zassert_equal(conc, 2, "CWT3_16 conc is 2");
+    zassert_equal(ch, 15, "CWT3_16 ch is 15");
+
+    /* CWT Concentrator 4 (63..78) */
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT4_1, &conc, &ch), "CWT4_1 is CWT");
+    zassert_equal(conc, 3, "CWT4_1 conc is 3");
+    zassert_equal(ch, 0, "CWT4_1 ch is 0");
+
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT4_16, &conc, &ch), "CWT4_16 is CWT");
+    zassert_equal(conc, 3, "CWT4_16 conc is 3");
+    zassert_equal(ch, 15, "CWT4_16 ch is 15");
+
+    /* Out of bounds / NULL pointers */
+    zassert_false(physical_channel_is_cwt(PHYS_CH_MAX, &conc, &ch), "PHYS_CH_MAX is not CWT");
+    zassert_false(physical_channel_is_cwt((physical_channel_id_t)100, NULL, NULL), "100 is not CWT");
+    zassert_true(physical_channel_is_cwt(PHYS_CH_CWT_1, NULL, NULL), "NULL output ptrs handled safely");
 }
 
 ZTEST(sensor_types_suite, test_sensor_role_enumeration_and_validity)

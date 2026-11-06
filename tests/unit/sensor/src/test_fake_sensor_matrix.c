@@ -81,10 +81,10 @@ ZTEST(fake_sensor_matrix_suite, test_fake_sensor_matrix_auto_map_on_update)
     raw_sensor_readings_t raw;
     memset(&raw, 0, sizeof(raw));
     raw.timestamp_us = 55443322ULL;
-    raw.cwt_comm_ok = true;
-    raw.cwt_valid_mask = 0x0003; /* CWT 1 and 2 valid (Supply 0, Supply 1) */
-    raw.cwt_temperatures_c[0] = 11.5f;
-    raw.cwt_temperatures_c[1] = 11.8f;
+    raw.cwt_comm_ok[0] = true;
+    raw.cwt_valid_mask[0] = 0x0003; /* CWT 1 and 2 valid (Supply 0, Supply 1) */
+    raw.cwt_temperatures_c[0][0] = 11.5f;
+    raw.cwt_temperatures_c[0][1] = 11.8f;
     fake_sensor_matrix_set_raw_readings(&raw);
 
     /* Trigger update via port */
