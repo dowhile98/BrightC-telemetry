@@ -25,6 +25,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P2-1, P2-4, P2-8, P2-9, P2-10:
+  - P2-1: Implemented and registered concrete storage providers (`storage_provider_device`, `storage_provider_calibration`, `storage_provider_sensor_cfg`, `storage_provider_baseline`) packing versioned envelopes for all 8 config domains in `composition_root.c` with compile-time slot size assertions.
+  - P2-4: Documented and enforced mandatory boot dependency order in `composition_root.h/.c` (Storage -> Modbus -> Indicators -> Digital Inputs -> HVAC -> Network -> Shell). Added storage dependency guards returning `-EAGAIN` in modbus, network, and hvac initializers. Reversed teardown order in stop/deinit.
+  - P2-8: Replaced `(void)` ignored return casts on `i_config_storage_save`, `ao_storage_register_provider`, `ao_storage_mark_dirty`, `adapter_hvac_actuator_set_hw_config`, and Active Object teardowns with explicit error checks and warnings/errors.
+  - P2-9: Unified `k_default_slaves` table via `default_config_profiles.c` / `default_config_get_modbus_slaves()`, removing duplicate tables in `composition_root.c`.
+  - P2-10: Eliminated magic numbers in Waveshare / Modbus configuration in `composition_root.c`, dynamically querying registry via `modbus_registry_find_by_type()` and using fallback constants.
 - **2026-11-05**: Refactored all 5 Active Objects to canonical 5-phase lifecycle and removed `s_storage_bounce_buffer`.
 - **2026-11-05**: Reorganized `app_container_t` with vertical grouping and added modular subsystem initializers and DIP getters.
 - **2026-11-05**: Fixed hardware device injection in `adapter_di_gpio.c` (passed devices from `composition_root.c`).

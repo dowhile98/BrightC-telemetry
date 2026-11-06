@@ -44,6 +44,11 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P2-5, P2-6, P2-7:
+  - P2-5 (Safe State on Stop): Implemented `ao_hvac_safe_state(ao_hvac_t *self)` de-energizing all compressor, heater, and fan stages to `HVAC_TRI_STATE_OFF` immediately on AO stop and on thread exit.
+  - P2-6 (Double Wait Contract): Aligned `ao_hvac_stop()` with canonical 5-phase lifecycle by removing internal `k_sem_take(&self->stopped_sem)`, leaving synchronization ownership exclusively to `ao_hvac_wait_stopped()`.
+  - P2-7 (Actuator Error Handling): Checked return status of `i_hvac_unit_set_tri_state()` in `ao_hvac_step()`. On failure, logs `LOG_ERR`, increments `self->actuator_fault_count`, and triggers unit fault increment on `hvac_unit_entity_t`.
+  - Added unit tests `test_safe_state_and_lifecycle_contract` and `test_actuator_error_handling` in `test_ao_hvac.c`.
 - **2026-11-06**: Internal On-Board Relay Hardware Integration:
   - Implemented `adapter_relay_gpio.h/.c` providing concrete `i_relay_t` implementation for the 18 internal on-board relays via GPIO expanders (`mcp23s17_2` and `mcp23s17_3`).
   - Configured `mcp23s17_2` channels 0..11 to drive 4 primary AC units x 3 relays each (AA, SM, G) and `mcp23s17_3` channels 0..5 for 6 dedicated alarm outputs, preserving Waveshare 32CH Modbus RTU adapter for optional expansion units 5..8.

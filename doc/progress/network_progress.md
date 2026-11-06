@@ -27,6 +27,9 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P2-2, P2-8:
+  - P2-2 (Wi-Fi Credentials & Default Configuration Security): Defined Kconfig symbols `CONFIG_BRIGHTC_WIFI_DEFAULT_SSID`, `CONFIG_BRIGHTC_WIFI_DEFAULT_PSK`, `CONFIG_BRIGHTC_WIFI_DEFAULT_IP` in `app/Kconfig`. Bound defaults into `default_config_profiles.c` and masked raw credentials in logs.
+  - P2-8 (Eliminate Ignored Returns on Critical Operations): Checked return values of `i_network_stop`, `i_network_start`, `i_network_init`, and `i_network_set_config` in `ao_network.c`, logging errors on failure.
 - **2026-11-05**: Refactored `ao_network` to 5-phase canonical lifecycle.
 - **2026-11-05**: Segregated `i_network` and `i_wifi_control` adhering to ISP.
 - **2026-11-05**: Implemented explicit FSM `net_adapter_fsm_state_t` in `adapter_eth_stm32` and `adapter_wifi_esp_hosted`.

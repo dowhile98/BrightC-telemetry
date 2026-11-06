@@ -27,5 +27,9 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P2-3, P2-9, P2-10:
+  - P2-3 (Modbus Slave ID Kconfig & Dynamic Configuration): Defined `CONFIG_BRIGHTC_DEFAULT_MODBUS_ADDR_MBSL32DI` and `CONFIG_BRIGHTC_DEFAULT_MODBUS_ADDR_WAVESHARE_RELAY` in `app/Kconfig`. Added `app_facade_modbus_get_slave()` and shell command `modbus slave <id> ...` with EEPROM persistence.
+  - P2-9 (Unified `k_default_slaves`): Centralized Modbus default slaves in `default_config_profiles.c/.h` accessed via `default_config_get_modbus_slaves()`, removing duplicated tables in `composition_root.c`.
+  - P2-10 (Remove Magic Numbers in Waveshare / Modbus Setup): Defined `DEFAULT_MODBUS_WAVESHARE_TIMEOUT_MS` and queried registry dynamically with `modbus_registry_find_by_type()`.
 - **2026-11-05**: Refactored `ao_modbus` to 5-phase canonical lifecycle.
 - **2026-11-05**: Enriched `adapter_relay_modbus` with operational metrics (`cycle_count`, `last_toggle_ms`, `is_fault`).

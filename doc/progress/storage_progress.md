@@ -25,6 +25,8 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit finding P2-1:
+  - Eliminated zombie configuration domains by defining types (`config_device_t`, `config_calibration_t`, `config_sensor_cfg_t`, `config_baseline_t`), default profile accessors, and registering active providers for all 8 domains with versioned envelope packing and layout assertions. Added unit tests in `test_composition_root.c` validating provider registration and persistability across all 8 domains.
 - **2026-11-06**: Resolved audit findings P1-6, P1-7, P1-8, P1-9, P1-10:
   - Added binary `config_envelope_t` header (`0x4243544C`) with CRC16 and version checking.
   - Fixed silent buffer truncation in `storage_api_load()`: returns `-ENOBUFS` on overflow.

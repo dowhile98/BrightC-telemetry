@@ -23,5 +23,8 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit finding P2-11 (Bus Load & SPI Batching for MCP23S17):
+  - Added 16-bit port value caching (`cached_val`, `cache_valid`, `cache_time_ms`) to `adapter_di_gpio.c/.h` using `gpio_port_get_raw()`.
+  - Batching reduced SPI transactions from 24 individual reads down to 2 transactions per 20ms scan interval (1 per chip) with timestamp-invalidated cache coherency.
 - **2026-11-05**: Refactored `ao_digital_input` to 5-phase canonical lifecycle.
 - **2026-11-05**: Removed `DEVICE_DT_GET()` from `adapter_di_gpio.c` and injected `mcp23s17_0`, `mcp23s17_1` from `composition_root.c`.
