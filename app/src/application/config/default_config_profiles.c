@@ -385,21 +385,21 @@ const modbus_slave_descriptor_t k_default_modbus_slaves[] = {
         .is_enabled = true,
     },
     {
-        .device_id = 3U,
+        .device_id = DEFAULT_MODBUS_DEV_ID_MBSL32DI,
         .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 3U,
+        .slave_addr = DEFAULT_MODBUS_DEV_ID_MBSL32DI,
         .dev_type = MODBUS_DEV_TYPE_MBSL32DI,
         .poll_interval_ms = 1000U,
         .timeout_ms = 300U,
         .is_enabled = true,
     },
     {
-        .device_id = 4U,
+        .device_id = DEFAULT_MODBUS_DEV_ID_WAVESHARE_RELAY,
         .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 4U,
+        .slave_addr = DEFAULT_MODBUS_DEV_ID_WAVESHARE_RELAY,
         .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
         .poll_interval_ms = 1000U,
-        .timeout_ms = 300U,
+        .timeout_ms = DEFAULT_MODBUS_WAVESHARE_TIMEOUT_MS,
         .is_enabled = true,
     },
 };
@@ -428,12 +428,12 @@ const net_wifi_config_t k_default_net_wifi_cfg = {
         .ip_mode = NET_IP_MODE_DHCP,
     },
     .ap = {
-        .ssid = "BrightC-AP",
-        .psk = "12345678",
+        .ssid = CONFIG_BRIGHTC_WIFI_DEFAULT_SSID,
+        .psk = CONFIG_BRIGHTC_WIFI_DEFAULT_PSK,
         .security = NET_WIFI_SEC_WPA2_PSK,
         .channel = 9U,
         .max_clients = 5U,
-        .ap_ip_addr = 0xC0A80401,     /* 192.168.4.1 */
+        .ap_ip_addr = CONFIG_BRIGHTC_WIFI_DEFAULT_IP,
         .ap_subnet_mask = 0xFFFFFF00, /* 255.255.255.0 */
     },
 };
@@ -498,3 +498,56 @@ const net_wifi_config_t *default_config_get_net_wifi_cfg(void)
 {
     return &k_default_net_wifi_cfg;
 }
+
+/* ========================================================================= */
+/* Default Configurations for Device, Calibration, Sensor, and Baseline (P2-1) */
+/* ========================================================================= */
+
+const config_device_t k_default_device_cfg = {
+    .serial_number = "BRIGHTC-V3-0001",
+    .hardware_rev = "REV_F",
+    .device_alias = "BrightC-Telemetry-Controller",
+};
+
+const config_calibration_t k_default_calibration_cfg = {
+    .analog_offsets = {0},
+    .analog_gains = {
+        SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY,
+        SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY,
+        SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY,
+        SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY,
+    },
+};
+
+const config_sensor_cfg_t k_default_sensor_cfg = {
+    .count = 0U,
+    .channels = {{0}},
+};
+
+const config_baseline_t k_default_baseline_cfg = {
+    .beta = {0.0, 0.0, 0.0, 0.0},
+    .eta_base = 1.0,
+    .delta_t_base = {0.0f},
+    .t_inj_base = {0.0f},
+};
+
+const config_device_t *default_config_get_device_cfg(void)
+{
+    return &k_default_device_cfg;
+}
+
+const config_calibration_t *default_config_get_calibration_cfg(void)
+{
+    return &k_default_calibration_cfg;
+}
+
+const config_sensor_cfg_t *default_config_get_sensor_cfg(void)
+{
+    return &k_default_sensor_cfg;
+}
+
+const config_baseline_t *default_config_get_baseline_cfg(void)
+{
+    return &k_default_baseline_cfg;
+}
+

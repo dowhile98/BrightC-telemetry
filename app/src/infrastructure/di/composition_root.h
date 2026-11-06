@@ -63,12 +63,14 @@ extern "C" {
 /**
  * @brief Every object of the application, wired together.
  *
- * Organized vertically by subsystem:
- * - Subsystem 1: Modbus Master & Relays (`modbus`)
- * - Subsystem 2: Digital Inputs & Contact Alarms (`di`)
- * - Subsystem 3: Configuration & Persistent Storage (`storage`)
- * - Subsystem 4: Network (`network`)
- * - Subsystem 5: System Indicators (`indicators`)
+ * Mandatory boot dependency sequence:
+ * 1. Storage (`composition_root_init_storage`)
+ * 2. Modbus (`composition_root_init_modbus`)
+ * 3. System Indicators (`composition_root_init_indicators`)
+ * 4. Digital Inputs (`composition_root_init_digital_inputs`)
+ * 5. HVAC (`composition_root_init_hvac`)
+ * 6. Network (`composition_root_init_network`)
+ * 7. Presentation / Shell
  *
  * Declared once (`static app_container_t g_app` in main.c) and passed by
  * reference to every component. Adapters live here by value so that no module
@@ -397,8 +399,8 @@ int composition_root_init_hvac(app_container_t *self);
 /**
  * @brief Sequence orchestrator: create, configure, and wire every subsystem.
  *
- * Calls init_modbus, init_storage, init_network, init_indicators,
- * init_digital_inputs, then composition_root_wire. Idempotent.
+ * Boot sequence: init_storage, init_modbus, init_indicators,
+ * init_digital_inputs, init_hvac, init_network, then composition_root_wire. Idempotent.
  *
  * @param[out] self Container to initialise.
  * @return 0 on success, negative errno on failure.

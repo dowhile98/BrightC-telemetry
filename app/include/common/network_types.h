@@ -384,13 +384,25 @@ static inline int network_default_wifi_config(net_wifi_config_t *cfg)
     memset(cfg, 0, sizeof(*cfg));
     cfg->mode = (uint8_t)NET_WIFI_MODE_AP;
 
+#ifndef CONFIG_BRIGHTC_WIFI_DEFAULT_SSID
+#define CONFIG_BRIGHTC_WIFI_DEFAULT_SSID "BrightC-AP"
+#endif
+
+#ifndef CONFIG_BRIGHTC_WIFI_DEFAULT_PSK
+#define CONFIG_BRIGHTC_WIFI_DEFAULT_PSK "12345678"
+#endif
+
+#ifndef CONFIG_BRIGHTC_WIFI_DEFAULT_IP
+#define CONFIG_BRIGHTC_WIFI_DEFAULT_IP 0xC0A80401U /* 192.168.4.1 */
+#endif
+
     /* Soft-AP parameters */
-    strncpy(cfg->ap.ssid, "BrightC-AP", sizeof(cfg->ap.ssid) - 1U);
-    strncpy(cfg->ap.psk, "12345678", sizeof(cfg->ap.psk) - 1U);
+    strncpy(cfg->ap.ssid, CONFIG_BRIGHTC_WIFI_DEFAULT_SSID, sizeof(cfg->ap.ssid) - 1U);
+    strncpy(cfg->ap.psk, CONFIG_BRIGHTC_WIFI_DEFAULT_PSK, sizeof(cfg->ap.psk) - 1U);
     cfg->ap.security = (uint8_t)NET_WIFI_SEC_WPA2_PSK;
     cfg->ap.channel = 9U;
     cfg->ap.max_clients = NET_WIFI_MAX_CLIENTS_DEFAULT;
-    cfg->ap.ap_ip_addr = 0xC0A80401U;     /* 192.168.4.1 */
+    cfg->ap.ap_ip_addr = CONFIG_BRIGHTC_WIFI_DEFAULT_IP;
     cfg->ap.ap_subnet_mask = 0xFFFFFF00U; /* 255.255.255.0 */
 
     return 0;

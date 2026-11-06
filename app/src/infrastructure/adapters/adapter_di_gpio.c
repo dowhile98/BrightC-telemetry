@@ -68,6 +68,36 @@ int adapter_di_gpio_init(adapter_di_gpio_t *self,
     }
 
     self->is_ready = true;
+    self->mcp23s17_cache_time_ms[0] = -1;
+    self->mcp23s17_cache_time_ms[1] = -1;
+    (void)adapter_di_gpio_refresh(self);
+    return 0;
+}
+
+int adapter_di_gpio_refresh(adapter_di_gpio_t *self)
+{
+    if (self == NULL || !self->is_ready) {
+        return -EINVAL;
+    }
+
+    int64_t now = k_uptime_get();
+
+    for (size_t d = 0U; d < 2U; d++) {
+        if (self->mcp23s17[d] != NULL && device_is_ready(self->mcp23s17[d])) {
+            gpio_port_value_t port_val = 0;
+            int ret = gpio_port_get_raw(self->mcp23s17[d], &port_val);
+            if (ret == 0) {
+                self->mcp23s17_cached_value[d] = (uint16_t)port_val;
+                self->mcp23s17_cache_valid[d] = true;
+                self->mcp23s17_cache_time_ms[d] = now;
+            } else {
+                self->mcp23s17_cache_valid[d] = false;
+            }
+        } else {
+            self->mcp23s17_cache_valid[d] = false;
+        }
+    }
+
     return 0;
 }
 
@@ -107,6 +137,27 @@ int adapter_di_gpio_read(void *ctx,
         if (dev_id >= 2U) {
             return -EINVAL;
         }
+
+        int64_t now = k_uptime_get();
+        if (!self->mcp23s17_cache_valid[dev_id] || now != self->mcp23s17_cache_time_ms[dev_id]) {
+            const struct device *dev = self->mcp23s17[dev_id];
+            if (dev != NULL && device_is_ready(dev)) {
+                gpio_port_value_t port_val = 0;
+                int ret = gpio_port_get_raw(dev, &port_val);
+                if (ret == 0) {
+                    self->mcp23s17_cached_value[dev_id] = (uint16_t)port_val;
+                    self->mcp23s17_cache_valid[dev_id] = true;
+                    self->mcp23s17_cache_time_ms[dev_id] = now;
+                }
+            }
+        }
+
+        if (self->mcp23s17_cache_valid[dev_id]) {
+            *out_raw = ((self->mcp23s17_cached_value[dev_id] & (1U << pin_idx)) != 0U);
+            return 0;
+        }
+
+        /* Fallback if cached read was unavailable */
         const struct device *dev = self->mcp23s17[dev_id];
         if (dev == NULL || !device_is_ready(dev)) {
             return -ENODEV;

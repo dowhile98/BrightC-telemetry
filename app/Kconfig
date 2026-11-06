@@ -34,3 +34,43 @@ config APP_MODBUS_INTER_POLL_DELAY_MS
 	  RS-485 bus. Gives slave transceivers time to release the bus and
 	  satisfies the Modbus RTU inter-frame silence interval (t3.5+).
 
+menu "BrightC Network Configuration"
+
+config BRIGHTC_WIFI_DEFAULT_SSID
+	string "Default Wi-Fi Soft-AP SSID"
+	default "BrightC-AP"
+	help
+	  Default SSID broadcasted by the soft-AP interface.
+
+config BRIGHTC_WIFI_DEFAULT_PSK
+	string "Default Wi-Fi Soft-AP Pre-Shared Key (PSK)"
+	default "12345678"
+	help
+	  Default WPA2 pre-shared key for the soft-AP interface.
+
+config BRIGHTC_WIFI_DEFAULT_IP
+	hex "Default Wi-Fi Soft-AP IPv4 Address"
+	default 0xC0A80401
+	help
+	  Default IPv4 address of the soft-AP (0xC0A80401 = 192.168.4.1).
+
+endmenu
+
+menu "BrightC Modbus Configuration"
+
+config BRIGHTC_DEFAULT_MODBUS_ADDR_MBSL32DI
+	int "Default Modbus slave address for MBSL32DI digital input"
+	default 3
+	range 1 247
+	help
+	  Default RTU slave address for 32-channel digital input module.
+
+config BRIGHTC_DEFAULT_MODBUS_ADDR_WAVESHARE_RELAY
+	int "Default Modbus slave address for Waveshare 32CH relay"
+	default 4
+	range 1 247
+	help
+	  Default RTU slave address for Waveshare 32-channel Modbus relay module.
+
+endmenu
+

@@ -511,5 +511,65 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     zassert_within(status.highest_temp[0], 25.0f, 0.001f, "Highest temp should be 25.0 C");
 }
 
+ZTEST(ao_hvac_suite, test_safe_state_and_lifecycle_contract)
+{
+    /* P2-5 & P2-6: Verify safe state forces relays OFF and stop/wait_stopped contract works */
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* Pre-load units into active ON */
+    fake_hvac_unit_set_unit_state(0, HVAC_TRI_STATE_ON);
+    fake_hvac_unit_set_unit_state(1, HVAC_TRI_STATE_BYPASS);
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 state");
+    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_BYPASS, "Unit 1 state");
+
+    /* Explicit safe state invocation */
+    ret = ao_hvac_safe_state(&s_ao);
+    zassert_equal(ret, 0, "safe_state failed");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be forced OFF");
+    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must be forced OFF");
+
+    /* Start and then stop AO - stopping should invoke safe_state and signal stopped_sem */
+    ret = ao_hvac_start(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_start failed");
+    zassert_true(ao_hvac_is_running(&s_ao), "Should be running");
+
+    fake_hvac_unit_set_unit_state(0, HVAC_TRI_STATE_ON);
+
+    ret = ao_hvac_stop(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_stop failed");
+
+    ret = ao_hvac_wait_stopped(&s_ao, K_MSEC(200));
+    zassert_equal(ret, 0, "ao_hvac_wait_stopped should succeed without double wait");
+    zassert_false(ao_hvac_is_running(&s_ao), "Should no longer be running");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF after stop");
+}
+
+ZTEST(ao_hvac_suite, test_actuator_error_handling)
+{
+    /* P2-7: Handle actuator errors in ao_hvac_step */
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+    zassert_equal(s_ao.actuator_fault_count, 0U, "Initial fault count must be 0");
+
+    /* Inject set_tri_state failure */
+    fake_hvac_unit_set_errors(-EIO, 0);
+
+    /* Feed hot temperatures (26 C) to demand cooling actuation */
+    float rtd_temps[5] = { 26.0f, 26.0f, 26.0f, 26.0f, 26.0f };
+    ret = ao_hvac_feed_temperatures(&s_ao, rtd_temps, 0x001FU, 5U);
+    zassert_equal(ret, 0, "ao_hvac_feed_temperatures failed");
+
+    /* Stepping should encounter actuator errors and increment fault count */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step should run");
+    zassert_true(s_ao.actuator_fault_count > 0U, "Actuator fault counter must be incremented on failure");
+
+    /* Reset errors */
+    fake_hvac_unit_set_errors(0, 0);
+}
+
 
 

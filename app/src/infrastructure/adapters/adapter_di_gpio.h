@@ -27,7 +27,19 @@ typedef struct {
     uint32_t            modbus_raw_inputs;
     bool                modbus_valid;
     bool                is_ready;
+
+    int64_t             mcp23s17_cache_time_ms[2];
+    uint16_t            mcp23s17_cached_value[2];
+    bool                mcp23s17_cache_valid[2];
 } adapter_di_gpio_t;
+
+/**
+ * @brief Explicitly refresh the 16-bit cached port values from MCP23S17 expanders in a single batched SPI read.
+ *
+ * @param[in,out] self Adapter instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int adapter_di_gpio_refresh(adapter_di_gpio_t *self);
 
 /**
  * @brief Update cached external Modbus digital input bitmask (e.g. from MBSL32DI).

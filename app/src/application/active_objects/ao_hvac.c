@@ -59,6 +59,7 @@ static void ao_hvac_thread_entry(void *p1, void *p2, void *p3)
 
         LOG_INF("ao_hvac thread exited inner loop");
         self->is_running = false;
+        (void)ao_hvac_safe_state(self);
         (void)k_sem_give(&self->stopped_sem);
     }
 
@@ -198,7 +199,12 @@ int ao_hvac_step(ao_hvac_t *self)
         if (self->unit_active[u]) {
             hvac_tri_state_t tri = hvac_unit_entity_get_tri_state(&self->units[u]);
             if (i_hvac_unit_is_bound(&self->actuator_port)) {
-                (void)i_hvac_unit_set_tri_state(&self->actuator_port, u, tri);
+                int act_err = i_hvac_unit_set_tri_state(&self->actuator_port, u, tri);
+                if (act_err != 0) {
+                    LOG_ERR("Actuator failed for unit %u: %d", u, act_err);
+                    self->actuator_fault_count++;
+                    hvac_unit_entity_increment_fault(&self->units[u]);
+                }
             }
         }
     }
@@ -227,6 +233,30 @@ int ao_hvac_step(ao_hvac_t *self)
     return 0;
 }
 
+int ao_hvac_safe_state(ao_hvac_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+
+    for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+        if (self->unit_active[u]) {
+            hvac_unit_entity_request_stop(&self->units[u], false);
+            if (i_hvac_unit_is_bound(&self->actuator_port)) {
+                int err = i_hvac_unit_set_tri_state(&self->actuator_port, u, HVAC_TRI_STATE_OFF);
+                if (err != 0) {
+                    LOG_ERR("Failed to force safe state on unit %u: %d", u, err);
+                }
+            }
+        }
+    }
+
+    k_mutex_unlock(&self->lock);
+    return 0;
+}
+
 int ao_hvac_stop(ao_hvac_t *self)
 {
     if (self == NULL || !self->is_initialized) {
@@ -246,17 +276,15 @@ int ao_hvac_stop(ao_hvac_t *self)
         (void)k_msgq_put(self->queue, &evt, K_NO_WAIT);
     }
 
-    return k_sem_take(&self->stopped_sem, K_MSEC(AO_HVAC_STOP_WAIT_MS));
+    (void)ao_hvac_safe_state(self);
+
+    return 0;
 }
 
 int ao_hvac_wait_stopped(ao_hvac_t *self, k_timeout_t timeout)
 {
     if (self == NULL || !self->is_initialized) {
         return -EINVAL;
-    }
-
-    if (!self->is_running) {
-        return 0;
     }
 
     return k_sem_take(&self->stopped_sem, timeout);

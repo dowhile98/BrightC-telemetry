@@ -95,7 +95,16 @@ typedef struct {
     volatile bool     is_running;
     volatile bool     terminate;
     bool              is_initialized;
+    uint32_t          actuator_fault_count; /**< Counter of failed actuation attempts */
 } ao_hvac_t;
+
+/**
+ * @brief Force all HVAC units to a safe de-energized state (all relays OFF).
+ *
+ * @param[in,out] self Active Object instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_hvac_safe_state(ao_hvac_t *self);
 
 /**
  * @brief Phase 1: Initialize the HVAC Active Object.
@@ -142,7 +151,8 @@ int ao_hvac_step(ao_hvac_t *self);
 /**
  * @brief Phase 4: Stop the HVAC Active Object gracefully.
  *
- * Signals stop, unblocks loop, and waits for confirmation via stopped_sem.
+ * Signals stop, forces safe state, and unblocks loop.
+ * Does not block waiting on stopped_sem (use ao_hvac_wait_stopped).
  *
  * @param[in,out] self Active Object instance.
  * @return 0 on success, negative errno on error.

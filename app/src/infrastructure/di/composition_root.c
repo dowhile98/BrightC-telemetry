@@ -23,6 +23,14 @@ BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 512 
              "net_eth_config_t envelope exceeds storage slot size (512 - 32 bytes)");
 BUILD_ASSERT(sizeof(net_wifi_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
              "net_wifi_config_t envelope exceeds storage slot size (512 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= 512 - 32,
+             "config_device_t envelope exceeds storage slot size (512 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= 512 - 32,
+             "config_calibration_t envelope exceeds storage slot size (512 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_sensor_cfg_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
+             "config_sensor_cfg_t envelope exceeds storage slot size (1024 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_baseline_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
+             "config_baseline_t envelope exceeds storage slot size (1024 - 32 bytes)");
 
 /* EEPROM capacity check: 32 KB AT24C256C */
 #define EEPROM_AT24C256C_CAPACITY_BYTES 32768U
@@ -123,6 +131,54 @@ static int storage_provider_hvac(void *ctx, config_domain_t domain,
     return config_envelope_pack(CONFIG_DOMAIN_HVAC, &cfg, sizeof(cfg), out_buf, max_size, out_size);
 }
 
+static int storage_provider_device(void *ctx, config_domain_t domain,
+                                   void *out_buf, size_t max_size, size_t *out_size)
+{
+    ARG_UNUSED(ctx);
+    if (domain != CONFIG_DOMAIN_DEVICE || out_buf == NULL)
+    {
+        return -EINVAL;
+    }
+    const config_device_t *cfg = default_config_get_device_cfg();
+    return config_envelope_pack(CONFIG_DOMAIN_DEVICE, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+}
+
+static int storage_provider_calibration(void *ctx, config_domain_t domain,
+                                        void *out_buf, size_t max_size, size_t *out_size)
+{
+    ARG_UNUSED(ctx);
+    if (domain != CONFIG_DOMAIN_CALIBRATION || out_buf == NULL)
+    {
+        return -EINVAL;
+    }
+    const config_calibration_t *cfg = default_config_get_calibration_cfg();
+    return config_envelope_pack(CONFIG_DOMAIN_CALIBRATION, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+}
+
+static int storage_provider_sensor_cfg(void *ctx, config_domain_t domain,
+                                       void *out_buf, size_t max_size, size_t *out_size)
+{
+    ARG_UNUSED(ctx);
+    if (domain != CONFIG_DOMAIN_SENSOR_CFG || out_buf == NULL)
+    {
+        return -EINVAL;
+    }
+    const config_sensor_cfg_t *cfg = default_config_get_sensor_cfg();
+    return config_envelope_pack(CONFIG_DOMAIN_SENSOR_CFG, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+}
+
+static int storage_provider_baseline(void *ctx, config_domain_t domain,
+                                     void *out_buf, size_t max_size, size_t *out_size)
+{
+    ARG_UNUSED(ctx);
+    if (domain != CONFIG_DOMAIN_BASELINE || out_buf == NULL)
+    {
+        return -EINVAL;
+    }
+    const config_baseline_t *cfg = default_config_get_baseline_cfg();
+    return config_envelope_pack(CONFIG_DOMAIN_BASELINE, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+}
+
 #if defined(CONFIG_ZTEST)
 #include "fake_network.h"
 #include "fake_config_storage.h"
@@ -144,6 +200,12 @@ int composition_root_init_modbus(app_container_t *self)
     if (self->modbus.initialized)
     {
         return 0;
+    }
+
+    if (!self->storage.initialized)
+    {
+        LOG_ERR("storage not initialized; boot sequence requires storage before modbus");
+        return -EAGAIN;
     }
 
     (void)memcpy(self->modbus.bus_cfg, k_default_modbus_bus_cfg, sizeof(self->modbus.bus_cfg));
@@ -230,7 +292,11 @@ int composition_root_init_modbus(app_container_t *self)
                         self->modbus.bus_cfg[bus] = bcfg;
                         if (self->modbus.client_port[bus].api != NULL)
                         {
-                            (void)i_modbus_client_set_bus_cfg(&self->modbus.client_port[bus], &bcfg);
+                            int cfg_rc = i_modbus_client_set_bus_cfg(&self->modbus.client_port[bus], &bcfg);
+                            if (cfg_rc != 0)
+                            {
+                                LOG_WRN("bus %u: failed to set runtime bus cfg: %d", bus, cfg_rc);
+                            }
                         }
                     }
                 }
@@ -241,7 +307,11 @@ int composition_root_init_modbus(app_container_t *self)
                 size_t export_size = 0U;
                 if (modbus_registry_export(&self->modbus.registry_impl, modbus_blob, sizeof(modbus_blob), &export_size) == 0)
                 {
-                    (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
+                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
+                    if (save_rc != 0)
+                    {
+                        LOG_ERR("Failed to persist default Modbus config: %d", save_rc);
+                    }
                 }
             }
         }
@@ -251,7 +321,11 @@ int composition_root_init_modbus(app_container_t *self)
             size_t export_size = 0U;
             if (modbus_registry_export(&self->modbus.registry_impl, modbus_blob, sizeof(modbus_blob), &export_size) == 0)
             {
-                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
+                if (save_rc != 0)
+                {
+                    LOG_ERR("Failed to persist default Modbus config: %d", save_rc);
+                }
             }
         }
     }
@@ -272,8 +346,8 @@ int composition_root_init_modbus(app_container_t *self)
     }
 
     uint8_t waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
-    uint8_t waveshare_addr = 4U;
-    uint16_t waveshare_timeout_ms = 300U;
+    uint8_t waveshare_addr = DEFAULT_MODBUS_DEV_ID_WAVESHARE_RELAY;
+    uint16_t waveshare_timeout_ms = DEFAULT_MODBUS_WAVESHARE_TIMEOUT_MS;
 
     modbus_slave_descriptor_t ws_desc;
     if (modbus_registry_find_by_type(&self->modbus.registry_impl,
@@ -384,6 +458,12 @@ int composition_root_init_network(app_container_t *self)
         return 0;
     }
 
+    if (!self->storage.initialized)
+    {
+        LOG_ERR("storage not initialized; boot sequence requires storage before network");
+        return -EAGAIN;
+    }
+
     k_msgq_init(&self->network.queue, self->network.queue_buf, sizeof(ao_network_event_t),
                 AO_NETWORK_QUEUE_DEPTH);
 
@@ -458,8 +538,12 @@ int composition_root_init_network(app_container_t *self)
             if (config_envelope_pack(CONFIG_DOMAIN_NET_ETH, eth_cfg_ptr, sizeof(*eth_cfg_ptr),
                                      eth_buf, sizeof(eth_buf), &pack_len) == 0)
             {
-                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                            eth_buf, pack_len);
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
+                                                    eth_buf, pack_len);
+                if (save_rc != 0)
+                {
+                    LOG_ERR("Failed to persist default net_eth configuration: %d", save_rc);
+                }
             }
         }
     }
@@ -490,8 +574,12 @@ int composition_root_init_network(app_container_t *self)
             if (config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, wifi_cfg_ptr, sizeof(*wifi_cfg_ptr),
                                      wifi_buf, sizeof(wifi_buf), &pack_len) == 0)
             {
-                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                            wifi_buf, pack_len);
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
+                                                    wifi_buf, pack_len);
+                if (save_rc != 0)
+                {
+                    LOG_ERR("Failed to persist default net_wifi configuration: %d", save_rc);
+                }
             }
         }
     }
@@ -669,6 +757,12 @@ int composition_root_init_hvac(app_container_t *self)
         return 0;
     }
 
+    if (!self->storage.initialized)
+    {
+        LOG_ERR("storage not initialized; boot sequence requires storage before hvac");
+        return -EAGAIN;
+    }
+
     /* 1. Synchronous boot read from storage for HVAC configuration */
     config_hvac_t loaded_hvac_cfg;
     const config_hvac_t *hvac_cfg_ptr = default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
@@ -696,8 +790,12 @@ int composition_root_init_hvac(app_container_t *self)
             if (config_envelope_pack(CONFIG_DOMAIN_HVAC, hvac_cfg_ptr, sizeof(*hvac_cfg_ptr),
                                      hvac_buf, sizeof(hvac_buf), &pack_len) == 0)
             {
-                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                            hvac_buf, pack_len);
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                                    hvac_buf, pack_len);
+                if (save_rc != 0)
+                {
+                    LOG_ERR("Failed to persist default HVAC config: %d", save_rc);
+                }
             }
         }
     }
@@ -800,16 +898,63 @@ int composition_root_wire(app_container_t *self)
 
     if (self->storage.initialized)
     {
-        (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_NET_ETH,
-                                           storage_provider_eth, self);
-        (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_NET_WIFI,
-                                           storage_provider_wifi, self);
-        (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_MODBUS,
-                                           storage_provider_modbus, self);
+        int reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_DEVICE,
+                                                   storage_provider_device, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for DEVICE: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_MODBUS,
+                                               storage_provider_modbus, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for MODBUS: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_NET_ETH,
+                                               storage_provider_eth, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for NET_ETH: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_NET_WIFI,
+                                               storage_provider_wifi, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for NET_WIFI: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_CALIBRATION,
+                                               storage_provider_calibration, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for CALIBRATION: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_SENSOR_CFG,
+                                               storage_provider_sensor_cfg, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for SENSOR_CFG: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_BASELINE,
+                                               storage_provider_baseline, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for BASELINE: %d", reg_err);
+        }
+
         if (self->hvac.initialized)
         {
-            (void)ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_HVAC,
-                                               storage_provider_hvac, self);
+            reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_HVAC,
+                                                   storage_provider_hvac, self);
+            if (reg_err != 0)
+            {
+                LOG_WRN("failed to register storage provider for HVAC: %d", reg_err);
+            }
         }
     }
 
@@ -866,12 +1011,6 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
-    err = composition_root_init_network(self);
-    if (err != 0)
-    {
-        return err;
-    }
-
     err = composition_root_init_indicators(self);
     if (err != 0)
     {
@@ -885,6 +1024,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_hvac(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_network(self);
     if (err != 0)
     {
         return err;
@@ -990,49 +1135,99 @@ int composition_root_stop(app_container_t *self)
         return -EINVAL;
     }
 
-    /* 1. Stop Modbus polling threads (wait up to 1000 ms) */
+    int rc = 0;
+
+    /* 1. Stop network coordinator (wait up to 2000 ms) */
+    if (self->network.initialized)
+    {
+        rc = ao_network_stop(&self->network.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_network_stop returned %d", rc);
+        }
+        rc = ao_network_wait_stopped(&self->network.ao, K_MSEC(2000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_network_wait_stopped returned %d", rc);
+        }
+    }
+
+    /* 2. Stop HVAC coordinator (wait up to 1000 ms) */
+    if (self->hvac.initialized)
+    {
+        rc = ao_hvac_stop(&self->hvac.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_hvac_stop returned %d", rc);
+        }
+        rc = ao_hvac_wait_stopped(&self->hvac.ao, K_MSEC(1000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_hvac_wait_stopped returned %d", rc);
+        }
+    }
+
+    /* 3. Stop digital inputs (wait up to 200 ms) */
+    if (self->di.initialized)
+    {
+        rc = ao_digital_input_stop(&self->di.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_digital_input_stop returned %d", rc);
+        }
+        rc = ao_digital_input_wait_stopped(&self->di.ao, K_MSEC(200));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_digital_input_wait_stopped returned %d", rc);
+        }
+    }
+
+    /* 4. Stop Modbus polling threads (wait up to 1000 ms) */
     if (self->modbus.initialized)
     {
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
         {
-            (void)ao_modbus_stop(&self->modbus.ao[bus]);
-            (void)ao_modbus_wait_stopped(&self->modbus.ao[bus], K_MSEC(1000));
+            rc = ao_modbus_stop(&self->modbus.ao[bus]);
+            if (rc != 0 && rc != -EALREADY)
+            {
+                LOG_WRN("ao_modbus_stop bus %u returned %d", bus, rc);
+            }
+            rc = ao_modbus_wait_stopped(&self->modbus.ao[bus], K_MSEC(1000));
+            if (rc != 0)
+            {
+                LOG_WRN("ao_modbus_wait_stopped bus %u returned %d", bus, rc);
+            }
         }
-    }
-
-    /* 2. Stop digital inputs (wait up to 200 ms) */
-    if (self->di.initialized)
-    {
-        (void)ao_digital_input_stop(&self->di.ao);
-        (void)ao_digital_input_wait_stopped(&self->di.ao, K_MSEC(200));
-    }
-
-    /* 3. Stop storage coordinator (wait up to 2000 ms - flushes pending changes) */
-    if (self->storage.initialized)
-    {
-        (void)ao_storage_stop(&self->storage.ao);
-        (void)ao_storage_wait_stopped(&self->storage.ao, K_MSEC(2000));
-    }
-
-    /* 4. Stop network coordinator (wait up to 2000 ms) */
-    if (self->network.initialized)
-    {
-        (void)ao_network_stop(&self->network.ao);
-        (void)ao_network_wait_stopped(&self->network.ao, K_MSEC(2000));
     }
 
     /* 5. Stop system indicators (wait up to 200 ms) */
     if (self->indicators.initialized)
     {
-        (void)ao_system_indicator_stop(&self->indicators.ao);
-        (void)ao_system_indicator_wait_stopped(&self->indicators.ao, K_MSEC(200));
+        rc = ao_system_indicator_stop(&self->indicators.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_system_indicator_stop returned %d", rc);
+        }
+        rc = ao_system_indicator_wait_stopped(&self->indicators.ao, K_MSEC(200));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_system_indicator_wait_stopped returned %d", rc);
+        }
     }
 
-    /* 6. Stop HVAC coordinator (wait up to 1000 ms) */
-    if (self->hvac.initialized)
+    /* 6. Stop storage coordinator (wait up to 2000 ms - flushes pending changes) */
+    if (self->storage.initialized)
     {
-        (void)ao_hvac_stop(&self->hvac.ao);
-        (void)ao_hvac_wait_stopped(&self->hvac.ao, K_MSEC(1000));
+        rc = ao_storage_stop(&self->storage.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_storage_stop returned %d", rc);
+        }
+        rc = ao_storage_wait_stopped(&self->storage.ao, K_MSEC(2000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_storage_wait_stopped returned %d", rc);
+        }
     }
 
     self->is_running = false;
@@ -1052,46 +1247,74 @@ int composition_root_deinit(app_container_t *self)
     }
 
     /* Stop all Active Objects gracefully first */
-    (void)composition_root_stop(self);
+    int rc = composition_root_stop(self);
+    if (rc != 0)
+    {
+        LOG_WRN("composition_root_stop returned %d during deinit", rc);
+    }
 
     /* Deinitialize subsystems in reverse order of initialization */
+    if (self->network.initialized)
+    {
+        rc = ao_network_deinit(&self->network.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_network_deinit returned %d", rc);
+        }
+        self->network.initialized = false;
+    }
+
     if (self->hvac.initialized)
     {
-        (void)ao_hvac_deinit(&self->hvac.ao);
+        rc = ao_hvac_deinit(&self->hvac.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_hvac_deinit returned %d", rc);
+        }
         self->hvac.initialized = false;
     }
 
     if (self->di.initialized)
     {
-        (void)ao_digital_input_deinit(&self->di.ao);
+        rc = ao_digital_input_deinit(&self->di.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_digital_input_deinit returned %d", rc);
+        }
         self->di.initialized = false;
     }
 
     if (self->indicators.initialized)
     {
-        (void)ao_system_indicator_deinit(&self->indicators.ao);
+        rc = ao_system_indicator_deinit(&self->indicators.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_system_indicator_deinit returned %d", rc);
+        }
         self->indicators.initialized = false;
-    }
-
-    if (self->network.initialized)
-    {
-        (void)ao_network_deinit(&self->network.ao);
-        self->network.initialized = false;
-    }
-
-    if (self->storage.initialized)
-    {
-        (void)ao_storage_deinit(&self->storage.ao);
-        self->storage.initialized = false;
     }
 
     if (self->modbus.initialized)
     {
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
         {
-            (void)ao_modbus_deinit(&self->modbus.ao[bus]);
+            rc = ao_modbus_deinit(&self->modbus.ao[bus]);
+            if (rc != 0)
+            {
+                LOG_WRN("ao_modbus_deinit bus %u returned %d", bus, rc);
+            }
         }
         self->modbus.initialized = false;
+    }
+
+    if (self->storage.initialized)
+    {
+        rc = ao_storage_deinit(&self->storage.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_storage_deinit returned %d", rc);
+        }
+        self->storage.initialized = false;
     }
 
     self->is_initialized = false;
@@ -1227,7 +1450,11 @@ int app_container_set_hvac_group_config(app_container_t *self, uint8_t group_id,
 
     if (self->storage.initialized)
     {
-        (void)ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
+        int rc = ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
+        if (rc != 0)
+        {
+            LOG_WRN("failed to mark storage dirty for HVAC group %u: %d", group_id, rc);
+        }
     }
 
     return 0;
@@ -1249,7 +1476,11 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
     {
         for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
         {
-            (void)adapter_hvac_actuator_set_hw_config(&self->hvac.actuator_adapter, u, &cfg->units[u]);
+            int act_rc = adapter_hvac_actuator_set_hw_config(&self->hvac.actuator_adapter, u, &cfg->units[u]);
+            if (act_rc != 0)
+            {
+                LOG_WRN("failed to set hw config for unit %u: %d", u, act_rc);
+            }
         }
 
         int err = ao_hvac_apply_config(&self->hvac.ao, cfg);
@@ -1263,7 +1494,11 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
 
     if (self->storage.initialized)
     {
-        (void)ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, 0U);
+        int rc = ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, 0U);
+        if (rc != 0)
+        {
+            LOG_WRN("failed to mark storage dirty for HVAC: %d", rc);
+        }
     }
 
     return 0;

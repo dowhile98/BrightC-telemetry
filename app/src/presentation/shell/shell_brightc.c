@@ -382,8 +382,44 @@ static int cmd_modbus_status(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_modbus_slave(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 3) {
+        shell_print(sh, "Usage: modbus slave <id> <addr> [bus] [type] [poll_ms] [timeout_ms]");
+        return -EINVAL;
+    }
+
+    uint8_t dev_id = (uint8_t)strtoul(argv[1], NULL, 0);
+    uint8_t slave_addr = (uint8_t)strtoul(argv[2], NULL, 0);
+
+    modbus_slave_descriptor_t desc;
+    int err = app_facade_modbus_get_slave(dev_id, &desc);
+    if (err == 0 && argc == 3) {
+        desc.slave_addr = slave_addr;
+    } else {
+        desc.device_id = dev_id;
+        desc.slave_addr = slave_addr;
+        desc.bus_id = (argc > 3) ? (uint8_t)strtoul(argv[3], NULL, 0) : 0U;
+        desc.dev_type = (argc > 4) ? (modbus_device_type_t)strtoul(argv[4], NULL, 0) : MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH;
+        desc.poll_interval_ms = (argc > 5) ? (uint16_t)strtoul(argv[5], NULL, 0) : 500U;
+        desc.timeout_ms = (argc > 6) ? (uint16_t)strtoul(argv[6], NULL, 0) : 300U;
+        desc.is_enabled = true;
+    }
+
+    err = app_facade_modbus_configure_slave(&desc);
+    if (err != 0) {
+        shell_error(sh, "Failed to configure slave %u: %d", dev_id, err);
+        return err;
+    }
+
+    shell_print(sh, "Slave %u configured: Bus %u, Addr %u, Type %u, Poll %u ms, Timeout %u ms (saved to EEPROM)",
+                desc.device_id, desc.bus_id, desc.slave_addr, desc.dev_type, desc.poll_interval_ms, desc.timeout_ms);
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_modbus,
     SHELL_CMD(status, NULL, "Display status of active RS485 buses, polling stats, slave list", cmd_modbus_status),
+    SHELL_CMD_ARG(slave, NULL, "Configure Modbus slave device address and parameters", cmd_modbus_slave, 3, 4),
     SHELL_SUBCMD_SET_END
 );
 

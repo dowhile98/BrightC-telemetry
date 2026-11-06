@@ -318,6 +318,15 @@ int app_facade_modbus_get_status(app_facade_modbus_view_t *out_view);
 int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave);
 
 /**
+ * @brief Retrieve descriptor of a registered Modbus slave device.
+ *
+ * @param[in]  device_id Device identifier.
+ * @param[out] out_desc  Destination descriptor pointer.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_modbus_get_slave(uint8_t device_id, modbus_slave_descriptor_t *out_desc);
+
+/**
  * @brief Reconfigure electrical line parameters of a physical RS-485 bus.
  *
  * Reconfigures hardware transceiver on the wire, updates RAM registry,

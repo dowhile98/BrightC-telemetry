@@ -110,14 +110,32 @@ static void ao_network_thread(void *p1, void *p2, void *p3)
 
                 if (event.type == AO_NETWORK_EVENT_CONFIG_ETH) {
                     self->eth_cfg = event.data.eth_cfg;
-                    (void)i_network_stop(self->net_eth);
-                    (void)i_network_set_config(self->net_eth, &self->eth_cfg, sizeof(self->eth_cfg));
-                    (void)i_network_start(self->net_eth);
+                    int rc = i_network_stop(self->net_eth);
+                    if (rc != 0) {
+                        LOG_WRN("failed to stop eth interface: %d", rc);
+                    }
+                    rc = i_network_set_config(self->net_eth, &self->eth_cfg, sizeof(self->eth_cfg));
+                    if (rc != 0) {
+                        LOG_ERR("failed to set eth config: %d", rc);
+                    }
+                    rc = i_network_start(self->net_eth);
+                    if (rc != 0) {
+                        LOG_ERR("failed to start eth interface: %d", rc);
+                    }
                 } else if (event.type == AO_NETWORK_EVENT_CONFIG_WIFI) {
                     self->wifi_cfg = event.data.wifi_cfg;
-                    (void)i_network_stop(self->net_wifi);
-                    (void)i_network_set_config(self->net_wifi, &self->wifi_cfg, sizeof(self->wifi_cfg));
-                    (void)i_network_start(self->net_wifi);
+                    int rc = i_network_stop(self->net_wifi);
+                    if (rc != 0) {
+                        LOG_WRN("failed to stop wifi interface: %d", rc);
+                    }
+                    rc = i_network_set_config(self->net_wifi, &self->wifi_cfg, sizeof(self->wifi_cfg));
+                    if (rc != 0) {
+                        LOG_ERR("failed to set wifi config: %d", rc);
+                    }
+                    rc = i_network_start(self->net_wifi);
+                    if (rc != 0) {
+                        LOG_ERR("failed to start wifi interface: %d", rc);
+                    }
                 }
             }
 
@@ -127,10 +145,16 @@ static void ao_network_thread(void *p1, void *p2, void *p3)
 
         /* Stop network interfaces */
         if (self->net_eth) {
-            (void)i_network_stop(self->net_eth);
+            int rc = i_network_stop(self->net_eth);
+            if (rc != 0) {
+                LOG_WRN("failed to stop eth interface on shutdown: %d", rc);
+            }
         }
         if (self->net_wifi) {
-            (void)i_network_stop(self->net_wifi);
+            int rc = i_network_stop(self->net_wifi);
+            if (rc != 0) {
+                LOG_WRN("failed to stop wifi interface on shutdown: %d", rc);
+            }
         }
 
         self->is_running = false;
@@ -200,16 +224,34 @@ int ao_network_start(ao_network_t *self)
     }
 
     /* 1. Initialize both adapters */
-    (void)i_network_init(self->net_eth);
-    (void)i_network_init(self->net_wifi);
+    int rc = i_network_init(self->net_eth);
+    if (rc != 0) {
+        LOG_WRN("eth adapter init returned %d", rc);
+    }
+    rc = i_network_init(self->net_wifi);
+    if (rc != 0) {
+        LOG_WRN("wifi adapter init returned %d", rc);
+    }
 
     /* 2. Configure both interfaces with default settings */
-    (void)i_network_set_config(self->net_eth, &self->eth_cfg, sizeof(self->eth_cfg));
-    (void)i_network_set_config(self->net_wifi, &self->wifi_cfg, sizeof(self->wifi_cfg));
+    rc = i_network_set_config(self->net_eth, &self->eth_cfg, sizeof(self->eth_cfg));
+    if (rc != 0) {
+        LOG_WRN("eth set_config returned %d", rc);
+    }
+    rc = i_network_set_config(self->net_wifi, &self->wifi_cfg, sizeof(self->wifi_cfg));
+    if (rc != 0) {
+        LOG_WRN("wifi set_config returned %d", rc);
+    }
 
     /* 3. Start both interfaces */
-    (void)i_network_start(self->net_eth);
-    (void)i_network_start(self->net_wifi);
+    rc = i_network_start(self->net_eth);
+    if (rc != 0) {
+        LOG_WRN("eth start returned %d", rc);
+    }
+    rc = i_network_start(self->net_wifi);
+    if (rc != 0) {
+        LOG_WRN("wifi start returned %d", rc);
+    }
 
     /* Purge stale messages in queue */
     k_msgq_purge(self->queue);

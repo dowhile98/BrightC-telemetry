@@ -432,6 +432,11 @@ ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
     /* Out of bounds bus must return NULL */
     zassert_is_null(app_container_get_modbus_client(&isolated_app, MODBUS_BUS_MAX), "Out of bounds must be NULL");
 
+    /* Calling dependents before storage must fail with -EAGAIN (P2-4) */
+    zassert_equal(composition_root_init_modbus(&isolated_app), -EAGAIN, "Modbus before storage must return -EAGAIN");
+    zassert_equal(composition_root_init_network(&isolated_app), -EAGAIN, "Network before storage must return -EAGAIN");
+    zassert_equal(composition_root_init_hvac(&isolated_app), -EAGAIN, "HVAC before storage must return -EAGAIN");
+
     /* Initialize ONLY storage subsystem */
     int err = composition_root_init_storage(&isolated_app);
     zassert_equal(err, 0, "Storage subsystem should initialize independently");
@@ -507,6 +512,33 @@ ZTEST(composition_root_suite, test_modbus_storage_boot_persistence_and_fallback)
     zassert_equal(composition_root_init(&s_app), 0, "Init with corrupt storage failed");
     zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 4U, "Fallback waveshare addr mismatch");
     zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 300, "Fallback waveshare timeout mismatch");
+
+    (void)composition_root_deinit(&s_app);
+}
+
+ZTEST(composition_root_suite, test_all_config_domains_registered_and_persistable)
+{
+    /* P2-1: Verify all 8 configuration domains have registered providers and can persist */
+    (void)composition_root_deinit(&s_app);
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init failed");
+    zassert_equal(composition_root_start(&s_app), 0, "Start failed");
+
+    for (int d = (int)CONFIG_DOMAIN_DEVICE; d < (int)CONFIG_DOMAIN_MAX; d++)
+    {
+        int rc = ao_storage_mark_dirty(&s_app.storage.ao, (config_domain_t)d, 0U);
+        zassert_equal(rc, 0, "Marking domain %d dirty must succeed", d);
+    }
+
+    zassert_equal(composition_root_stop(&s_app), 0, "Stop failed");
+
+    const fake_config_storage_state_t *st = fake_config_storage_get_state();
+    for (int d = (int)CONFIG_DOMAIN_DEVICE; d < (int)CONFIG_DOMAIN_MAX; d++)
+    {
+        zassert_true(st->slots[d].has_data, "Domain %d must be persisted", d);
+    }
 
     (void)composition_root_deinit(&s_app);
 }

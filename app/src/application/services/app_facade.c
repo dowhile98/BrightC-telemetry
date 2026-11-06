@@ -474,6 +474,15 @@ int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave)
     return 0;
 }
 
+int app_facade_modbus_get_slave(uint8_t device_id, modbus_slave_descriptor_t *out_desc)
+{
+    if (s_app == NULL || out_desc == NULL) {
+        return -EINVAL;
+    }
+
+    return modbus_registry_get(&s_app->modbus.registry_impl, device_id, out_desc);
+}
+
 int app_facade_modbus_configure_bus(uint8_t bus_id, const modbus_bus_config_t *cfg)
 {
     if (s_app == NULL || bus_id >= (uint8_t)MODBUS_BUS_MAX || cfg == NULL) {
