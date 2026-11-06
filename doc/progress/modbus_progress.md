@@ -1,0 +1,31 @@
+# Industrial Modbus Subsystem Progress
+
+- **Status**: **IN_PROGRESS (90%)**
+- **Architecture Reference**: [`doc/architecture/modbus_subsystem.md`](../architecture/modbus_subsystem.md)
+
+---
+
+## 1. Implemented Components
+
+| Component | File Path | Status | Description |
+| :--- | :--- | :---: | :--- |
+| **Codecs** | `app/src/domain/services/*_codec.c` | 100% | JSY-MK-339, CWT-TM-16PT, MBSL32DI, Waveshare Relay codecs |
+| **Scheduler** | `app/src/domain/services/slave_scheduler.c` | 100% | Dynamic poll rate, error backoff, channel scheduling |
+| **Registry** | `app/src/application/modbus/modbus_registry.c` | 100% | Slave registry, bus assignment, failover hook |
+| **Client Adapter** | `app/src/infrastructure/adapters/adapter_modbus_nmbs.c` | 100% | nanoMODBUS client over Zephyr UART (USART2, USART6) with DE hardware control |
+| **Relay Adapter** | `app/src/infrastructure/adapters/adapter_relay_modbus.c` | 100% | Implements `i_relay.h` (FC05 coil writes, cycle count & timing tracking) |
+| **Diagnostics** | `app/src/application/diagnostics/modbus_bus_probe.c` | 100% | Bus communication probing and error classification |
+| **Active Object** | `app/src/application/active_objects/ao_modbus.c` | 100% | Dedicated thread, message queue, periodic polling loop, event publishing |
+| **Unit Tests** | `tests/unit/modbus/` | 100% | 10 test suites, 99 tests passing on `native_sim` |
+
+---
+
+## 2. Pending Work
+- [ ] Automatic runtime slave auto-discovery and scanning tool.
+- [ ] Automated bus failover supervisor (consecutive failure threshold triggering automatic switch from RS485-1 to RS485-2).
+
+---
+
+## 3. Changelog & Refactoring History
+- **2026-11-05**: Refactored `ao_modbus` to 5-phase canonical lifecycle.
+- **2026-11-05**: Enriched `adapter_relay_modbus` with operational metrics (`cycle_count`, `last_toggle_ms`, `is_fault`).

@@ -38,7 +38,32 @@ All architectural guidelines and subsystem specifications are maintained in `doc
 
 ---
 
-## 3. SOLID Principles in Embedded C
+## 3. Implementation Traceability & Progress Maintenance (`doc/progress/`)
+
+To ensure rigorous project tracking and auditability, **all developers and AI agents MUST maintain concise progress documents** under `doc/progress/`:
+
+1. **Master Matrix**: [`doc/progress/README.md`](doc/progress/README.md) provides an executive overview of all subsystems with their current completion percentage, codebase coverage, and last update timestamp.
+2. **Subsystem Tracking Files**: Every subsystem has a dedicated, concise tracking file:
+   - [`doc/progress/core_architecture_progress.md`](doc/progress/core_architecture_progress.md): Active Objects, DI container, Ports & Adapters.
+   - [`doc/progress/modbus_progress.md`](doc/progress/modbus_progress.md): Industrial Modbus subsystem.
+   - [`doc/progress/digital_inputs_progress.md`](doc/progress/digital_inputs_progress.md): Digital inputs and contact alarms.
+   - [`doc/progress/network_progress.md`](doc/progress/network_progress.md): Network link and Wi-Fi subsystem.
+   - [`doc/progress/storage_progress.md`](doc/progress/storage_progress.md): Persistent storage subsystem.
+   - [`doc/progress/system_indicators_progress.md`](doc/progress/system_indicators_progress.md): LED and Buzzer indicators.
+   - [`doc/progress/sensors_progress.md`](doc/progress/sensors_progress.md): Sensor matrix and Mathematical Model Rev F.
+   - [`doc/progress/sd_card_filesystem_progress.md`](doc/progress/sd_card_filesystem_progress.md): MicroSD and FatFS filesystem.
+   - [`doc/progress/telemetry_store_forward_progress.md`](doc/progress/telemetry_store_forward_progress.md): Store & forward spooler.
+   - [`doc/progress/selftest_progress.md`](doc/progress/selftest_progress.md): Post-boot self-test and diagnostics.
+   - [`doc/progress/ota_mcuboot_progress.md`](doc/progress/ota_mcuboot_progress.md): Firmware OTA and MCUboot.
+3. **Mandatory Update Rule**:
+   - Whenever any component is added, modified, or refactored—**even if the subsystem is already at 100%**—the developer or AI agent **MUST update the corresponding file in `doc/progress/`**.
+   - Record the changes concisely under the subsystem's `Changelog & Refactoring History` section with date, modified files, and summary.
+   - If completion status changes, update the status percentage both in the subsystem file and in `doc/progress/README.md`.
+4. **Conciseness Invariant**: Progress files must be structured and brief (~40–80 lines: status header, component table, pending checklist, changelog bullets). Avoid verbose conversational narratives.
+
+---
+
+## 4. SOLID Principles in Embedded C
 
 Every module in BrightC-telemetry must strictly uphold the SOLID design principles:
 
@@ -70,7 +95,7 @@ Every module in BrightC-telemetry must strictly uphold the SOLID design principl
 
 ---
 
-## 4. Fundamental Architectural Invariants (Non-Negotiable)
+## 5. Fundamental Architectural Invariants (Non-Negotiable)
 
 Any PR or commit violating any of the following invariants will be rejected by CI and architectural review:
 
@@ -130,7 +155,7 @@ Every Active Object (`ao_*`) must implement the canonical lifecycle:
 
 ---
 
-## 5. Test-Driven Development (TDD) Workflow
+## 6. Test-Driven Development (TDD) Workflow
 
 Every new feature, bugfix, or refactoring MUST follow the **Red-Green-Refactor** workflow:
 
@@ -188,7 +213,7 @@ west build -p -b brightc-controllerv3 app -d build/primary
 
 ---
 
-## 6. Coding Standards & Conventions
+## 7. Coding Standards & Conventions
 
 1. **Language & Standards**:
    - C Standard: **ISO C99 / C11**.
@@ -209,7 +234,7 @@ west build -p -b brightc-controllerv3 app -d build/primary
 
 ---
 
-## 7. Safety & Governance Invariants
+## 8. Safety & Governance Invariants
 
 AI agents and automated tools MUST halt and request explicit human confirmation before:
 - Flashing physical hardware via OpenOCD, J-Link, or ST-Link (`west flash`).
