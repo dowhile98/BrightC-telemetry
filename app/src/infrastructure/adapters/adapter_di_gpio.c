@@ -58,12 +58,10 @@ int adapter_di_gpio_init(adapter_di_gpio_t *self,
 
     for (size_t d = 0U; d < 2U; d++) {
         if (self->mcp23s17[d] != NULL && device_is_ready(self->mcp23s17[d])) {
-            if (d == 0U) {
-                for (gpio_pin_t pin = 0U; pin < 8U; pin++) {
-                    int ret = gpio_pin_configure(self->mcp23s17[d], pin, GPIO_INPUT | GPIO_PULL_UP);
-                    if (ret < 0) {
-                        LOG_WRN("mcp23s17_%zu pin %u config failed: %d", d, pin, ret);
-                    }
+            for (gpio_pin_t pin = 0U; pin < 12U; pin++) {
+                int ret = gpio_pin_configure(self->mcp23s17[d], pin, GPIO_INPUT | GPIO_PULL_UP);
+                if (ret < 0) {
+                    LOG_WRN("mcp23s17_%zu pin %u config failed: %d", d, pin, ret);
                 }
             }
         }

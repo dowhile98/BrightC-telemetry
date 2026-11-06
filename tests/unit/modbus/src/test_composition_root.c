@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "infrastructure/di/composition_root.h"
+#include "fake_config_storage.h"
 
 #define FAKE_BUS 0U
 
@@ -156,6 +157,7 @@ static void composition_root_test_after(void *fixture)
 {
     ARG_UNUSED(fixture);
     (void)composition_root_deinit(&s_app);
+    fake_config_storage_reset();
 }
 
 ZTEST_SUITE(composition_root_suite, NULL, NULL, NULL, composition_root_test_after, NULL);
@@ -229,7 +231,7 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     const i_relay_t *relay_ext = app_container_get_relay(&s_app);
     zassert_not_null(relay_ext, "relay_ext must not be NULL");
     zassert_true(i_relay_is_bound(relay_ext), "relay_ext must be bound");
-    zassert_false(i_relay_is_bound(&s_app.modbus.relay_int_port), "relay_int placeholder must not be bound yet");
+    zassert_true(i_relay_is_bound(&s_app.modbus.relay_int_port), "relay_int must be bound to local relay port");
 
     relay_state_t rstate = RELAY_STATE_CLOSED;
     zassert_equal(i_relay_get_state(relay_ext, RELAY_CHANNEL_0, &rstate), 0, "get_state failed");
@@ -448,3 +450,64 @@ ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
     (void) ao_storage_wait_stopped(&isolated_app.storage.ao, K_MSEC(200));
     (void) ao_storage_deinit(&isolated_app.storage.ao);
 }
+
+ZTEST(composition_root_suite, test_modbus_storage_boot_persistence_and_fallback)
+{
+    (void)composition_root_deinit(&s_app);
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    /* 1. Empty storage: init saves default modbus configuration */
+    zassert_equal(composition_root_init(&s_app), 0, "Init failed");
+    const fake_config_storage_state_t *st = fake_config_storage_get_state();
+    zassert_true(st->slots[CONFIG_DOMAIN_MODBUS].has_data, "Modbus defaults must be persisted to storage");
+    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 4U, "Default waveshare addr must be 4");
+    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 300, "Default waveshare timeout must be 300");
+
+    (void)composition_root_deinit(&s_app);
+
+    /* 2. Custom storage blob: verify dynamic extraction of Waveshare relay parameters */
+    (void)memset(&s_app, 0, sizeof(s_app));
+
+    modbus_registry_t temp_reg;
+    const modbus_bus_cfg_t custom_bus_cfg[MODBUS_BUS_MAX] = {
+        [MODBUS_BUS_RS485_1] = {.baudrate = 19200U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U, .data_bits = 8U},
+        [MODBUS_BUS_RS485_2] = {.baudrate = 19200U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U, .data_bits = 8U},
+    };
+    zassert_equal(modbus_registry_init(&temp_reg, custom_bus_cfg), 0, "temp_reg init failed");
+    const modbus_slave_descriptor_t custom_slave = {
+        .device_id = 10U,
+        .bus_id = MODBUS_BUS_RS485_1,
+        .slave_addr = 9U,
+        .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+        .poll_interval_ms = 500U,
+        .timeout_ms = 650U,
+        .is_enabled = true,
+    };
+    zassert_equal(modbus_registry_register(&temp_reg, &custom_slave), 0, "register failed");
+
+    uint8_t custom_blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
+    size_t custom_size = 0U;
+    zassert_equal(modbus_registry_export(&temp_reg, custom_blob, sizeof(custom_blob), &custom_size), 0, "export failed");
+
+    i_config_storage_t port = fake_config_storage_get_port();
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_MODBUS, custom_blob, custom_size), 0, "save failed");
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init with custom storage failed");
+    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 9U, "Loaded custom waveshare addr mismatch");
+    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 650, "Loaded custom waveshare timeout mismatch");
+
+    (void)composition_root_deinit(&s_app);
+
+    /* 3. Corrupt storage blob: verify graceful fallback to defaults */
+    (void)memset(&s_app, 0, sizeof(s_app));
+    uint8_t corrupt_data[16] = {0xFF, 0xEE, 0xDD, 0xCC};
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_MODBUS, corrupt_data, sizeof(corrupt_data)), 0, "save corrupt failed");
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init with corrupt storage failed");
+    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 4U, "Fallback waveshare addr mismatch");
+    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 300, "Fallback waveshare timeout mismatch");
+
+    (void)composition_root_deinit(&s_app);
+}
+

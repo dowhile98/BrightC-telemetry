@@ -125,6 +125,15 @@ typedef enum {
 #define DI_ROLE_UNIT_3_VOLT DI_ROLE_UNIT_3_ALARM_VOLT
 
 /**
+ * @brief On-chip microcontroller GPIO input index enumeration.
+ */
+typedef enum {
+    ONCHIP_DI_USER_BUTTON = 0,       /**< On-chip User Push Button */
+    ONCHIP_DI_SW_BYPASS,             /**< On-chip Hardware HVAC Bypass Switch */
+    ONCHIP_DI_COUNT
+} onchip_di_id_t;
+
+/**
  * @brief Physical hardware source for a digital input channel.
  */
 typedef enum {

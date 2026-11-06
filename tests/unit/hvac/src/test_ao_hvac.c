@@ -398,67 +398,93 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
         zassert_equal(u_cfg->relay_g.device_id, 2U, "Alarm relay device_id 2");
         zassert_equal(u_cfg->relay_g.channel, (uint8_t)(u * 3U + 2U), "Alarm G channel");
 
-        /* Alarms (MBSL32DI, device_id = 3, channels 0..15) */
-        zassert_equal(u_cfg->alarm_hp.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "HP backend");
-        zassert_equal(u_cfg->alarm_hp.device_id, 3U, "HP device_id 3");
-        zassert_equal(u_cfg->alarm_hp.channel, (uint8_t)(u * 4U + 0U), "HP channel");
+        /* Alarms (Units 0..2 on mcp23s17_0 dev_id 0, Unit 3 on mcp23s17_1 dev_id 1) */
+        uint8_t expected_alm_dev = (u < 3U) ? 0U : 1U;
+        uint8_t alm_base_ch = (u < 3U) ? (uint8_t)(u * 4U) : 0U;
 
-        zassert_equal(u_cfg->alarm_lp.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "LP backend");
-        zassert_equal(u_cfg->alarm_lp.device_id, 3U, "LP device_id 3");
-        zassert_equal(u_cfg->alarm_lp.channel, (uint8_t)(u * 4U + 1U), "LP channel");
+        zassert_equal(u_cfg->alarm_hp.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "HP backend");
+        zassert_equal(u_cfg->alarm_hp.device_id, expected_alm_dev, "HP device_id");
+        zassert_equal(u_cfg->alarm_hp.channel, (uint8_t)(alm_base_ch + 0U), "HP channel");
 
-        zassert_equal(u_cfg->alarm_flow.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Flow backend");
-        zassert_equal(u_cfg->alarm_flow.device_id, 3U, "Flow device_id 3");
-        zassert_equal(u_cfg->alarm_flow.channel, (uint8_t)(u * 4U + 2U), "Flow channel");
+        zassert_equal(u_cfg->alarm_lp.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "LP backend");
+        zassert_equal(u_cfg->alarm_lp.device_id, expected_alm_dev, "LP device_id");
+        zassert_equal(u_cfg->alarm_lp.channel, (uint8_t)(alm_base_ch + 1U), "LP channel");
 
-        zassert_equal(u_cfg->alarm_volt.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Volt backend");
-        zassert_equal(u_cfg->alarm_volt.device_id, 3U, "Volt device_id 3");
-        zassert_equal(u_cfg->alarm_volt.channel, (uint8_t)(u * 4U + 3U), "Volt channel");
+        zassert_equal(u_cfg->alarm_flow.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Flow backend");
+        zassert_equal(u_cfg->alarm_flow.device_id, expected_alm_dev, "Flow device_id");
+        zassert_equal(u_cfg->alarm_flow.channel, (uint8_t)(alm_base_ch + 2U), "Flow channel");
 
-        /* Feedbacks (MBSL32DI, device_id = 3, channels 18..25) */
+        zassert_equal(u_cfg->alarm_volt.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Volt backend");
+        zassert_equal(u_cfg->alarm_volt.device_id, expected_alm_dev, "Volt device_id");
+        zassert_equal(u_cfg->alarm_volt.channel, (uint8_t)(alm_base_ch + 3U), "Volt channel");
+
+        /* Feedbacks (MBSL32DI, device_id = 3, channels 0..7) */
         zassert_equal(u_cfg->fb_fan.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "FB fan backend");
         zassert_equal(u_cfg->fb_fan.device_id, 3U, "FB fan device_id 3");
-        zassert_equal(u_cfg->fb_fan.channel, (uint8_t)(18U + u * 2U), "FB fan channel");
+        zassert_equal(u_cfg->fb_fan.channel, (uint8_t)(u * 2U + 0U), "FB fan channel");
 
         zassert_equal(u_cfg->fb_compressor.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "FB comp backend");
         zassert_equal(u_cfg->fb_compressor.device_id, 3U, "FB comp device_id 3");
-        zassert_equal(u_cfg->fb_compressor.channel, (uint8_t)(19U + u * 2U), "FB comp channel");
+        zassert_equal(u_cfg->fb_compressor.channel, (uint8_t)(u * 2U + 1U), "FB comp channel");
     }
 
     /* Interlocks */
-    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Fire backend");
-    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.device_id, 3U, "Fire dev_id");
-    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.channel, 16U, "Fire channel");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Fire backend");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.device_id, 1U, "Fire dev_id");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.channel, 4U, "Fire channel");
 
-    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "Bypass backend");
-    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.device_id, 3U, "Bypass dev_id");
-    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.channel, 17U, "Bypass channel");
+    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Bypass backend");
+    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.device_id, 0U, "Bypass dev_id");
+    zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.channel, (uint16_t)ONCHIP_DI_SW_BYPASS, "Bypass channel");
 
-    /* 3. Verify DI Hybrid Profile (32 channels) */
+    /* 3. Verify DI Hybrid Profile (34 channels) */
     size_t di_count = 0;
     const di_channel_config_t *di_prof = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
     zassert_not_null(di_prof, "Hybrid DI profile must not be NULL");
-    zassert_equal(di_count, 32U, "Hybrid DI profile must have 32 channels");
+    zassert_equal(di_count, 34U, "Hybrid DI profile must have 34 channels");
 
-    /* Channels 0..15 alarm roles */
-    for (uint8_t i = 0; i < 16U; i++) {
-        zassert_equal(di_prof[i].source_type, DI_SOURCE_EXTERNAL_MODBUS, "DI source MBSL32DI");
-        zassert_equal(di_prof[i].source_dev_id, 3U, "DI dev_id 3");
+    /* Channels 0..11: on mcp23s17_0 (dev_id 0) */
+    for (uint8_t i = 0; i < 12U; i++) {
+        zassert_equal(di_prof[i].source_type, DI_SOURCE_INTERNAL_SPI, "DI source SPI dev 0");
+        zassert_equal(di_prof[i].source_dev_id, 0U, "DI dev_id 0");
         zassert_equal(di_prof[i].pin_index, i, "DI pin_index matches");
         zassert_true(di_prof[i].enabled, "DI channel enabled");
     }
     zassert_equal(di_prof[0].role, DI_ROLE_UNIT_0_ALARM_HP, "CH0 is Unit 0 HP");
-    zassert_equal(di_prof[15].role, DI_ROLE_UNIT_3_ALARM_VOLT, "CH15 is Unit 3 Volt");
+    zassert_equal(di_prof[11].role, DI_ROLE_UNIT_2_ALARM_VOLT, "CH11 is Unit 2 Volt");
 
-    /* Channel 16: Fire Interlock, Channel 17: Door Open */
+    /* Channels 12..23: on mcp23s17_1 (dev_id 1) */
+    for (uint8_t i = 0; i < 12U; i++) {
+        zassert_equal(di_prof[12U + i].source_type, DI_SOURCE_INTERNAL_SPI, "DI source SPI dev 1");
+        zassert_equal(di_prof[12U + i].source_dev_id, 1U, "DI dev_id 1");
+        zassert_equal(di_prof[12U + i].pin_index, i, "DI pin_index matches");
+        zassert_true(di_prof[12U + i].enabled, "DI channel enabled");
+    }
+    zassert_equal(di_prof[12].role, DI_ROLE_UNIT_3_ALARM_HP, "CH12 is Unit 3 HP");
+    zassert_equal(di_prof[15].role, DI_ROLE_UNIT_3_ALARM_VOLT, "CH15 is Unit 3 Volt");
     zassert_equal(di_prof[16].role, DI_ROLE_SMOKE_FIRE, "CH16 is Fire Interlock");
     zassert_equal(di_prof[17].role, DI_ROLE_DOOR_OPEN, "CH17 is Door Open");
 
-    /* Channels 18..25: Feedbacks */
-    zassert_equal(di_prof[18].role, DI_ROLE_FAN_1_AUX, "CH18 is Unit 0 FB Fan");
-    zassert_equal(di_prof[19].role, DI_ROLE_COMPRESSOR_1_AUX, "CH19 is Unit 0 FB Comp");
-    zassert_equal(di_prof[24].role, DI_ROLE_FAN_4_AUX, "CH24 is Unit 3 FB Fan");
-    zassert_equal(di_prof[25].role, DI_ROLE_COMPRESSOR_4_AUX, "CH25 is Unit 3 FB Comp");
+    /* Channels 24..25: On-chip GPIO (button and bypass switch) */
+    zassert_equal(di_prof[24].source_type, DI_SOURCE_ONCHIP_GPIO, "CH24 is Onchip GPIO");
+    zassert_equal(di_prof[24].source_dev_id, (uint8_t)ONCHIP_DI_USER_BUTTON, "CH24 is USER_BUTTON");
+    zassert_equal(di_prof[24].role, DI_ROLE_USER_BUTTON, "CH24 role is USER_BUTTON");
+
+    zassert_equal(di_prof[25].source_type, DI_SOURCE_ONCHIP_GPIO, "CH25 is Onchip GPIO");
+    zassert_equal(di_prof[25].source_dev_id, (uint8_t)ONCHIP_DI_SW_BYPASS, "CH25 is SW_BYPASS");
+    zassert_equal(di_prof[25].role, DI_ROLE_BYPASS_SWITCH, "CH25 role is BYPASS_SWITCH");
+
+    /* Channels 26..33: Feedbacks on MBSL32DI */
+    for (uint8_t i = 0; i < 8U; i++) {
+        zassert_equal(di_prof[26U + i].source_type, DI_SOURCE_EXTERNAL_MODBUS, "DI source MBSL32DI");
+        zassert_equal(di_prof[26U + i].source_dev_id, 3U, "DI dev_id 3");
+        zassert_equal(di_prof[26U + i].pin_index, i, "DI pin_index matches");
+        zassert_true(di_prof[26U + i].enabled, "DI channel enabled");
+    }
+    zassert_equal(di_prof[26].role, DI_ROLE_FAN_1_AUX, "CH26 is Unit 0 FB Fan");
+    zassert_equal(di_prof[27].role, DI_ROLE_COMPRESSOR_1_AUX, "CH27 is Unit 0 FB Comp");
+    zassert_equal(di_prof[32].role, DI_ROLE_FAN_4_AUX, "CH32 is Unit 3 FB Fan");
+    zassert_equal(di_prof[33].role, DI_ROLE_COMPRESSOR_4_AUX, "CH33 is Unit 3 FB Comp");
 
     /* 4. Verify helper function profile dispatch */
     zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL), &k_default_hvac_config_hybrid_4units, "Hybrid profile lookup");

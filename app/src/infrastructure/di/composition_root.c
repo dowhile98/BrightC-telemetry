@@ -332,6 +332,41 @@ int composition_root_init_modbus(app_container_t *self)
         }
     }
 
+    if (i_config_storage_is_bound(&self->storage.port))
+    {
+        uint8_t modbus_blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
+        size_t loaded_size = 0U;
+        int load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_MODBUS,
+                                             modbus_blob, sizeof(modbus_blob),
+                                             &loaded_size);
+        if (load_res == 0 && loaded_size > 0U)
+        {
+            int import_res = modbus_registry_import(&self->modbus.registry_impl, modbus_blob, loaded_size);
+            if (import_res == 0)
+            {
+                LOG_INF("Loaded Modbus registry config from storage (%zu bytes)", loaded_size);
+            }
+            else
+            {
+                LOG_WRN("Failed to import Modbus registry config (%d), re-persisting defaults", import_res);
+                size_t export_size = 0U;
+                if (modbus_registry_export(&self->modbus.registry_impl, modbus_blob, sizeof(modbus_blob), &export_size) == 0)
+                {
+                    (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
+                }
+            }
+        }
+        else
+        {
+            LOG_INF("No valid Modbus config in storage (%d), persisting defaults", load_res);
+            size_t export_size = 0U;
+            if (modbus_registry_export(&self->modbus.registry_impl, modbus_blob, sizeof(modbus_blob), &export_size) == 0)
+            {
+                (void)i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
+            }
+        }
+    }
+
     for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
     {
         k_msgq_init(&self->modbus.ao_queue[bus], self->modbus.ao_queue_buf[bus],
@@ -347,8 +382,32 @@ int composition_root_init_modbus(app_container_t *self)
         }
     }
 
+    uint8_t waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
+    uint8_t waveshare_addr = 4U;
+    uint16_t waveshare_timeout_ms = 300U;
+
+    (void)k_mutex_lock(&self->modbus.registry_impl.lock, K_FOREVER);
+    for (size_t i = 0U; i < self->modbus.registry_impl.count; i++)
+    {
+        if (self->modbus.registry_impl.entries[i].descriptor.dev_type == MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH)
+        {
+            waveshare_bus = self->modbus.registry_impl.entries[i].descriptor.bus_id;
+            waveshare_addr = self->modbus.registry_impl.entries[i].descriptor.slave_addr;
+            waveshare_timeout_ms = self->modbus.registry_impl.entries[i].descriptor.timeout_ms;
+            break;
+        }
+    }
+    (void)k_mutex_unlock(&self->modbus.registry_impl.lock);
+
+    if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
+    {
+        waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
+    }
+
     err = adapter_relay_modbus_init(&self->modbus.waveshare_relay,
-                                    &self->modbus.ao[MODBUS_BUS_RS485_1], 4U, 300U);
+                                    &self->modbus.ao[waveshare_bus],
+                                    waveshare_addr,
+                                    (int32_t)waveshare_timeout_ms);
     if (err != 0)
     {
         LOG_ERR("relay adapter init failed (%d)", err);
@@ -856,13 +915,13 @@ int composition_root_init(app_container_t *self)
 
     (void)memset(self, 0, sizeof(*self));
 
-    int err = composition_root_init_modbus(self);
+    int err = composition_root_init_storage(self);
     if (err != 0)
     {
         return err;
     }
 
-    err = composition_root_init_storage(self);
+    err = composition_root_init_modbus(self);
     if (err != 0)
     {
         return err;

@@ -19,12 +19,6 @@
 extern "C" {
 #endif
 
-typedef enum {
-    ONCHIP_DI_USER_BUTTON = 0,
-    ONCHIP_DI_SW_BYPASS,
-    ONCHIP_DI_COUNT
-} onchip_di_id_t;
-
 typedef struct {
     struct gpio_dt_spec onchip_gpios[ONCHIP_DI_COUNT];
     const struct device *mcp23s17[2];
