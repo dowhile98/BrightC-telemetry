@@ -25,6 +25,9 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P0-03 and P1-04:
+  - P0-03 (Real RAM State & Persistence for 4 Config Domains): Added RAM storage instances in `app_container_t` for `device_cfg`, `calibration_cfg`, `sensor_cfg`, and `baseline_cfg`. Loaded valid envelopes from storage on startup with fallback to defaults. Storage providers now pack live runtime data from RAM instances. `app_facade_sensor_set_calibration()` updates offsets and marks calibration domain dirty.
+  - P1-04 (Safe Storage Reload & Factory Reset): In `app_facade_storage_reload_all()`, zeroed temporary buffers with `memset`, strictly verified that unpacked size matches destination structure size, and reloaded all 8 configuration domains. In `app_facade_storage_reset_defaults()`, erased EEPROM ping-pong slots and restored default RAM states across all 8 domains.
 - **2026-11-06**: Resolved audit finding P2-1:
   - Eliminated zombie configuration domains by defining types (`config_device_t`, `config_calibration_t`, `config_sensor_cfg_t`, `config_baseline_t`), default profile accessors, and registering active providers for all 8 domains with versioned envelope packing and layout assertions. Added unit tests in `test_composition_root.c` validating provider registration and persistability across all 8 domains.
 - **2026-11-06**: Resolved audit findings P1-6, P1-7, P1-8, P1-9, P1-10:

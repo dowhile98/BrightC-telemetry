@@ -218,12 +218,14 @@ int app_facade_hvac_set_mode(uint8_t group_id, hvac_mode_t mode)
         break;
 
     case HVAC_MODE_FAN_ONLY:
-        /* Run fan purge */
+        /* Run fan purge: manual override with compressor off, fan purge enabled */
         (void)ao_hvac_set_manual(ao, group_id, true);
         k_mutex_lock(&ao->lock, K_FOREVER);
         for (uint8_t u = 0U; u < ao->groups[group_id].unit_count; u++) {
             if (ao->groups[group_id].units[u] != NULL) {
-                hvac_unit_entity_set_manual(ao->groups[group_id].units[u], false);
+                hvac_unit_entity_t *unit = ao->groups[group_id].units[u];
+                hvac_unit_entity_set_manual(unit, false);
+                unit->fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
             }
         }
         k_mutex_unlock(&ao->lock);
@@ -250,8 +252,22 @@ int app_facade_hvac_set_setpoint(uint8_t group_id, int16_t cool_target_x10, int1
         return -EAGAIN;
     }
 
+    if (heat_target_x10 > 0 && heat_target_x10 >= cool_target_x10) {
+        return -EINVAL;
+    }
+
     float cool_target = (float)cool_target_x10 / 10.0f;
     config_hvac_group_t group_cfg = s_app->hvac.config.groups[group_id];
+
+    /* Preserve existing delta margins instead of hardcoding */
+    float delta_alarm = group_cfg.temp_alarm - group_cfg.temp_max;
+    if (delta_alarm <= 0.0f) {
+        delta_alarm = 3.0f;
+    }
+    float delta_bypass = group_cfg.temp_bypass - group_cfg.temp_max;
+    if (delta_bypass <= 0.0f) {
+        delta_bypass = 6.0f;
+    }
 
     group_cfg.temp_max = cool_target;
     if (heat_target_x10 > 0) {
@@ -260,8 +276,8 @@ int app_facade_hvac_set_setpoint(uint8_t group_id, int16_t cool_target_x10, int1
         group_cfg.temp_min = cool_target - 2.0f;
     }
 
-    group_cfg.temp_alarm = cool_target + 3.0f;
-    group_cfg.temp_bypass = cool_target + 6.0f;
+    group_cfg.temp_alarm = cool_target + delta_alarm;
+    group_cfg.temp_bypass = cool_target + delta_bypass;
 
     return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
 }
@@ -295,7 +311,6 @@ int app_facade_hvac_apply_profile(const hvac_profile_config_t *profile)
 
 int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compressor, bool run_fan)
 {
-    ARG_UNUSED(run_fan);
     if (s_app == NULL || unit_id >= HVAC_MAX_UNITS_TOTAL) {
         return -EINVAL;
     }
@@ -307,6 +322,11 @@ int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compr
     k_mutex_lock(&ao->lock, K_FOREVER);
     if (enable) {
         hvac_unit_entity_set_manual(&ao->units[unit_id], run_compressor);
+        if (!run_compressor && run_fan) {
+            ao->units[unit_id].fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
+        } else if (!run_compressor && !run_fan) {
+            ao->units[unit_id].fan_state = HVAC_FAN_STATE_DISABLED;
+        }
     } else {
         /* Restore to OFF/auto */
         hvac_unit_entity_request_stop(&ao->units[unit_id], false);
@@ -320,6 +340,36 @@ int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compr
  * Sensor Matrix Service APIs
  * ========================================================================= */
 
+int app_facade_update_modbus_temperatures(const float *temps, uint16_t valid_mask, size_t count)
+{
+    if (temps == NULL) {
+        return -EINVAL;
+    }
+
+    k_spinlock_key_t key = k_spin_lock(&s_sensor_cache.lock);
+    for (size_t i = 0U; i < 16U && i < count; i++) {
+        s_sensor_cache.modbus_rtd_temps[i] = temps[i];
+        s_sensor_cache.modbus_rtd_valid[i] = ((valid_mask & (1U << i)) != 0U);
+    }
+    k_spin_unlock(&s_sensor_cache.lock, key);
+    return 0;
+}
+
+int app_facade_update_internal_temperatures(const float *temps, uint16_t valid_mask, size_t count)
+{
+    if (temps == NULL) {
+        return -EINVAL;
+    }
+
+    k_spinlock_key_t key = k_spin_lock(&s_sensor_cache.lock);
+    for (size_t i = 0U; i < 5U && i < count; i++) {
+        s_sensor_cache.internal_rtd_temps[i] = temps[i];
+        s_sensor_cache.internal_rtd_valid[i] = ((valid_mask & (1U << i)) != 0U);
+    }
+    k_spin_unlock(&s_sensor_cache.lock, key);
+    return 0;
+}
+
 int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view)
 {
     if (out_view == NULL) {
@@ -330,15 +380,19 @@ int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view)
 
     out_view->internal_count = 5U;
     for (uint8_t i = 0U; i < 5U; i++) {
+        int16_t offset = (s_app != NULL) ? s_app->calibration_cfg.temp_offsets_x10[i]
+                                         : s_sensor_cal_offsets[i];
         out_view->internal_rtd_temps[i] = s_sensor_cache.internal_rtd_temps[i] +
-                                          ((float)s_sensor_cal_offsets[i] / 10.0f);
+                                          ((float)offset / 10.0f);
         out_view->internal_rtd_valid[i] = s_sensor_cache.internal_rtd_valid[i];
     }
 
     out_view->modbus_count = 16U;
     for (uint8_t i = 0U; i < 16U; i++) {
+        int16_t offset = (s_app != NULL) ? s_app->calibration_cfg.temp_offsets_x10[5U + i]
+                                         : s_sensor_cal_offsets[5U + i];
         out_view->modbus_rtd_temps[i] = s_sensor_cache.modbus_rtd_temps[i] +
-                                        ((float)s_sensor_cal_offsets[5U + i] / 10.0f);
+                                        ((float)offset / 10.0f);
         out_view->modbus_rtd_valid[i] = s_sensor_cache.modbus_rtd_valid[i];
     }
 
@@ -352,6 +406,12 @@ int app_facade_sensor_set_calibration(uint8_t sensor_idx, int16_t offset_x10)
         return -EINVAL;
     }
     s_sensor_cal_offsets[sensor_idx] = offset_x10;
+    if (s_app != NULL) {
+        s_app->calibration_cfg.temp_offsets_x10[sensor_idx] = offset_x10;
+        if (s_app->storage.initialized) {
+            (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_CALIBRATION, (uint16_t)sensor_idx);
+        }
+    }
     return 0;
 }
 
@@ -466,7 +526,7 @@ int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave)
         return ret;
     }
 
-    /* Fix P0-5: Mark domain dirty to commit changes to EEPROM */
+    /* Mark domain dirty to commit changes to EEPROM */
     if (s_app->storage.initialized) {
         (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_MODBUS, 0U);
     }
@@ -492,7 +552,7 @@ int app_facade_modbus_configure_bus(uint8_t bus_id, const modbus_bus_config_t *c
         return -EINVAL;
     }
 
-    /* Fix P0-4: Apply configuration to physical UART transceiver */
+    /* Apply configuration to physical UART transceiver */
     if (i_modbus_client_is_bound(&s_app->modbus.client_port[bus_id])) {
         int wire_err = i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus_id], cfg);
         if (wire_err != 0) {
@@ -510,7 +570,7 @@ int app_facade_modbus_configure_bus(uint8_t bus_id, const modbus_bus_config_t *c
         return ret;
     }
 
-    /* Fix P0-5: Mark domain dirty to persist new bus config to EEPROM */
+    /* Mark domain dirty to persist new bus config to EEPROM */
     if (s_app->storage.initialized) {
         (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_MODBUS, (uint16_t)bus_id);
     }
@@ -546,22 +606,179 @@ int app_facade_storage_reload_all(void)
     if (s_app == NULL) {
         return -EINVAL;
     }
+    if (!s_app->storage.initialized || !i_config_storage_is_bound(&s_app->storage.port)) {
+        return -EAGAIN;
+    }
     s_storage_stats.read_count++;
-    /* Re-read HVAC configuration */
-    if (s_app->storage.initialized && i_config_storage_is_bound(&s_app->storage.port)) {
+    int reload_err = 0;
+
+    /* 1. HVAC */
+    if (s_app->hvac.initialized) {
         uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
         config_hvac_t hvac_cfg;
+        memset(&hvac_cfg, 0, sizeof(hvac_cfg));
         size_t loaded_size = 0;
+        size_t unpacked_size = 0;
         int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_HVAC,
                                         buf, sizeof(buf), &loaded_size);
         if (ret == 0 &&
             config_envelope_unpack(CONFIG_DOMAIN_HVAC, buf, loaded_size,
-                                   &hvac_cfg, sizeof(hvac_cfg), NULL) == 0 &&
+                                   &hvac_cfg, sizeof(hvac_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(config_hvac_t) &&
             config_hvac_is_valid(&hvac_cfg)) {
             (void)app_container_set_hvac_config(s_app, &hvac_cfg);
+        } else {
+            reload_err = -EIO;
         }
     }
-    return 0;
+
+    /* 2. Modbus */
+    if (s_app->modbus.initialized) {
+        uint8_t modbus_blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
+        size_t loaded_size = 0U;
+        int load_res = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_MODBUS,
+                                             modbus_blob, sizeof(modbus_blob), &loaded_size);
+        if (load_res == 0 && loaded_size > 0U) {
+            int import_res = modbus_registry_import(&s_app->modbus.registry_impl, modbus_blob, loaded_size);
+            if (import_res == 0) {
+                for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++) {
+                    modbus_bus_cfg_t bcfg;
+                    if (modbus_registry_get_bus_cfg(&s_app->modbus.registry_impl, bus, &bcfg) == 0) {
+                        s_app->modbus.bus_cfg[bus] = bcfg;
+                        if (s_app->modbus.client_port[bus].api != NULL) {
+                            (void)i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus], &bcfg);
+                        }
+                    }
+                }
+            } else {
+                reload_err = -EIO;
+            }
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    /* 3. Ethernet */
+    if (s_app->network.initialized) {
+        net_eth_config_t eth_cfg;
+        memset(&eth_cfg, 0, sizeof(eth_cfg));
+        uint8_t eth_buf[sizeof(config_envelope_header_t) + sizeof(net_eth_config_t)];
+        size_t loaded_size = 0;
+        size_t unpacked_size = 0;
+        int load_res = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_NET_ETH,
+                                             eth_buf, sizeof(eth_buf), &loaded_size);
+        if (load_res == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, eth_buf, loaded_size,
+                                   &eth_cfg, sizeof(eth_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(net_eth_config_t) &&
+            net_eth_config_is_valid(&eth_cfg)) {
+            if (i_network_is_bound(&s_app->network.eth_port)) {
+                (void)i_network_set_config(&s_app->network.eth_port, &eth_cfg, sizeof(eth_cfg));
+            }
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    /* 4. Wi-Fi */
+    if (s_app->network.initialized) {
+        net_wifi_config_t wifi_cfg;
+        memset(&wifi_cfg, 0, sizeof(wifi_cfg));
+        uint8_t wifi_buf[sizeof(config_envelope_header_t) + sizeof(net_wifi_config_t)];
+        size_t loaded_size = 0;
+        size_t unpacked_size = 0;
+        int load_res = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_NET_WIFI,
+                                             wifi_buf, sizeof(wifi_buf), &loaded_size);
+        if (load_res == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_NET_WIFI, wifi_buf, loaded_size,
+                                   &wifi_cfg, sizeof(wifi_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(net_wifi_config_t) &&
+            net_wifi_config_is_valid(&wifi_cfg)) {
+            if (i_network_is_bound(&s_app->network.wifi_port)) {
+                (void)i_network_set_config(&s_app->network.wifi_port, &wifi_cfg, sizeof(wifi_cfg));
+            }
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    /* 5. Device */
+    {
+        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_device_t)];
+        config_device_t dev_cfg;
+        memset(&dev_cfg, 0, sizeof(dev_cfg));
+        size_t loaded_size = 0;
+        size_t unpacked_size = 0;
+        int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_DEVICE,
+                                        buf, sizeof(buf), &loaded_size);
+        if (ret == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_DEVICE, buf, loaded_size,
+                                   &dev_cfg, sizeof(dev_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(config_device_t)) {
+            s_app->device_cfg = dev_cfg;
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    /* 6. Calibration */
+    {
+        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_calibration_t)];
+        config_calibration_t cal_cfg;
+        memset(&cal_cfg, 0, sizeof(cal_cfg));
+        size_t loaded_size = 0;
+        size_t unpacked_size = 0;
+        int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_CALIBRATION,
+                                        buf, sizeof(buf), &loaded_size);
+        if (ret == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_CALIBRATION, buf, loaded_size,
+                                   &cal_cfg, sizeof(cal_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(config_calibration_t)) {
+            s_app->calibration_cfg = cal_cfg;
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    /* 7. Sensor Cfg */
+    {
+        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_sensor_cfg_t)];
+        config_sensor_cfg_t sensor_cfg;
+        memset(&sensor_cfg, 0, sizeof(sensor_cfg));
+        size_t loaded_size = 0;
+        size_t unpacked_size = 0;
+        int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_SENSOR_CFG,
+                                        buf, sizeof(buf), &loaded_size);
+        if (ret == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_SENSOR_CFG, buf, loaded_size,
+                                   &sensor_cfg, sizeof(sensor_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(config_sensor_cfg_t)) {
+            s_app->sensor_cfg = sensor_cfg;
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    /* 8. Baseline */
+    {
+        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_baseline_t)];
+        config_baseline_t baseline_cfg;
+        memset(&baseline_cfg, 0, sizeof(baseline_cfg));
+        size_t loaded_size = 0;
+        size_t unpacked_size = 0;
+        int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_BASELINE,
+                                        buf, sizeof(buf), &loaded_size);
+        if (ret == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_BASELINE, buf, loaded_size,
+                                   &baseline_cfg, sizeof(baseline_cfg), &unpacked_size) == 0 &&
+            unpacked_size == sizeof(config_baseline_t)) {
+            s_app->baseline_cfg = baseline_cfg;
+        } else {
+            reload_err = -EIO;
+        }
+    }
+
+    return reload_err;
 }
 
 int app_facade_storage_reset_defaults(void)
@@ -570,6 +787,7 @@ int app_facade_storage_reset_defaults(void)
         return -EINVAL;
     }
 
+    /* 1. Reset storage slot states in medium */
     if (s_app->storage.initialized && i_config_storage_is_bound(&s_app->storage.port)) {
         for (int d = 0; d < CONFIG_DOMAIN_MAX; d++) {
             (void)i_config_storage_reset_defaults(&s_app->storage.port, (config_domain_t)d);
@@ -577,7 +795,41 @@ int app_facade_storage_reset_defaults(void)
         s_storage_stats.write_count++;
     }
 
-    /* Re-apply baseline default profile to RAM & hardware actuators/DIs */
+    /* 2. Reset RAM domains to factory defaults */
+    s_app->device_cfg = *default_config_get_device_cfg();
+    s_app->calibration_cfg = *default_config_get_calibration_cfg();
+    s_app->sensor_cfg = *default_config_get_sensor_cfg();
+    s_app->baseline_cfg = *default_config_get_baseline_cfg();
+
+    /* 3. Reset Modbus bus configs & registry */
+    if (s_app->modbus.initialized) {
+        memcpy(s_app->modbus.bus_cfg, k_default_modbus_bus_cfg, sizeof(s_app->modbus.bus_cfg));
+        for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++) {
+            if (s_app->modbus.client_port[bus].api != NULL) {
+                (void)i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus], &s_app->modbus.bus_cfg[bus]);
+            }
+        }
+        (void)modbus_registry_init(&s_app->modbus.registry_impl, s_app->modbus.bus_cfg);
+        size_t def_count = 0;
+        const modbus_slave_descriptor_t *def_slaves = default_config_get_modbus_slaves(&def_count);
+        for (size_t i = 0; i < def_count; i++) {
+            (void)modbus_registry_register(&s_app->modbus.registry_impl, &def_slaves[i]);
+        }
+    }
+
+    /* 4. Reset Network (Ethernet & Wi-Fi) */
+    if (s_app->network.initialized) {
+        const net_eth_config_t *eth_def = default_config_get_net_eth_cfg();
+        const net_wifi_config_t *wifi_def = default_config_get_net_wifi_cfg();
+        if (eth_def != NULL && i_network_is_bound(&s_app->network.eth_port)) {
+            (void)i_network_set_config(&s_app->network.eth_port, eth_def, sizeof(*eth_def));
+        }
+        if (wifi_def != NULL && i_network_is_bound(&s_app->network.wifi_port)) {
+            (void)i_network_set_config(&s_app->network.wifi_port, wifi_def, sizeof(*wifi_def));
+        }
+    }
+
+    /* 5. Re-apply baseline default profile to RAM & hardware actuators/DIs */
     return app_container_apply_profile(s_app, HVAC_MODE_HYBRID_FULL);
 }
 

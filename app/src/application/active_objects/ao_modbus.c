@@ -25,11 +25,29 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
     switch (target->dev_type)
     {
     case MODBUS_DEV_TYPE_CWT_TM16PT:
-        /* The wrapper rejects an unbound client (reporting INVALID) instead of
-         * waiting for a timeout that can never expire. */
-        return i_modbus_client_read_holding_registers(
+    {
+        modbus_transaction_result_t res = i_modbus_client_read_holding_registers(
             self->client, target->slave_addr, CWT_TM16PT_REG_TEMP_SCALED_BASE,
             CWT_TM16PT_SCALED_REG_COUNT, registers, (int32_t)target->timeout_ms);
+        if (res == MODBUS_RESULT_OK)
+        {
+            temperature_bank_16ch_t bank;
+            if (cwt_tm16pt_parse_scaled_temperatures(registers, CWT_TM16PT_SCALED_REG_COUNT, &bank) == 0)
+            {
+                bank.device_id = target->device_id;
+                bank.timestamp_us = (uint64_t)k_ticks_to_us_near64(k_uptime_ticks());
+                bank.is_communication_valid = true;
+                LOG_DBG("bus %u: dev %u CWT-TM16PT valid_mask=0x%04X T0=%.1f C",
+                        self->bus_id, target->device_id, (unsigned int)bank.valid_channels_mask,
+                        (double)bank.temperatures_c[0]);
+                if (self->cwt_tm16pt_cb != NULL)
+                {
+                    self->cwt_tm16pt_cb(self->cwt_tm16pt_cb_ctx, target->device_id, &bank);
+                }
+            }
+        }
+        return res;
+    }
 
     case MODBUS_DEV_TYPE_JSY_MK339:
     {
@@ -241,6 +259,8 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
     self->is_running = false;
     self->mbsl32di_cb = NULL;
     self->mbsl32di_cb_ctx = NULL;
+    self->cwt_tm16pt_cb = NULL;
+    self->cwt_tm16pt_cb_ctx = NULL;
 
     k_sem_init(&self->stopped_sem, 0, 1);
     self->is_initialized = true;
@@ -349,5 +369,14 @@ void ao_modbus_set_mbsl32di_callback(ao_modbus_t *self, ao_modbus_mbsl32di_cb_t 
     {
         self->mbsl32di_cb = cb;
         self->mbsl32di_cb_ctx = ctx;
+    }
+}
+
+void ao_modbus_set_cwt_tm16pt_callback(ao_modbus_t *self, ao_modbus_cwt_tm16pt_cb_t cb, void *ctx)
+{
+    if (self != NULL)
+    {
+        self->cwt_tm16pt_cb = cb;
+        self->cwt_tm16pt_cb_ctx = ctx;
     }
 }

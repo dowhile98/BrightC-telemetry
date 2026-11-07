@@ -52,7 +52,7 @@ static int dispatch_endpoint_relay(adapter_hvac_actuator_t *self,
                                  r_state);
     }
 
-    /* P1-12: Unknown backend must return error, never return 0 silently */
+    /* Unknown backend must return error, never return 0 silently */
     return -EINVAL;
 }
 
@@ -66,6 +66,10 @@ static int adapter_hvac_actuator_set_tri_state(void *impl, uint8_t unit_id, hvac
 
     if (!hvac_tri_state_is_valid((uint8_t)tri)) {
         return -EINVAL;
+    }
+
+    if (self->cached_tri_state[unit_id] == tri) {
+        return 0;
     }
 
     bool aa = false;
@@ -125,7 +129,11 @@ static int adapter_hvac_actuator_get_tri_state(void *impl, uint8_t unit_id, hvac
         return -EINVAL;
     }
 
-    *out_tri = self->cached_tri_state[unit_id];
+    if (!hvac_tri_state_is_valid((uint8_t)self->cached_tri_state[unit_id])) {
+        *out_tri = HVAC_TRI_STATE_OFF;
+    } else {
+        *out_tri = self->cached_tri_state[unit_id];
+    }
     return 0;
 }
 
@@ -160,7 +168,7 @@ int adapter_hvac_actuator_init(adapter_hvac_actuator_t *self,
     }
 
     for (size_t i = 0U; i < HVAC_MAX_UNITS_TOTAL; i++) {
-        self->cached_tri_state[i] = HVAC_TRI_STATE_OFF;
+        self->cached_tri_state[i] = (hvac_tri_state_t)0xFF;
     }
 
     return 0;
@@ -175,6 +183,7 @@ int adapter_hvac_actuator_set_hw_config(adapter_hvac_actuator_t *self,
     }
 
     self->hw_config[unit_id] = *cfg;
+    self->cached_tri_state[unit_id] = (hvac_tri_state_t)0xFF;
     return 0;
 }
 

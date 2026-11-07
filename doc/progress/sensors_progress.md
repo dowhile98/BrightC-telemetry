@@ -26,6 +26,9 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P0-01 & P0-03 (Sensor Cache Thread Safety & Calibration Persistence):
+  - Added thread-safe `app_facade_update_modbus_temperatures()` and `app_facade_update_internal_temperatures()` protected with `k_spinlock` for concurrent Modbus AO and local ADC sampling threads.
+  - Linked calibration temperature offsets (`temp_offsets_x10[21]`) in `config_calibration_t` to `app_facade_sensor_get_readings()` and persisted changes through `app_facade_sensor_set_calibration()`.
 - **2026-11-06**: Implemented Mathematical Model Revision F (`thermodynamic_engine.h`, `thermodynamic_engine.c`):
   - Pure C99/C11 implementation of Revision F baseline: ASHRAE psychrometrics (saturation pressure, humidity ratio, moist air enthalpy, dew point, wet bulb).
   - Mass flow rates (air and water-glycol mixtures 0-60%), sensible & latent heat capacities, balance discrepancy checks.

@@ -500,7 +500,7 @@ const net_wifi_config_t *default_config_get_net_wifi_cfg(void)
 }
 
 /* ========================================================================= */
-/* Default Configurations for Device, Calibration, Sensor, and Baseline (P2-1) */
+/* Default Configurations for Device, Calibration, Sensor, and Baseline */
 /* ========================================================================= */
 
 const config_device_t k_default_device_cfg = {
@@ -510,6 +510,7 @@ const config_device_t k_default_device_cfg = {
 };
 
 const config_calibration_t k_default_calibration_cfg = {
+    .temp_offsets_x10 = {0},
     .analog_offsets = {0},
     .analog_gains = {
         SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY, SENSOR_CAL_GAIN_UNITY,

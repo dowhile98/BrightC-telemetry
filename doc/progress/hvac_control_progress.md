@@ -44,6 +44,10 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit findings P0-02 and P1-05:
+  - P0-02 (Relay Change-Detection & Saturation Guard): Added state cache guard in `adapter_hvac_actuator_set_tri_state()` preventing redundant bus dispatches when commanded tri-state matches cached state. Initialized cache to `(hvac_tri_state_t)0xFF` on adapter init and invalidated on `adapter_hvac_actuator_set_hw_config()`. Handled uninitialized fallback in `adapter_hvac_actuator_get_tri_state()`.
+  - P1-05 (HVAC Setpoint Validation & Modes): Enforced `heat_target_x10 < cool_target_x10` and preserved dynamic `temp_alarm` and `temp_bypass` deltas in `app_facade_hvac_set_setpoint()`. Implemented `HVAC_MODE_FAN_ONLY` in `app_facade_hvac_set_mode()` setting smart idle fan while disabling compressors. Added fan control handling to `app_facade_hvac_set_unit_manual()`.
+  - Test suite status: **33/33 tests passing on `native_sim` across 5 test suites**.
 - **2026-11-06**: Resolved audit findings P2-5, P2-6, P2-7:
   - P2-5 (Safe State on Stop): Implemented `ao_hvac_safe_state(ao_hvac_t *self)` de-energizing all compressor, heater, and fan stages to `HVAC_TRI_STATE_OFF` immediately on AO stop and on thread exit.
   - P2-6 (Double Wait Contract): Aligned `ao_hvac_stop()` with canonical 5-phase lifecycle by removing internal `k_sem_take(&self->stopped_sem)`, leaving synchronization ownership exclusively to `ao_hvac_wait_stopped()`.

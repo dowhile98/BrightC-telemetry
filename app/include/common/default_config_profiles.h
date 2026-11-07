@@ -74,7 +74,7 @@ typedef enum {
 } hvac_profile_id_t;
 
 /* ========================================================================= */
-/* Additional Domain Configuration Structures (P2-1)                         */
+/* Additional Domain Configuration Structures */
 /* ========================================================================= */
 
 typedef struct {
@@ -84,6 +84,7 @@ typedef struct {
 } config_device_t;
 
 typedef struct {
+    int16_t  temp_offsets_x10[21];
     int16_t  analog_offsets[16];
     uint16_t analog_gains[16];
 } config_calibration_t;

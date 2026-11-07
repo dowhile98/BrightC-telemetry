@@ -47,6 +47,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/domain/models/hvac_group_entity.c
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c
     ${APP_DIR}/app/src/application/config/default_config_profiles.c
+    ${APP_DIR}/app/src/application/services/app_facade.c
 )
 
 target_include_directories(app PRIVATE

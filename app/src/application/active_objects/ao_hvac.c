@@ -463,7 +463,7 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
         hvac_group_entity_set_config(&self->groups[g], &cfg->groups[g]);
     }
 
-    /* Fix P0-2: Synchronize physical relay routing on runtime profile update */
+    /* Synchronize physical relay routing on runtime profile update */
     if (self->actuator_adapter != NULL) {
         for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
             (void)adapter_hvac_actuator_set_hw_config(self->actuator_adapter, u, &cfg->units[u]);

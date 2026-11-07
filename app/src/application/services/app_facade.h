@@ -267,6 +267,26 @@ int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compr
 int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view);
 
 /**
+ * @brief Update cached Modbus RTD temperature sensor readings.
+ *
+ * @param[in] temps      Array of temperature values in degrees C.
+ * @param[in] valid_mask Bitmask of valid sensor channels.
+ * @param[in] count      Number of temperatures in array.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_update_modbus_temperatures(const float *temps, uint16_t valid_mask, size_t count);
+
+/**
+ * @brief Update cached internal on-board RTD temperature sensor readings.
+ *
+ * @param[in] temps      Array of temperature values in degrees C.
+ * @param[in] valid_mask Bitmask of valid sensor channels.
+ * @param[in] count      Number of temperatures in array.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_update_internal_temperatures(const float *temps, uint16_t valid_mask, size_t count);
+
+/**
  * @brief Update calibration offset for a sensor channel.
  *
  * @param[in] sensor_idx  Physical channel index.

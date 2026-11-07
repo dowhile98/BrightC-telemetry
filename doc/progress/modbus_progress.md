@@ -27,6 +27,9 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-06**: Resolved audit finding P0-01 (Temperature Acquisition Chain):
+  - Defined `ao_modbus_cwt_tm16pt_cb_t` callback in `ao_modbus.h` and integrated invocation in `ao_modbus.c` upon successful holding register reads for `MODBUS_DEV_TYPE_CWT_TM16PT`.
+  - Wired callback in `composition_root.c` across all Modbus buses to forward parsed temperatures directly to `ao_hvac_feed_temperatures()` and `app_facade_update_modbus_temperatures()`.
 - **2026-11-06**: Resolved audit findings P2-3, P2-9, P2-10:
   - P2-3 (Modbus Slave ID Kconfig & Dynamic Configuration): Defined `CONFIG_BRIGHTC_DEFAULT_MODBUS_ADDR_MBSL32DI` and `CONFIG_BRIGHTC_DEFAULT_MODBUS_ADDR_WAVESHARE_RELAY` in `app/Kconfig`. Added `app_facade_modbus_get_slave()` and shell command `modbus slave <id> ...` with EEPROM persistence.
   - P2-9 (Unified `k_default_slaves`): Centralized Modbus default slaves in `default_config_profiles.c/.h` accessed via `default_config_get_modbus_slaves()`, removing duplicated tables in `composition_root.c`.

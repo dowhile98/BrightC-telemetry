@@ -19,6 +19,7 @@
 #include "common/modbus_types.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_slave_registry.h"
+#include "interfaces/i_temperature_bank.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +79,9 @@ typedef struct {
 /** Callback invoked when MBSL32DI inputs are read. */
 typedef void (*ao_modbus_mbsl32di_cb_t)(void *ctx, uint8_t device_id, uint32_t raw_inputs);
 
+/** Callback invoked when CWT-TM-16PT temperature bank is read. */
+typedef void (*ao_modbus_cwt_tm16pt_cb_t)(void *ctx, uint8_t device_id, const temperature_bank_16ch_t *bank);
+
 /**
  * @brief One polling thread and everything it needs.
  */
@@ -93,6 +97,9 @@ typedef struct {
 
     ao_modbus_mbsl32di_cb_t mbsl32di_cb; /**< Callback for digital inputs */
     void *mbsl32di_cb_ctx;               /**< Callback user context */
+
+    ao_modbus_cwt_tm16pt_cb_t cwt_tm16pt_cb; /**< Callback for temperature bank */
+    void *cwt_tm16pt_cb_ctx;                 /**< Callback user context */
 
     /* Synchronization */
     struct k_sem stopped_sem;      /**< Signaled when inner loop exits */
@@ -158,6 +165,11 @@ int ao_modbus_deinit(ao_modbus_t *self);
  * @brief Register callback for MBSL32DI digital input readings.
  */
 void ao_modbus_set_mbsl32di_callback(ao_modbus_t *self, ao_modbus_mbsl32di_cb_t cb, void *ctx);
+
+/**
+ * @brief Register callback for CWT-TM-16PT temperature bank readings.
+ */
+void ao_modbus_set_cwt_tm16pt_callback(ao_modbus_t *self, ao_modbus_cwt_tm16pt_cb_t cb, void *ctx);
 
 #ifdef __cplusplus
 }

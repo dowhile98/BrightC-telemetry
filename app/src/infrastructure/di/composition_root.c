@@ -4,8 +4,10 @@
  */
 
 #include "composition_root.h"
+#include "application/services/app_facade.h"
 #include "common/config_envelope.h"
 #include "common/default_config_profiles.h"
+#include "domain/services/cwt_tm16pt_codec.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
 
 #include <errno.h>
@@ -16,7 +18,7 @@
 
 LOG_MODULE_REGISTER(composition_root, LOG_LEVEL_INF);
 
-/* Compile-time assertions for persistent storage layout (§4.1.C, P1-8) */
+/* Compile-time assertions for persistent storage layout */
 BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
              "config_hvac_t envelope exceeds storage slot size (1024 - 32 bytes)");
 BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
@@ -134,49 +136,45 @@ static int storage_provider_hvac(void *ctx, config_domain_t domain,
 static int storage_provider_device(void *ctx, config_domain_t domain,
                                    void *out_buf, size_t max_size, size_t *out_size)
 {
-    ARG_UNUSED(ctx);
-    if (domain != CONFIG_DOMAIN_DEVICE || out_buf == NULL)
+    app_container_t *self = (app_container_t *)ctx;
+    if (domain != CONFIG_DOMAIN_DEVICE || out_buf == NULL || self == NULL)
     {
         return -EINVAL;
     }
-    const config_device_t *cfg = default_config_get_device_cfg();
-    return config_envelope_pack(CONFIG_DOMAIN_DEVICE, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+    return config_envelope_pack(CONFIG_DOMAIN_DEVICE, &self->device_cfg, sizeof(self->device_cfg), out_buf, max_size, out_size);
 }
 
 static int storage_provider_calibration(void *ctx, config_domain_t domain,
                                         void *out_buf, size_t max_size, size_t *out_size)
 {
-    ARG_UNUSED(ctx);
-    if (domain != CONFIG_DOMAIN_CALIBRATION || out_buf == NULL)
+    app_container_t *self = (app_container_t *)ctx;
+    if (domain != CONFIG_DOMAIN_CALIBRATION || out_buf == NULL || self == NULL)
     {
         return -EINVAL;
     }
-    const config_calibration_t *cfg = default_config_get_calibration_cfg();
-    return config_envelope_pack(CONFIG_DOMAIN_CALIBRATION, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+    return config_envelope_pack(CONFIG_DOMAIN_CALIBRATION, &self->calibration_cfg, sizeof(self->calibration_cfg), out_buf, max_size, out_size);
 }
 
 static int storage_provider_sensor_cfg(void *ctx, config_domain_t domain,
                                        void *out_buf, size_t max_size, size_t *out_size)
 {
-    ARG_UNUSED(ctx);
-    if (domain != CONFIG_DOMAIN_SENSOR_CFG || out_buf == NULL)
+    app_container_t *self = (app_container_t *)ctx;
+    if (domain != CONFIG_DOMAIN_SENSOR_CFG || out_buf == NULL || self == NULL)
     {
         return -EINVAL;
     }
-    const config_sensor_cfg_t *cfg = default_config_get_sensor_cfg();
-    return config_envelope_pack(CONFIG_DOMAIN_SENSOR_CFG, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+    return config_envelope_pack(CONFIG_DOMAIN_SENSOR_CFG, &self->sensor_cfg, sizeof(self->sensor_cfg), out_buf, max_size, out_size);
 }
 
 static int storage_provider_baseline(void *ctx, config_domain_t domain,
                                      void *out_buf, size_t max_size, size_t *out_size)
 {
-    ARG_UNUSED(ctx);
-    if (domain != CONFIG_DOMAIN_BASELINE || out_buf == NULL)
+    app_container_t *self = (app_container_t *)ctx;
+    if (domain != CONFIG_DOMAIN_BASELINE || out_buf == NULL || self == NULL)
     {
         return -EINVAL;
     }
-    const config_baseline_t *cfg = default_config_get_baseline_cfg();
-    return config_envelope_pack(CONFIG_DOMAIN_BASELINE, cfg, sizeof(*cfg), out_buf, max_size, out_size);
+    return config_envelope_pack(CONFIG_DOMAIN_BASELINE, &self->baseline_cfg, sizeof(self->baseline_cfg), out_buf, max_size, out_size);
 }
 
 #if defined(CONFIG_ZTEST)
@@ -440,6 +438,79 @@ int composition_root_init_storage(app_container_t *self)
     {
         LOG_ERR("storage active object init failed (%d)", err);
         return err;
+    }
+
+    /* Initialize RAM defaults for persistent configuration domains */
+    self->device_cfg = *default_config_get_device_cfg();
+    self->calibration_cfg = *default_config_get_calibration_cfg();
+    self->sensor_cfg = *default_config_get_sensor_cfg();
+    self->baseline_cfg = *default_config_get_baseline_cfg();
+
+    if (i_config_storage_is_bound(&self->storage.port))
+    {
+        /* 1. DEVICE */
+        uint8_t dev_buf[sizeof(config_envelope_header_t) + sizeof(config_device_t)];
+        size_t dev_size = 0U;
+        config_device_t dev_cfg;
+        memset(&dev_cfg, 0, sizeof(dev_cfg));
+        size_t dev_unpacked = 0U;
+        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_DEVICE,
+                                  dev_buf, sizeof(dev_buf), &dev_size) == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_DEVICE, dev_buf, dev_size,
+                                   &dev_cfg, sizeof(dev_cfg), &dev_unpacked) == 0 &&
+            dev_unpacked == sizeof(config_device_t))
+        {
+            self->device_cfg = dev_cfg;
+            LOG_INF("Loaded DEVICE config from storage");
+        }
+
+        /* 2. CALIBRATION */
+        uint8_t cal_buf[sizeof(config_envelope_header_t) + sizeof(config_calibration_t)];
+        size_t cal_size = 0U;
+        config_calibration_t cal_cfg;
+        memset(&cal_cfg, 0, sizeof(cal_cfg));
+        size_t cal_unpacked = 0U;
+        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_CALIBRATION,
+                                  cal_buf, sizeof(cal_buf), &cal_size) == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_CALIBRATION, cal_buf, cal_size,
+                                   &cal_cfg, sizeof(cal_cfg), &cal_unpacked) == 0 &&
+            cal_unpacked == sizeof(config_calibration_t))
+        {
+            self->calibration_cfg = cal_cfg;
+            LOG_INF("Loaded CALIBRATION config from storage");
+        }
+
+        /* 3. SENSOR_CFG */
+        uint8_t sensor_buf[sizeof(config_envelope_header_t) + sizeof(config_sensor_cfg_t)];
+        size_t sensor_size = 0U;
+        config_sensor_cfg_t s_cfg;
+        memset(&s_cfg, 0, sizeof(s_cfg));
+        size_t sensor_unpacked = 0U;
+        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_SENSOR_CFG,
+                                  sensor_buf, sizeof(sensor_buf), &sensor_size) == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_SENSOR_CFG, sensor_buf, sensor_size,
+                                   &s_cfg, sizeof(s_cfg), &sensor_unpacked) == 0 &&
+            sensor_unpacked == sizeof(config_sensor_cfg_t))
+        {
+            self->sensor_cfg = s_cfg;
+            LOG_INF("Loaded SENSOR_CFG from storage");
+        }
+
+        /* 4. BASELINE */
+        uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_baseline_t)];
+        size_t base_size = 0U;
+        config_baseline_t b_cfg;
+        memset(&b_cfg, 0, sizeof(b_cfg));
+        size_t base_unpacked = 0U;
+        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_BASELINE,
+                                  base_buf, sizeof(base_buf), &base_size) == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_BASELINE, base_buf, base_size,
+                                   &b_cfg, sizeof(b_cfg), &base_unpacked) == 0 &&
+            base_unpacked == sizeof(config_baseline_t))
+        {
+            self->baseline_cfg = b_cfg;
+            LOG_INF("Loaded BASELINE config from storage");
+        }
     }
 
     self->storage.initialized = true;
@@ -889,6 +960,23 @@ static void on_modbus_mbsl32di_reading(void *ctx, uint8_t device_id, uint32_t ra
 #endif
 }
 
+static void on_modbus_cwt_tm16pt_reading(void *ctx, uint8_t device_id, const temperature_bank_16ch_t *bank)
+{
+    ARG_UNUSED(device_id);
+    app_container_t *self = (app_container_t *)ctx;
+    if (self == NULL || bank == NULL)
+    {
+        return;
+    }
+    if (self->hvac.initialized)
+    {
+        (void)ao_hvac_feed_temperatures(&self->hvac.ao, bank->temperatures_c,
+                                        bank->valid_channels_mask, CWT_TM16PT_CHANNEL_COUNT);
+    }
+    (void)app_facade_update_modbus_temperatures(bank->temperatures_c,
+                                                bank->valid_channels_mask, CWT_TM16PT_CHANNEL_COUNT);
+}
+
 int composition_root_wire(app_container_t *self)
 {
     if (self == NULL)
@@ -975,6 +1063,7 @@ int composition_root_wire(app_container_t *self)
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
         {
             ao_modbus_set_mbsl32di_callback(&self->modbus.ao[bus], on_modbus_mbsl32di_reading, self);
+            ao_modbus_set_cwt_tm16pt_callback(&self->modbus.ao[bus], on_modbus_cwt_tm16pt_reading, self);
         }
     }
 
