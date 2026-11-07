@@ -261,6 +261,24 @@ ZTEST(hvac_group_suite, test_cooling_timeout_and_rescue_boost)
         hvac_unit_entity_get_relays(&s_units[i], &relay_aa, &relay_sm, &relay_g);
         zassert_false(relay_sm, "Unit %d relay_sm must be 0 in bypass", i);
     }
+
+    /* R-03: Recovery on T <= temp_min (e.g. 19.5 C <= temp_min of 20.0 C) */
+    metrics.highest_temp = 19.5f;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+
+    zassert_equal(s_group.bypass_causes_mask & (uint32_t)BYPASS_CAUSE_COOLING_TIMEOUT, 0U,
+                  "BYPASS_CAUSE_COOLING_TIMEOUT must be cleared on T <= temp_min");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "cooling_timeout_count must be reset to 0");
+    zassert_equal(s_group.cooling_timer_s, 0U, "cooling_timer_s must be reset to 0");
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Group must return to GROUP_STATE_IDLE");
+
+    /* Verify units are stopped and restored to smart mode (relay_sm = 1, relay_aa = 0) */
+    for (uint8_t i = 0U; i < HVAC_MAX_UNITS_TOTAL; i++) {
+        bool relay_aa, relay_sm, relay_g;
+        hvac_unit_entity_get_relays(&s_units[i], &relay_aa, &relay_sm, &relay_g);
+        zassert_true(relay_sm, "Unit %d relay_sm restored to 1", i);
+        zassert_false(relay_aa, "Unit %d relay_aa must be 0", i);
+    }
 }
 
 /*============================================================================*

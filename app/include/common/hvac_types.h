@@ -61,13 +61,69 @@ typedef enum {
 } hvac_io_backend_t;
 
 /**
- * @brief Tri-state actuator command level.
+ * @brief Tri-state actuator command level (3 discrete physical relays).
  */
-typedef enum {
-    HVAC_TRI_STATE_OFF    = 0, /**< Both compressor and bypass relays open (OFF) */
-    HVAC_TRI_STATE_ON     = 1, /**< Smart mode compressor active (relay_aa=1, relay_sm=1) */
-    HVAC_TRI_STATE_BYPASS = 2, /**< Transferred to mechanical thermostat (relay_sm=0) */
+typedef struct {
+    bool relay_aa; /**< Compressor contactor (Smart Mode ON) */
+    bool relay_sm; /**< Mode selector (Smart=1 / Bypass=0) */
+    bool relay_g;  /**< Fan purge / forced ventilation */
 } hvac_tri_state_t;
+
+#define HVAC_TRI_STATE_OFF_VAL    ((hvac_tri_state_t){ .relay_aa = false, .relay_sm = true,  .relay_g = false })
+#define HVAC_TRI_STATE_ON_VAL     ((hvac_tri_state_t){ .relay_aa = true,  .relay_sm = true,  .relay_g = false })
+#define HVAC_TRI_STATE_BYPASS_VAL ((hvac_tri_state_t){ .relay_aa = false, .relay_sm = false, .relay_g = false })
+
+#define HVAC_TRI_STATE_OFF    HVAC_TRI_STATE_OFF_VAL
+#define HVAC_TRI_STATE_ON     HVAC_TRI_STATE_ON_VAL
+#define HVAC_TRI_STATE_BYPASS HVAC_TRI_STATE_BYPASS_VAL
+
+/**
+ * @brief Compare two tri-state structures for equality.
+ *
+ * @param a First tri-state.
+ * @param b Second tri-state.
+ * @return true if all relays match, false otherwise.
+ */
+static inline bool hvac_tri_state_is_equal(hvac_tri_state_t a, hvac_tri_state_t b)
+{
+    return (a.relay_aa == b.relay_aa) &&
+           (a.relay_sm == b.relay_sm) &&
+           (a.relay_g == b.relay_g);
+}
+
+/**
+ * @brief Validate tri-state physical configuration.
+ *
+ * In mechanical bypass (relay_sm == false), the smart controller must not energize
+ * the compressor contactor (relay_aa == true).
+ *
+ * @param tri Tri-state value to validate.
+ * @return true if valid, false otherwise.
+ */
+static inline bool hvac_tri_state_is_valid(hvac_tri_state_t tri)
+{
+    if (!tri.relay_sm && tri.relay_aa) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Convert tri-state structure to a human-readable string.
+ *
+ * @param tri Tri-state to convert.
+ * @return String representation ("ON", "BYPASS", or "OFF").
+ */
+static inline const char *hvac_tri_state_str(hvac_tri_state_t tri)
+{
+    if (hvac_tri_state_is_equal(tri, HVAC_TRI_STATE_ON)) {
+        return "ON";
+    }
+    if (hvac_tri_state_is_equal(tri, HVAC_TRI_STATE_BYPASS)) {
+        return "BYPASS";
+    }
+    return "OFF";
+}
 
 /**
  * @brief Individual AC unit finite state machine states.
@@ -116,6 +172,32 @@ typedef enum {
     SENSOR_METRIC_AVG = 1, /**< Average of healthy zone probes */
     SENSOR_METRIC_MIN = 2  /**< Minimum temp in zone */
 } sensor_metric_policy_t;
+
+/**
+ * @brief Discrete HVAC state transition event types.
+ */
+typedef enum {
+    HVAC_EVENT_COOLING_STARTED = 0,
+    HVAC_EVENT_COOL_BOOST_STARTED,
+    HVAC_EVENT_IDLE_ENTERED,
+    HVAC_EVENT_BYPASS_ENTERED,
+    HVAC_EVENT_BYPASS_CLEARED,
+    HVAC_EVENT_FIRE_ACTIVATED,
+    HVAC_EVENT_FIRE_CLEARED,
+    HVAC_EVENT_UNIT_FAULT,
+    HVAC_EVENT_SHIFT_ROTATED,
+    HVAC_EVENT_MANUAL_TIMEOUT,
+} hvac_event_type_t;
+
+/**
+ * @brief HVAC discrete transition event notification message.
+ */
+typedef struct {
+    uint8_t           group_id;
+    uint8_t           unit_id;
+    hvac_event_type_t type;
+    uint32_t          timestamp_ms;
+} hvac_event_t;
 
 /* ========================================================================= */
 /* Structures                                                                */
@@ -257,17 +339,6 @@ static inline bool hvac_endpoint_is_valid(const hvac_io_endpoint_t *ep)
 }
 
 /**
- * @brief Validate tri-state enumerator.
- *
- * @param tri Tri-state value to validate.
- * @return true if valid, false otherwise.
- */
-static inline bool hvac_tri_state_is_valid(uint8_t tri)
-{
-    return (tri <= (uint8_t)HVAC_TRI_STATE_BYPASS);
-}
-
-/**
  * @brief Validate sensor metric policy enumerator.
  *
  * @param policy Metric policy to validate.
@@ -357,6 +428,14 @@ static inline bool config_hvac_is_valid(const config_hvac_t *cfg)
         allowed_unit_mask = 0xFFU;
     } else if (cfg->total_units > 0U) {
         allowed_unit_mask = (uint8_t)((1U << cfg->total_units) - 1U);
+    }
+
+    uint8_t combined_unit_mask = 0U;
+    for (uint8_t g = 0U; g < cfg->total_groups; g++) {
+        if ((combined_unit_mask & cfg->groups[g].unit_mask) != 0U) {
+            return false; /* Overlapping unit masks between groups! */
+        }
+        combined_unit_mask |= cfg->groups[g].unit_mask;
     }
 
     for (uint8_t i = 0U; i < cfg->total_groups; i++) {

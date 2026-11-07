@@ -8,6 +8,7 @@
 #include "application/active_objects/ao_sensor_matrix.h"
 #include "application/zbus/sensor_channels.h"
 #include "application/zbus/digital_input_channels.h"
+#include "application/zbus/hvac_channels.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -1159,6 +1160,25 @@ static void on_hvac_di_feed_cb(const struct zbus_channel *chan)
 }
 
 ZBUS_LISTENER_DEFINE(lis_hvac_di_feed, on_hvac_di_feed_cb);
+
+static void on_hvac_event_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_hvac_event)
+    {
+        return;
+    }
+
+    const hvac_event_t *ev = zbus_chan_const_msg(chan);
+    if (ev == NULL)
+    {
+        return;
+    }
+
+    LOG_INF("HVAC Event: grp=%u unit=%u type=%d ts=%u",
+            ev->group_id, ev->unit_id, (int)ev->type, ev->timestamp_ms);
+}
+
+ZBUS_LISTENER_DEFINE(lis_hvac_event_logger, on_hvac_event_cb);
 
 
 int composition_root_init(app_container_t *self)

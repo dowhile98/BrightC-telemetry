@@ -96,6 +96,12 @@ typedef struct {
     volatile bool     terminate;
     bool              is_initialized;
     uint32_t          actuator_fault_count; /**< Counter of failed actuation attempts */
+
+    /* Previous states for transition event generation */
+    hvac_group_state_t prev_group_state[HVAC_MAX_GROUPS];
+    hvac_unit_state_t  prev_unit_state[HVAC_MAX_UNITS_TOTAL];
+    uint8_t            prev_turn_offset[HVAC_MAX_GROUPS];
+    bool               prev_manual_active[HVAC_MAX_GROUPS];
 } ao_hvac_t;
 
 /**

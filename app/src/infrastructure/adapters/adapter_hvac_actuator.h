@@ -38,6 +38,7 @@ struct adapter_hvac_actuator_s {
     i_relay_t              remote_relay_port;
     i_relay_t              local_relay_port;
     hvac_tri_state_t       cached_tri_state[HVAC_MAX_UNITS_TOTAL];
+    bool                   cache_valid[HVAC_MAX_UNITS_TOTAL];
 };
 
 /**

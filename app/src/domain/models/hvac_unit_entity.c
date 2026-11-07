@@ -68,6 +68,12 @@ void hvac_unit_entity_increment_fault(hvac_unit_entity_t *self)
         return;
     }
 
+    if (self->state != UNIT_STATE_RUNNING &&
+        self->state != UNIT_STATE_STARTING &&
+        self->state != UNIT_STATE_BLOCKED_ALARM) {
+        return;
+    }
+
     self->fault_counter++;
     self->startup_timer_s = 0;
     self->fan_delay_timer_s = 0;
@@ -246,15 +252,15 @@ hvac_tri_state_t hvac_unit_entity_get_tri_state(const hvac_unit_entity_t *self)
         return HVAC_TRI_STATE_OFF;
     }
 
-    if (self->state == UNIT_STATE_RUNNING) {
-        return HVAC_TRI_STATE_ON;
-    }
+    hvac_tri_state_t tri;
+    tri.relay_aa = (self->state == UNIT_STATE_RUNNING);
+    tri.relay_sm = (self->state != UNIT_STATE_BYPASS);
+    tri.relay_g = (self->fan_state == HVAC_FAN_STATE_SMART_IDLE_ON) &&
+                  (self->state != UNIT_STATE_BYPASS) &&
+                  (self->state != UNIT_STATE_FAULT) &&
+                  (self->state != UNIT_STATE_BLOCKED_ALARM);
 
-    if (self->state == UNIT_STATE_BYPASS) {
-        return HVAC_TRI_STATE_BYPASS;
-    }
-
-    return HVAC_TRI_STATE_OFF;
+    return tri;
 }
 
 void hvac_unit_entity_get_relays(const hvac_unit_entity_t *self,
@@ -262,30 +268,17 @@ void hvac_unit_entity_get_relays(const hvac_unit_entity_t *self,
                                  bool *relay_sm,
                                  bool *relay_g)
 {
-    if (self == NULL) {
-        if (relay_aa != NULL) {
-            *relay_aa = false;
-        }
-        if (relay_sm != NULL) {
-            *relay_sm = false;
-        }
-        if (relay_g != NULL) {
-            *relay_g = false;
-        }
-        return;
-    }
+    hvac_tri_state_t tri = hvac_unit_entity_get_tri_state(self);
 
     if (relay_aa != NULL) {
-        *relay_aa = (self->state == UNIT_STATE_RUNNING);
+        *relay_aa = tri.relay_aa;
     }
 
     if (relay_sm != NULL) {
-        *relay_sm = (self->state != UNIT_STATE_BYPASS);
+        *relay_sm = tri.relay_sm;
     }
 
     if (relay_g != NULL) {
-        *relay_g = (self->fan_state == HVAC_FAN_STATE_SMART_IDLE_ON) &&
-                   (self->state != UNIT_STATE_BYPASS) &&
-                   (self->state != UNIT_STATE_FAULT);
+        *relay_g = tri.relay_g;
     }
 }

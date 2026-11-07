@@ -36,6 +36,13 @@ typedef struct {
  */
 ZBUS_CHAN_DECLARE(chan_hvac_status);
 
+/**
+ * @brief Zbus channel broadcasting discrete HVAC transition events.
+ *
+ * Payloads are hvac_event_t structures.
+ */
+ZBUS_CHAN_DECLARE(chan_hvac_event);
+
 #ifdef __cplusplus
 }
 #endif

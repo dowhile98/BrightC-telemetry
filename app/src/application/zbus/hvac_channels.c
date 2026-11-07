@@ -16,3 +16,12 @@ ZBUS_CHAN_DEFINE(
     ZBUS_OBSERVERS_EMPTY,
     ZBUS_MSG_INIT(0)
 );
+
+ZBUS_CHAN_DEFINE(
+    chan_hvac_event,
+    hvac_event_t,
+    NULL,
+    NULL,
+    ZBUS_OBSERVERS(lis_hvac_event_logger),
+    ZBUS_MSG_INIT(0)
+);

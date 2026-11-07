@@ -108,6 +108,13 @@ void hvac_group_entity_set_config(hvac_group_entity_t *self, const config_hvac_g
 bool hvac_group_entity_add_unit(hvac_group_entity_t *self, hvac_unit_entity_t *unit);
 
 /**
+ * @brief Clear all registered AC units from this coordination group.
+ *
+ * @param[in,out] self Group entity instance.
+ */
+void hvac_group_entity_clear_units(hvac_group_entity_t *self);
+
+/**
  * @brief Set or clear a specific bypass cause flag in the bitmask.
  *
  * @param[in,out] self    Group entity instance.

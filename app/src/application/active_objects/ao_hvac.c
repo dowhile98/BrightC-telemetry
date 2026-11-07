@@ -141,6 +141,16 @@ int ao_hvac_init(ao_hvac_t *self,
         }
     }
 
+    /* Initialize transition tracking baselines */
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        self->prev_group_state[g] = self->groups[g].state;
+        self->prev_turn_offset[g] = self->groups[g].current_turn_offset;
+        self->prev_manual_active[g] = self->groups[g].is_manual_active;
+    }
+    for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+        self->prev_unit_state[u] = self->units[u].state;
+    }
+
     self->is_initialized = true;
 
     /* Spawn thread in gated state */
@@ -178,6 +188,21 @@ int ao_hvac_start(ao_hvac_t *self)
     return 0;
 }
 
+#if defined(CONFIG_ZBUS)
+static void publish_hvac_event(uint8_t group_id, uint8_t unit_id, hvac_event_type_t type)
+{
+    hvac_event_t evt = {
+        .group_id = group_id,
+        .unit_id = unit_id,
+        .type = type,
+        .timestamp_ms = k_uptime_get_32(),
+    };
+    (void)zbus_chan_pub(&chan_hvac_event, &evt, K_MSEC(50));
+}
+#else
+#define publish_hvac_event(g, u, t) ((void)0)
+#endif
+
 int ao_hvac_step(ao_hvac_t *self)
 {
     if (self == NULL || !self->is_initialized) {
@@ -191,19 +216,66 @@ int ao_hvac_step(ao_hvac_t *self)
         if (self->group_active[g]) {
             hvac_group_entity_evaluate(&self->groups[g], &self->group_metrics[g]);
             hvac_group_entity_tick_1s(&self->groups[g]);
+
+            hvac_group_state_t g_after = self->groups[g].state;
+            bool manual_after = self->groups[g].is_manual_active;
+            uint8_t turn_after = self->groups[g].current_turn_offset;
+
+            /* Check group state transitions */
+            if (g_after != self->prev_group_state[g]) {
+                if (g_after == GROUP_STATE_COOLING) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_COOLING_STARTED);
+                } else if (g_after == GROUP_STATE_COOL_BOOST) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_COOL_BOOST_STARTED);
+                } else if (g_after == GROUP_STATE_IDLE) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_IDLE_ENTERED);
+                } else if (g_after == GROUP_STATE_BYPASS) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_BYPASS_ENTERED);
+                } else if (g_after == GROUP_STATE_FIRE) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_FIRE_ACTIVATED);
+                }
+
+                if (self->prev_group_state[g] == GROUP_STATE_BYPASS && g_after != GROUP_STATE_BYPASS) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_BYPASS_CLEARED);
+                }
+                if (self->prev_group_state[g] == GROUP_STATE_FIRE && g_after != GROUP_STATE_FIRE) {
+                    publish_hvac_event(g, 0U, HVAC_EVENT_FIRE_CLEARED);
+                }
+
+                self->prev_group_state[g] = g_after;
+            }
+
+            /* Check shift rotation */
+            if (turn_after != self->prev_turn_offset[g]) {
+                publish_hvac_event(g, 0U, HVAC_EVENT_SHIFT_ROTATED);
+                self->prev_turn_offset[g] = turn_after;
+            }
+
+            /* Check manual mode timeout */
+            if (self->prev_manual_active[g] && !manual_after && self->groups[g].manual_timer_s == 0U) {
+                publish_hvac_event(g, 0U, HVAC_EVENT_MANUAL_TIMEOUT);
+            }
+            self->prev_manual_active[g] = manual_after;
         }
     }
 
     /* 2. For each active unit, query synthesized tri-state and actuate */
     for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
         if (self->unit_active[u]) {
+            hvac_unit_state_t u_after = self->units[u].state;
+            if (u_after != self->prev_unit_state[u]) {
+                if (u_after == UNIT_STATE_FAULT) {
+                    publish_hvac_event(0U, u, HVAC_EVENT_UNIT_FAULT);
+                }
+                self->prev_unit_state[u] = u_after;
+            }
+
             hvac_tri_state_t tri = hvac_unit_entity_get_tri_state(&self->units[u]);
             if (i_hvac_unit_is_bound(&self->actuator_port)) {
                 int act_err = i_hvac_unit_set_tri_state(&self->actuator_port, u, tri);
                 if (act_err != 0) {
                     LOG_ERR("Actuator failed for unit %u: %d", u, act_err);
                     self->actuator_fault_count++;
-                    hvac_unit_entity_increment_fault(&self->units[u]);
                 }
             }
         }
@@ -497,8 +569,24 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
     self->config = *cfg;
     uint8_t count = (cfg->total_groups > 0U && cfg->total_groups <= HVAC_MAX_GROUPS)
                     ? cfg->total_groups : 1U;
+
+    /* Hot rebuild of group-unit bindings and active status */
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        hvac_group_entity_clear_units(&self->groups[g]);
+        self->group_active[g] = false;
+    }
+    memset(self->unit_active, 0, sizeof(self->unit_active));
+
     for (uint8_t g = 0U; g < count; g++) {
+        self->group_active[g] = true;
         hvac_group_entity_set_config(&self->groups[g], &cfg->groups[g]);
+
+        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+            if ((cfg->groups[g].unit_mask & (1U << u)) != 0U) {
+                self->unit_active[u] = true;
+                (void)hvac_group_entity_add_unit(&self->groups[g], &self->units[u]);
+            }
+        }
     }
 
     /* Synchronize physical relay routing on runtime profile update */

@@ -62,7 +62,7 @@ ZTEST(adapter_hvac_actuator_suite, test_init_and_port_binding)
     hvac_tri_state_t tri = HVAC_TRI_STATE_ON;
     ret = i_hvac_unit_get_tri_state(&port, 0, &tri);
     zassert_equal(ret, 0, "get_tri_state failed");
-    zassert_equal(tri, HVAC_TRI_STATE_OFF, "Initial cached state should be OFF");
+    zassert_true(hvac_tri_state_is_equal(tri, HVAC_TRI_STATE_OFF), "Initial cached state should be OFF");
 }
 
 ZTEST(adapter_hvac_actuator_suite, test_tri_state_remote_modbus_mapping)
@@ -80,7 +80,7 @@ ZTEST(adapter_hvac_actuator_suite, test_tri_state_remote_modbus_mapping)
     hvac_tri_state_t read_tri = HVAC_TRI_STATE_OFF;
     ret = i_hvac_unit_get_tri_state(&port, 0, &read_tri);
     zassert_equal(ret, 0, "get_tri_state failed");
-    zassert_equal(read_tri, HVAC_TRI_STATE_ON, "Cached tri-state must be ON");
+    zassert_true(hvac_tri_state_is_equal(read_tri, HVAC_TRI_STATE_ON), "Cached tri-state must be ON");
 
     /* 2. Set to OFF: aa = open (0), sm = closed (1), g = open (0) */
     ret = i_hvac_unit_set_tri_state(&port, 0, HVAC_TRI_STATE_OFF);
@@ -91,7 +91,7 @@ ZTEST(adapter_hvac_actuator_suite, test_tri_state_remote_modbus_mapping)
 
     ret = i_hvac_unit_get_tri_state(&port, 0, &read_tri);
     zassert_equal(ret, 0, "get_tri_state failed");
-    zassert_equal(read_tri, HVAC_TRI_STATE_OFF, "Cached tri-state must be OFF");
+    zassert_true(hvac_tri_state_is_equal(read_tri, HVAC_TRI_STATE_OFF), "Cached tri-state must be OFF");
 
     /* 3. Set to BYPASS: aa = open (0), sm = open (0), g = open (0) */
     ret = i_hvac_unit_set_tri_state(&port, 0, HVAC_TRI_STATE_BYPASS);
@@ -102,7 +102,19 @@ ZTEST(adapter_hvac_actuator_suite, test_tri_state_remote_modbus_mapping)
 
     ret = i_hvac_unit_get_tri_state(&port, 0, &read_tri);
     zassert_equal(ret, 0, "get_tri_state failed");
-    zassert_equal(read_tri, HVAC_TRI_STATE_BYPASS, "Cached tri-state must be BYPASS");
+    zassert_true(hvac_tri_state_is_equal(read_tri, HVAC_TRI_STATE_BYPASS), "Cached tri-state must be BYPASS");
+
+    /* 4. R-01: Set to FAN PURGE / VENTILATION: aa = open (0), sm = closed (1), g = closed (1) */
+    hvac_tri_state_t fan_tri = { .relay_aa = false, .relay_sm = true, .relay_g = true };
+    ret = i_hvac_unit_set_tri_state(&port, 0, fan_tri);
+    zassert_equal(ret, 0, "set_tri_state FAN failed");
+    zassert_equal(fake_relay_get_channel_state(RELAY_CHANNEL_0), RELAY_STATE_OPEN, "relay_aa must be OPEN");
+    zassert_equal(fake_relay_get_channel_state(RELAY_CHANNEL_1), RELAY_STATE_CLOSED, "relay_sm must be CLOSED");
+    zassert_equal(fake_relay_get_channel_state(RELAY_CHANNEL_2), RELAY_STATE_CLOSED, "relay_g must be CLOSED");
+
+    ret = i_hvac_unit_get_tri_state(&port, 0, &read_tri);
+    zassert_equal(ret, 0, "get_tri_state failed");
+    zassert_true(hvac_tri_state_is_equal(read_tri, fan_tri), "Cached tri-state must match fan_tri");
 }
 
 ZTEST(adapter_hvac_actuator_suite, test_tri_state_local_gpio_mapping)
@@ -133,8 +145,9 @@ ZTEST(adapter_hvac_actuator_suite, test_error_handling_and_validation)
     int ret = i_hvac_unit_set_tri_state(&port, HVAC_MAX_UNITS_TOTAL, HVAC_TRI_STATE_ON);
     zassert_equal(ret, -EINVAL, "Should reject invalid unit_id");
 
-    /* Invalid tri state */
-    ret = i_hvac_unit_set_tri_state(&port, 0, (hvac_tri_state_t)99);
+    /* Invalid tri state: smart compressor cannot run in mechanical bypass */
+    hvac_tri_state_t invalid_tri = { .relay_aa = true, .relay_sm = false, .relay_g = false };
+    ret = i_hvac_unit_set_tri_state(&port, 0, invalid_tri);
     zassert_equal(ret, -EINVAL, "Should reject invalid tri-state");
 
     /* Simulated relay hardware error */

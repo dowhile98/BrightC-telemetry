@@ -23,12 +23,32 @@ static uint8_t s_queue_buf[AO_HVAC_QUEUE_DEPTH * sizeof(ao_hvac_event_t)];
 static K_THREAD_STACK_DEFINE(s_test_stack, AO_HVAC_STACK_SIZE);
 static i_hvac_unit_t s_actuator_port;
 
+#define zassert_tri_equal(a, b, msg) zassert_true(hvac_tri_state_is_equal((a), (b)), msg)
+
+static uint32_t s_event_count;
+static hvac_event_t s_last_event;
+
+static void test_hvac_event_logger_cb(const struct zbus_channel *chan)
+{
+    if (chan == &chan_hvac_event) {
+        const hvac_event_t *ev = zbus_chan_const_msg(chan);
+        if (ev != NULL) {
+            s_event_count++;
+            s_last_event = *ev;
+        }
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_hvac_event_logger, test_hvac_event_logger_cb);
+
 static void setup_fixture(void *fixture)
 {
     ARG_UNUSED(fixture);
     fake_hvac_unit_reset();
     s_actuator_port = fake_hvac_unit_get_port();
     k_msgq_init(&s_queue, (char *)s_queue_buf, sizeof(ao_hvac_event_t), AO_HVAC_QUEUE_DEPTH);
+    s_event_count = 0U;
+    memset(&s_last_event, 0, sizeof(s_last_event));
 }
 
 static void teardown_fixture(void *fixture)
@@ -114,8 +134,8 @@ ZTEST(ao_hvac_suite, test_thermal_evaluation_and_actuation)
     ret = ao_hvac_get_status(&s_ao, &status);
     zassert_equal(ret, 0, "get_status failed");
     zassert_equal(status.group_state[0], GROUP_STATE_IDLE, "Group should be IDLE");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 should be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 should be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 should be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 should be OFF");
 
     /* Now raise temperature: T = 25.5 C >= temp_max (24.0 C) */
     metrics.highest_temp = 25.5f;
@@ -129,10 +149,10 @@ ZTEST(ao_hvac_suite, test_thermal_evaluation_and_actuation)
     ret = ao_hvac_get_status(&s_ao, &status);
     zassert_equal(ret, 0, "get_status failed");
     zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group should be COOLING");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_ON, "Unit 1 should be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 should be standby (OFF)");
-    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be standby (OFF)");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_ON, "Unit 1 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 should be standby (OFF)");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be standby (OFF)");
 }
 
 ZTEST(ao_hvac_suite, test_fire_emergency_priority)
@@ -159,7 +179,7 @@ ZTEST(ao_hvac_suite, test_fire_emergency_priority)
     };
     (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
     (void)ao_hvac_step(&s_ao);
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
 
     /* Trigger fire emergency */
     int ret = ao_hvac_set_fire(&s_ao, true);
@@ -171,8 +191,8 @@ ZTEST(ao_hvac_suite, test_fire_emergency_priority)
     hvac_status_msg_t status;
     (void)ao_hvac_get_status(&s_ao, &status);
     zassert_equal(status.group_state[0], GROUP_STATE_FIRE, "Group must be in FIRE state");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must shut down immediately");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must shut down immediately");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must shut down immediately");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must shut down immediately");
 }
 
 ZTEST(ao_hvac_suite, test_unit_alarm_and_zbus_publishing)
@@ -199,7 +219,7 @@ ZTEST(ao_hvac_suite, test_unit_alarm_and_zbus_publishing)
     };
     (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
     (void)ao_hvac_step(&s_ao);
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 running");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 running");
 
     /* Unit 0 trips High Pressure alarm */
     int ret = ao_hvac_set_unit_alarms(&s_ao, 0, true, false, false, false);
@@ -208,14 +228,14 @@ ZTEST(ao_hvac_suite, test_unit_alarm_and_zbus_publishing)
     (void)ao_hvac_step(&s_ao);
 
     /* Unit 0 must shut down */
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must shut down due to alarm");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must shut down due to alarm");
 
     /* Verify Zbus channel publication */
     hvac_status_msg_t zbus_msg;
     ret = zbus_chan_read(&chan_hvac_status, &zbus_msg, K_MSEC(100));
     zassert_equal(ret, 0, "Failed to read from chan_hvac_status");
-    zassert_equal(zbus_msg.unit_tri_state[0], HVAC_TRI_STATE_OFF, "Zbus snapshot must show Unit 0 OFF");
-    zassert_equal(zbus_msg.unit_tri_state[1], HVAC_TRI_STATE_ON, "Zbus snapshot must show Unit 1 ON");
+    zassert_tri_equal(zbus_msg.unit_tri_state[0], HVAC_TRI_STATE_OFF, "Zbus snapshot must show Unit 0 OFF");
+    zassert_tri_equal(zbus_msg.unit_tri_state[1], HVAC_TRI_STATE_ON, "Zbus snapshot must show Unit 1 ON");
 }
 
 ZTEST(ao_hvac_suite, test_ao_hvac_runtime_group_config_update)
@@ -247,7 +267,7 @@ ZTEST(ao_hvac_suite, test_ao_hvac_runtime_group_config_update)
 
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "step failed");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF (idle)");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF (idle)");
 
     /* Dynamically lower temp_max to 24.0 C via ao_hvac_set_group_config */
     config_hvac_group_t updated_group = cfg.groups[0];
@@ -264,7 +284,7 @@ ZTEST(ao_hvac_suite, test_ao_hvac_runtime_group_config_update)
     ret = ao_hvac_get_status(&s_ao, &status);
     zassert_equal(ret, 0, "get_status failed");
     zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group must be in COOLING state");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must now be energized ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must now be energized ON");
 }
 
 ZTEST(ao_hvac_suite, test_ao_hvac_runtime_turn_count_update)
@@ -295,10 +315,10 @@ ZTEST(ao_hvac_suite, test_ao_hvac_runtime_turn_count_update)
     (void)ao_hvac_step(&s_ao);
 
     /* Only unit 0 should be energized (active_turn_count = 1) */
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 should be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 should be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 should be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 should be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be OFF");
 
     /* Dynamically increase active_turn_count to 3 */
     config_hvac_group_t updated_group = cfg.groups[0];
@@ -311,10 +331,10 @@ ZTEST(ao_hvac_suite, test_ao_hvac_runtime_turn_count_update)
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "step failed");
 
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_ON, "Unit 1 should be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_ON, "Unit 2 should be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be OFF (standby)");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_ON, "Unit 1 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_ON, "Unit 2 should be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 should be OFF (standby)");
 }
 
 ZTEST(ao_hvac_suite, test_ao_hvac_feed_temperatures_multi_sensor)
@@ -352,7 +372,7 @@ ZTEST(ao_hvac_suite, test_ao_hvac_feed_temperatures_multi_sensor)
     zassert_equal(ret, 0, "get_status failed");
     zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group 0 should transition to COOLING");
     zassert_within(status.highest_temp[0], 25.5f, 0.001f, "Highest temp should be 25.5 C");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be energized ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 should be energized ON");
 
     /* Test invalid arguments on ao_hvac_feed_temperatures */
     zassert_equal(ao_hvac_feed_temperatures(NULL, temps, valid_mask, 4U), -EINVAL, "NULL self must return -EINVAL");
@@ -500,14 +520,14 @@ ZTEST(ao_hvac_suite, test_safe_state_and_lifecycle_contract)
     /* Pre-load units into active ON */
     fake_hvac_unit_set_unit_state(0, HVAC_TRI_STATE_ON);
     fake_hvac_unit_set_unit_state(1, HVAC_TRI_STATE_BYPASS);
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 state");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_BYPASS, "Unit 1 state");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 state");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_BYPASS, "Unit 1 state");
 
     /* Explicit safe state invocation */
     ret = ao_hvac_safe_state(&s_ao);
     zassert_equal(ret, 0, "safe_state failed");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be forced OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must be forced OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be forced OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must be forced OFF");
 
     /* Start and then stop AO - stopping should invoke safe_state and signal stopped_sem */
     ret = ao_hvac_start(&s_ao);
@@ -522,12 +542,12 @@ ZTEST(ao_hvac_suite, test_safe_state_and_lifecycle_contract)
     ret = ao_hvac_wait_stopped(&s_ao, K_MSEC(200));
     zassert_equal(ret, 0, "ao_hvac_wait_stopped should succeed without double wait");
     zassert_false(ao_hvac_is_running(&s_ao), "Should no longer be running");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF after stop");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF after stop");
 }
 
 ZTEST(ao_hvac_suite, test_actuator_error_handling)
 {
-    /* P2-7: Handle actuator errors in ao_hvac_step */
+    /* P2-7 / R-07: Handle actuator errors in ao_hvac_step without faulting healthy mechanical units */
     int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
                            &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
     zassert_equal(ret, 0, "ao_hvac_init failed");
@@ -545,6 +565,12 @@ ZTEST(ao_hvac_suite, test_actuator_error_handling)
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "ao_hvac_step should run");
     zassert_true(s_ao.actuator_fault_count > 0U, "Actuator fault counter must be incremented on failure");
+
+    /* R-07 Invariant: Actuator communication error must NOT cause mechanical fault on unit */
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_ao.units[u].fault_counter, 0U, "Unit %u mechanical fault count must stay 0", u);
+        zassert_not_equal(s_ao.units[u].state, UNIT_STATE_FAULT, "Unit %u must not transition to FAULT on bus error", u);
+    }
 
     /* Reset errors */
     fake_hvac_unit_set_errors(0, 0);
@@ -624,10 +650,10 @@ ZTEST(ao_hvac_suite, test_multi_room_disjoint_sensor_ranges)
     zassert_equal(s_ao.groups[1].state, GROUP_STATE_IDLE, "Room B must be IDLE");
 
     /* Actuator verification: Unit 0 active ON, Unit 1 standby OFF, Units 2..3 OFF */
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 (Room A) must be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 (Room A standby) must be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 (Room B) must be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 (Room B) must be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 (Room A) must be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 (Room A standby) must be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 (Room B) must be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 (Room B) must be OFF");
 
     /* Step 2: Swap thermal load - Room A cooled down (19 C), Room B overheated (27 C) */
     temps[0] = 19.0f;
@@ -647,10 +673,10 @@ ZTEST(ao_hvac_suite, test_multi_room_disjoint_sensor_ranges)
     zassert_equal(s_ao.groups[1].state, GROUP_STATE_COOLING, "Room B must transition to COOLING");
 
     /* Actuator verification: Units 0..1 OFF, Unit 2 ON, Unit 3 OFF */
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must be OFF");
-    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_ON, "Unit 2 (Room B) must be ON");
-    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 (Room B standby) must be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must be OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_ON, "Unit 2 (Room B) must be ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 (Room B standby) must be OFF");
 }
 
 ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
@@ -687,7 +713,7 @@ ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "ao_hvac_step failed");
     zassert_equal(s_ao.groups[0].state, GROUP_STATE_COOLING, "Group 0 must enter COOLING");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
 
     /* Dynamically reconfigure Group 0 to monitor sensor range 3..4 with policy AVG */
     config_hvac_group_t updated_group = cfg.groups[0];
@@ -712,7 +738,7 @@ ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "ao_hvac_step failed");
     zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Group 0 must transition to IDLE");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must turn OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must turn OFF");
 
     /* Dynamically reconfigure policy to SENSOR_METRIC_MIN on probes 1..3 */
     /* Temps: probe 1 = 26 C, probe 2 = 25 C, probe 3 = 18 C */
@@ -733,7 +759,7 @@ ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "ao_hvac_step failed");
     zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Group 0 remains IDLE under MIN policy");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must stay OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must stay OFF");
 
     /* Now switch policy back to SENSOR_METRIC_MAX on probes 1..3 */
     updated_group.metric_policy = (uint8_t)SENSOR_METRIC_MAX;
@@ -744,7 +770,7 @@ ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
     ret = ao_hvac_step(&s_ao);
     zassert_equal(ret, 0, "ao_hvac_step failed");
     zassert_equal(s_ao.groups[0].state, GROUP_STATE_COOLING, "Group 0 transitions to COOLING under MAX policy");
-    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
 }
 
 ZTEST(ao_hvac_suite, test_ao_hvac_rotation_interval_and_stepping)
@@ -809,6 +835,133 @@ ZTEST(ao_hvac_suite, test_ao_hvac_set_bypass_cause)
                   "NULL ao must return -EINVAL");
     zassert_equal(ao_hvac_set_bypass_cause(&s_ao, HVAC_MAX_GROUPS, BYPASS_CAUSE_PHYSICAL_SWITCH, true), -EINVAL,
                   "Invalid group_id must return -EINVAL");
+}
+
+ZTEST(ao_hvac_suite, test_overlapping_unit_masks_rejected)
+{
+    /* R-10: Overlapping unit masks between groups must be rejected by config_hvac_is_valid */
+    config_hvac_t cfg = k_default_hvac_config_hybrid_4units;
+    cfg.total_groups = 2U;
+    cfg.groups[0].unit_mask = 0x03U; /* Units 0, 1 */
+    cfg.groups[1].unit_mask = 0x02U; /* Unit 1 shared! Overlap! */
+    cfg.groups[1].active_turn_count = 1U;
+    cfg.groups[1].temp_min = 20.0f;
+    cfg.groups[1].temp_max = 24.0f;
+    cfg.groups[1].temp_alarm = 28.0f;
+    cfg.groups[1].temp_bypass = 32.0f;
+
+    zassert_false(config_hvac_is_valid(&cfg), "Overlapping unit masks must be rejected");
+
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init must succeed");
+
+    ret = ao_hvac_apply_config(&s_ao, &cfg);
+    zassert_equal(ret, -EINVAL, "ao_hvac_apply_config must reject overlapping unit masks");
+}
+
+ZTEST(ao_hvac_suite, test_hot_unit_mask_rebuilds_topology)
+{
+    /* R-10: Hot topology rebuild on ao_hvac_apply_config */
+    config_hvac_t cfg = k_default_hvac_config_hybrid_4units;
+    cfg.total_units = 8U;
+    cfg.total_groups = 1U;
+    cfg.groups[0].unit_mask = 0x0FU; /* Initially units 0..3 */
+    cfg.groups[0].active_turn_count = 1U;
+    cfg.groups[0].delay_on_s = 0U;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init must succeed");
+
+    zassert_true(s_ao.unit_active[0], "Unit 0 active initially");
+    zassert_true(s_ao.unit_active[3], "Unit 3 active initially");
+    zassert_false(s_ao.unit_active[4], "Unit 4 inactive initially");
+    zassert_false(s_ao.unit_active[5], "Unit 5 inactive initially");
+
+    /* Apply new config switching group 0 to units 4 and 5 (mask 0x30) */
+    cfg.groups[0].unit_mask = 0x30U;
+    cfg.groups[0].active_turn_count = 1U;
+
+    ret = ao_hvac_apply_config(&s_ao, &cfg);
+    zassert_equal(ret, 0, "ao_hvac_apply_config must succeed");
+
+    /* Verify topology was rebuilt */
+    zassert_false(s_ao.unit_active[0], "Unit 0 must now be inactive");
+    zassert_false(s_ao.unit_active[1], "Unit 1 must now be inactive");
+    zassert_false(s_ao.unit_active[2], "Unit 2 must now be inactive");
+    zassert_false(s_ao.unit_active[3], "Unit 3 must now be inactive");
+    zassert_true(s_ao.unit_active[4], "Unit 4 must now be active");
+    zassert_true(s_ao.unit_active[5], "Unit 5 must now be active");
+
+    /* Feed hot temperature and step */
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 26.0f,
+        .valid_sensors = 1U,
+        .total_sensors = 1U,
+    };
+    (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step must succeed");
+
+    /* Units 0..3 must not be actuated (remain OFF), Unit 4 must be ON */
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must remain OFF");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(4), HVAC_TRI_STATE_ON, "Unit 4 must be energized ON");
+}
+
+ZTEST(ao_hvac_suite, test_transition_events_published_to_chan_hvac_event)
+{
+    /* R-04: Transition events published to chan_hvac_event */
+    config_hvac_t cfg = k_default_hvac_config_hybrid_4units;
+    cfg.groups[0].delay_on_s = 0U;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init must succeed");
+
+    s_event_count = 0U;
+
+    /* 1. Transition IDLE -> COOLING */
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 26.0f,
+        .valid_sensors = 1U,
+        .total_sensors = 1U,
+    };
+    (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step must succeed");
+
+    zassert_true(s_event_count >= 1U, "At least one transition event must have been published");
+    zassert_equal(s_last_event.type, HVAC_EVENT_COOLING_STARTED, "Event type must be COOLING_STARTED");
+    zassert_equal(s_last_event.group_id, 0U, "Group ID must be 0");
+
+    /* 2. Transition COOLING -> FIRE */
+    (void)ao_hvac_set_fire(&s_ao, true);
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step must succeed");
+
+    zassert_equal(s_last_event.type, HVAC_EVENT_FIRE_ACTIVATED, "Event type must be FIRE_ACTIVATED");
+
+    /* 3. Transition FIRE -> IDLE (when fire clears and temp <= temp_min) */
+    uint32_t prev_events = s_event_count;
+    (void)ao_hvac_set_fire(&s_ao, false);
+    metrics.highest_temp = 19.0f;
+    (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step must succeed");
+
+    /* Both IDLE_ENTERED and FIRE_CLEARED are published */
+    zassert_true(s_event_count >= prev_events + 2U, "Both IDLE_ENTERED and FIRE_CLEARED should be published");
+    zassert_equal(s_last_event.type, HVAC_EVENT_FIRE_CLEARED, "Final event type must be FIRE_CLEARED");
+
+    /* 4. Direct transition COOLING -> IDLE */
+    metrics.highest_temp = 26.0f;
+    (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    (void)ao_hvac_step(&s_ao);
+    zassert_equal(s_last_event.type, HVAC_EVENT_COOLING_STARTED, "Event must be COOLING_STARTED");
+
+    metrics.highest_temp = 19.0f;
+    (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    (void)ao_hvac_step(&s_ao);
+    zassert_equal(s_last_event.type, HVAC_EVENT_IDLE_ENTERED, "Direct cooldown event must be IDLE_ENTERED");
 }
 
 

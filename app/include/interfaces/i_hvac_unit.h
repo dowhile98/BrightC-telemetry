@@ -98,7 +98,7 @@ static inline int i_hvac_unit_set_tri_state(const i_hvac_unit_t *port, uint8_t u
     if (unit_id >= HVAC_MAX_UNITS_TOTAL) {
         return -EINVAL;
     }
-    if (!hvac_tri_state_is_valid((uint8_t)tri)) {
+    if (!hvac_tri_state_is_valid(tri)) {
         return -EINVAL;
     }
     return port->api->set_tri_state(port->impl, unit_id, tri);

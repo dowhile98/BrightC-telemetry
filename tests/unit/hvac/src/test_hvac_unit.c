@@ -41,7 +41,7 @@ ZTEST(hvac_unit_suite, test_unit_staggered_startup_delay)
     zassert_false(relay_aa, "Compressor must be OFF");
     zassert_true(relay_sm, "Smart mode must be active");
     zassert_false(relay_g, "Fan must be OFF");
-    zassert_equal(hvac_unit_entity_get_tri_state(&s_test_unit), HVAC_TRI_STATE_OFF, "Tri-state must be OFF");
+    zassert_true(hvac_tri_state_is_equal(hvac_unit_entity_get_tri_state(&s_test_unit), HVAC_TRI_STATE_OFF), "Tri-state must be OFF");
 
     /* Request start with 10s staggered delay */
     bool ok = hvac_unit_entity_request_start_staggered(&s_test_unit, 10U);
@@ -66,7 +66,7 @@ ZTEST(hvac_unit_suite, test_unit_staggered_startup_delay)
     zassert_true(relay_aa, "Compressor must be ON");
     zassert_true(relay_sm, "Smart mode must be active");
     zassert_false(relay_g, "Purge fan must be OFF while running");
-    zassert_equal(hvac_unit_entity_get_tri_state(&s_test_unit), HVAC_TRI_STATE_ON, "Tri-state must be ON");
+    zassert_true(hvac_tri_state_is_equal(hvac_unit_entity_get_tri_state(&s_test_unit), HVAC_TRI_STATE_ON), "Tri-state must be ON");
 
     /* Zero delay immediate start */
     hvac_unit_entity_init(&s_test_unit, 1U, 3U, 0U, 60U, 180U, true);
@@ -236,6 +236,24 @@ ZTEST(hvac_unit_suite, test_unit_eviction_after_max_faults)
     zassert_false(relay_g, "Fan must remain OFF");
 }
 
+ZTEST(hvac_unit_suite, test_idle_unit_increment_fault_guard)
+{
+    /* R-06: increment_fault state guard must ignore calls when unit is OFF/IDLE */
+    hvac_unit_entity_init(&s_test_unit, 0U, 3U, 10U, 30U, 180U, true);
+    zassert_equal(s_test_unit.state, UNIT_STATE_OFF, "Unit should start in OFF/IDLE");
+    zassert_equal(s_test_unit.fault_counter, 0U, "Initial fault count must be 0");
+
+    hvac_unit_entity_increment_fault(&s_test_unit);
+    zassert_equal(s_test_unit.fault_counter, 0U, "Fault count must not increment for OFF unit");
+    zassert_equal(s_test_unit.state, UNIT_STATE_OFF, "Unit must remain in OFF");
+
+    hvac_unit_entity_increment_fault(&s_test_unit);
+    hvac_unit_entity_increment_fault(&s_test_unit);
+    hvac_unit_entity_increment_fault(&s_test_unit);
+    zassert_equal(s_test_unit.fault_counter, 0U, "Fault count must still be 0");
+    zassert_not_equal(s_test_unit.state, UNIT_STATE_FAULT, "Unit must not enter FAULT state");
+}
+
 /*============================================================================*
  * 5. Bypass Mode (relay_sm = 0) Tests
  *============================================================================*/
@@ -253,7 +271,7 @@ ZTEST(hvac_unit_suite, test_unit_bypass_mode)
     /* Force bypass */
     hvac_unit_entity_set_bypass(&s_test_unit);
     zassert_equal(s_test_unit.state, UNIT_STATE_BYPASS, "State must be BYPASS");
-    zassert_equal(hvac_unit_entity_get_tri_state(&s_test_unit), HVAC_TRI_STATE_BYPASS, "Tri-state must be BYPASS");
+    zassert_true(hvac_tri_state_is_equal(hvac_unit_entity_get_tri_state(&s_test_unit), HVAC_TRI_STATE_BYPASS), "Tri-state must be BYPASS");
 
     /* Relays in bypass: relay_sm = 0, relay_aa = 0, relay_g = 0 */
     hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
@@ -293,7 +311,8 @@ ZTEST(hvac_unit_suite, test_i_hvac_unit_port_and_fake)
     zassert_equal(i_hvac_unit_get_tri_state(&port, HVAC_MAX_UNITS_TOTAL, &tri), -EINVAL, "Out of bounds unit ID");
 
     /* Invalid tri-state value */
-    zassert_equal(i_hvac_unit_set_tri_state(&port, 0U, (hvac_tri_state_t)99), -EINVAL, "Invalid tri-state must fail");
+    hvac_tri_state_t invalid_tri = { .relay_aa = true, .relay_sm = false, .relay_g = false };
+    zassert_equal(i_hvac_unit_set_tri_state(&port, 0U, invalid_tri), -EINVAL, "Invalid tri-state must fail");
 
     /* NULL out_tri pointer */
     zassert_equal(i_hvac_unit_get_tri_state(&port, 0U, NULL), -EINVAL, "NULL pointer must fail");
@@ -301,11 +320,11 @@ ZTEST(hvac_unit_suite, test_i_hvac_unit_port_and_fake)
     /* Valid set and get through wrappers */
     int ret = i_hvac_unit_set_tri_state(&port, 2U, HVAC_TRI_STATE_ON);
     zassert_equal(ret, 0, "Set tri-state must succeed");
-    zassert_equal(fake_hvac_unit_get_unit_state(2U), HVAC_TRI_STATE_ON, "Fake state must match");
+    zassert_true(hvac_tri_state_is_equal(fake_hvac_unit_get_unit_state(2U), HVAC_TRI_STATE_ON), "Fake state must match");
 
     ret = i_hvac_unit_get_tri_state(&port, 2U, &tri);
     zassert_equal(ret, 0, "Get tri-state must succeed");
-    zassert_equal(tri, HVAC_TRI_STATE_ON, "Read value must match");
+    zassert_true(hvac_tri_state_is_equal(tri, HVAC_TRI_STATE_ON), "Read value must match");
 
     /* Error injection */
     fake_hvac_unit_set_errors(-EIO, -ENODEV);

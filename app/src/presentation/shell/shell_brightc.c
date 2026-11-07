@@ -134,8 +134,7 @@ static int cmd_hvac_status(const struct shell *sh, size_t argc, char **argv)
         shell_print(sh, " %u | %-13s | %-9s | %c  %c  %c          | %c  %c  %c    %c             | %u",
                     u,
                     hvac_unit_state_str(status.units[u].state),
-                    (status.units[u].tri_state == HVAC_TRI_STATE_ON) ? "ON" :
-                    (status.units[u].tri_state == HVAC_TRI_STATE_BYPASS) ? "BYPASS" : "OFF",
+                    hvac_tri_state_str(status.units[u].tri_state),
                     status.units[u].relay_aa ? '1' : '0',
                     status.units[u].relay_sm ? '1' : '0',
                     status.units[u].relay_g ? '1' : '0',

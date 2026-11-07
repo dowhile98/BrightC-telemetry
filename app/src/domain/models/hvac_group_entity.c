@@ -85,6 +85,16 @@ bool hvac_group_entity_add_unit(hvac_group_entity_t *self, hvac_unit_entity_t *u
     return true;
 }
 
+void hvac_group_entity_clear_units(hvac_group_entity_t *self)
+{
+    if (self == NULL) {
+        return;
+    }
+
+    self->unit_count = 0U;
+    memset(self->units, 0, sizeof(self->units));
+}
+
 void hvac_group_entity_set_bypass_cause(hvac_group_entity_t *self, hvac_bypass_cause_t cause, bool active)
 {
     if (self == NULL) {
@@ -234,6 +244,15 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
     } else if ((self->bypass_causes_mask & (uint32_t)BYPASS_CAUSE_HIGH_TEMP) != 0U) {
         if (ctrl_temp <= self->temp_min) {
             hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_HIGH_TEMP, false);
+        }
+    }
+
+    /* Recovery checks when temperature drops back below temp_min */
+    if (ctrl_temp <= self->temp_min) {
+        if ((self->bypass_causes_mask & (uint32_t)BYPASS_CAUSE_COOLING_TIMEOUT) != 0U) {
+            hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_COOLING_TIMEOUT, false);
+            self->cooling_timeout_count = 0U;
+            self->cooling_timer_s = 0U;
         }
     }
 
