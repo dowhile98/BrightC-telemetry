@@ -422,3 +422,146 @@ ZTEST(hvac_group_suite, test_hvac_compute_group_metrics_multi_sensor)
                   "NULL metrics must return -EINVAL");
 }
 
+/*============================================================================*
+ * 8. Multi-Room Range Engine & Metric Policy Tests (Phase 3)
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_config_hvac_group_size_and_validation)
+{
+    /* Invariant: config_hvac_group_t must remain exactly 40 bytes aligned */
+    zassert_equal(sizeof(config_hvac_group_t), 40U,
+                  "sizeof(config_hvac_group_t) must be exactly 40 bytes");
+
+    /* Policy validation */
+    zassert_true(sensor_metric_policy_is_valid((uint8_t)SENSOR_METRIC_MAX), "MAX must be valid");
+    zassert_true(sensor_metric_policy_is_valid((uint8_t)SENSOR_METRIC_AVG), "AVG must be valid");
+    zassert_true(sensor_metric_policy_is_valid((uint8_t)SENSOR_METRIC_MIN), "MIN must be valid");
+    zassert_false(sensor_metric_policy_is_valid(3U), "Policy 3 must be invalid");
+    zassert_false(sensor_metric_policy_is_valid(255U), "Policy 255 must be invalid");
+
+    /* Group config validation */
+    config_hvac_group_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.temp_min = 20.0f;
+    cfg.temp_max = 24.0f;
+    cfg.temp_alarm = 28.0f;
+    cfg.temp_bypass = 32.0f;
+    cfg.hum_min = 30U;
+    cfg.hum_max = 70U;
+    cfg.active_turn_count = 2U;
+    cfg.metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+    cfg.sensor_start = 1U;
+    cfg.sensor_end = 5U;
+
+    zassert_true(config_hvac_group_is_valid(&cfg), "Valid config should pass");
+
+    /* Invalid metric policy */
+    cfg.metric_policy = 3U;
+    zassert_false(config_hvac_group_is_valid(&cfg), "Invalid metric policy must fail validation");
+    cfg.metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+
+    /* Inverted range: sensor_start > sensor_end */
+    cfg.sensor_start = 6U;
+    cfg.sensor_end = 2U;
+    zassert_false(config_hvac_group_is_valid(&cfg), "sensor_start > sensor_end must fail validation");
+
+    /* Unassigned range (start = 0) */
+    cfg.sensor_start = 0U;
+    cfg.sensor_end = 0U;
+    zassert_true(config_hvac_group_is_valid(&cfg), "sensor_start == 0 must be allowed (legacy mask mode)");
+}
+
+ZTEST(hvac_group_suite, test_hvac_compute_group_metrics_range)
+{
+    /* 10 temperature readings for flat IDs 1..10 (indices 0..9) */
+    float temps[10] = { 20.0f, 22.0f, 24.0f, 26.0f, 28.0f, 30.0f, 32.0f, 34.0f, 36.0f, 38.0f };
+    group_temperature_metrics_t metrics;
+
+    /* Range IDs 2..4 -> indices 1..3: temps[1]=22.0, temps[2]=24.0, temps[3]=26.0 */
+    /* Bitmask: bit 1, 2, 3 -> (1ULL << 1) | (1ULL << 2) | (1ULL << 3) */
+    uint64_t valid_mask = (1ULL << 1) | (1ULL << 2) | (1ULL << 3);
+
+    int ret = hvac_compute_group_metrics_range(temps, valid_mask, 10U, 2U, 4U, &metrics);
+    zassert_equal(ret, 0, "hvac_compute_group_metrics_range failed");
+    zassert_equal(metrics.total_sensors, 3U, "Total sensors must be 3");
+    zassert_equal(metrics.valid_sensors, 3U, "Valid sensors must be 3");
+    zassert_within(metrics.highest_temp, 26.0f, 0.001f, "Highest should be 26.0 C");
+    zassert_within(metrics.lowest_temp, 22.0f, 0.001f, "Lowest should be 22.0 C");
+    zassert_within(metrics.average_temp, 24.0f, 0.001f, "Average should be 24.0 C");
+
+    /* Partial validity: invalidate ID 3 (index 2) -> only IDs 2 and 4 valid */
+    valid_mask = (1ULL << 1) | (1ULL << 3);
+    ret = hvac_compute_group_metrics_range(temps, valid_mask, 10U, 2U, 4U, &metrics);
+    zassert_equal(ret, 0, "hvac_compute_group_metrics_range failed");
+    zassert_equal(metrics.total_sensors, 3U, "Total sensors must remain 3");
+    zassert_equal(metrics.valid_sensors, 2U, "Valid sensors must be 2");
+    zassert_within(metrics.highest_temp, 26.0f, 0.001f, "Highest should be 26.0 C");
+    zassert_within(metrics.lowest_temp, 22.0f, 0.001f, "Lowest should be 22.0 C");
+    zassert_within(metrics.average_temp, 24.0f, 0.001f, "Average should be (22+26)/2 = 24.0 C");
+
+    /* Zero valid sensors in range */
+    valid_mask = 0ULL;
+    ret = hvac_compute_group_metrics_range(temps, valid_mask, 10U, 2U, 4U, &metrics);
+    zassert_equal(ret, 0, "hvac_compute_group_metrics_range failed");
+    zassert_equal(metrics.total_sensors, 3U, "Total sensors must remain 3");
+    zassert_equal(metrics.valid_sensors, 0U, "Valid sensors must be 0");
+    zassert_within(metrics.highest_temp, 0.0f, 0.001f, "Highest should reset to 0.0 C");
+    zassert_within(metrics.lowest_temp, 0.0f, 0.001f, "Lowest should reset to 0.0 C");
+    zassert_within(metrics.average_temp, 0.0f, 0.001f, "Average should reset to 0.0 C");
+
+    /* Defensive error checks */
+    zassert_equal(hvac_compute_group_metrics_range(NULL, valid_mask, 10U, 2U, 4U, &metrics), -EINVAL,
+                  "NULL temps must return -EINVAL");
+    zassert_equal(hvac_compute_group_metrics_range(temps, valid_mask, 10U, 2U, 4U, NULL), -EINVAL,
+                  "NULL metrics must return -EINVAL");
+    zassert_equal(hvac_compute_group_metrics_range(temps, valid_mask, 10U, 0U, 4U, &metrics), -EINVAL,
+                  "sensor_start == 0 must return -EINVAL");
+    zassert_equal(hvac_compute_group_metrics_range(temps, valid_mask, 10U, 5U, 3U, &metrics), -EINVAL,
+                  "sensor_end < sensor_start must return -EINVAL");
+    zassert_equal(hvac_compute_group_metrics_range(temps, valid_mask, 10U, 1U, 65U, &metrics), -EINVAL,
+                  "sensor_end > 64 must return -EINVAL");
+}
+
+ZTEST(hvac_group_suite, test_metric_policy_evaluation)
+{
+    /* Hot-spot scenario:
+     * highest_temp = 29.0 C (>= temp_alarm 27.0 C)
+     * average_temp = 23.0 C (<= temp_max 24.0 C, > temp_min 21.0 C)
+     * lowest_temp  = 20.0 C (<= temp_min 21.0 C)
+     */
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 29.0f,
+        .lowest_temp  = 20.0f,
+        .average_temp = 23.0f,
+        .valid_sensors = 3U,
+        .total_sensors = 3U,
+    };
+
+    /* Policy 1: SENSOR_METRIC_MAX (Default) -> Hot-spot triggers COOL_BOOST */
+    s_group.state = GROUP_STATE_IDLE;
+    s_group.metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOL_BOOST,
+                  "MAX policy should trigger COOL_BOOST due to hot-spot (29.0 >= 27.0)");
+
+    /* Policy 2: SENSOR_METRIC_AVG -> Average 23.0 is below temp_max (24.0) -> IDLE */
+    s_group.state = GROUP_STATE_IDLE;
+    s_group.metric_policy = (uint8_t)SENSOR_METRIC_AVG;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_IDLE,
+                  "AVG policy: average 23.0 is below temp_max 24.0, should remain IDLE");
+
+    /* Policy 2: SENSOR_METRIC_AVG with elevated average (25.5 C >= temp_max 24.0 C) -> COOLING */
+    metrics.average_temp = 25.5f;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING,
+                  "AVG policy: elevated average 25.5 should trigger COOLING");
+
+    /* Policy 3: SENSOR_METRIC_MIN -> Lowest 20.0 is <= temp_min (21.0) -> IDLE */
+    s_group.metric_policy = (uint8_t)SENSOR_METRIC_MIN;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_IDLE,
+                  "MIN policy: lowest 20.0 <= temp_min 21.0 should transition to IDLE");
+}
+
+

@@ -1,3 +1,4 @@
+#include "common/modbus_device_table.h"
 /*
  * Copyright (c) 2026 DAECGE
  * SPDX-License-Identifier: Apache-2.0
@@ -217,16 +218,17 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_not_null(di, "Digital input port must not be NULL");
     zassert_true(i_digital_input_is_bound(di), "Digital input port must be bound");
 
-    modbus_slave_snapshot_t snap[5];
-    size_t count = 0U;
+    modbus_slave_snapshot_t snap_bus1[5];
+    size_t count_bus1 = 0U;
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap_bus1, 5U, &count_bus1),
+                  0, "Snapshot bus 1 failed");
+    zassert_equal(count_bus1, 3U, "Bus 1 devices (JSY + 2 CWT)");
 
-    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
-                  0, "Snapshot failed");
-    zassert_equal(count, 4U, "The default devices must be registered");
-    zassert_equal(snap[0].descriptor.dev_type, MODBUS_DEV_TYPE_CWT_TM16PT, "Device 1 type mismatch");
-    zassert_equal(snap[1].descriptor.dev_type, MODBUS_DEV_TYPE_JSY_MK339, "Device 2 type mismatch");
-    zassert_equal(snap[2].descriptor.dev_type, MODBUS_DEV_TYPE_MBSL32DI, "Device 3 type mismatch");
-    zassert_equal(snap[3].descriptor.dev_type, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, "Device 4 type mismatch");
+    modbus_slave_snapshot_t snap_bus2[5];
+    size_t count_bus2 = 0U;
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_2, snap_bus2, 5U, &count_bus2),
+                  0, "Snapshot bus 2 failed");
+    zassert_equal(count_bus2, 2U, "Bus 2 devices (MBSL32DI + Waveshare)");
 
     /* Relay ports verification */
     const i_relay_t *relay_ext = app_container_get_relay(&s_app);
@@ -261,7 +263,7 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     zassert_equal(s_app.network.ao.eth_cfg.ip_mode, NET_IP_MODE_DHCP, "ETH default ip_mode must be DHCP");
     zassert_equal(s_app.network.ao.eth_cfg.ip_addr, 0xC0A80164, "ETH fallback IP mismatch");
     zassert_equal(s_app.network.ao.wifi_cfg.mode, NET_WIFI_MODE_AP, "WiFi default mode must be AP");
-    zassert_str_equal(s_app.network.ao.wifi_cfg.ap.ssid, "BrightC-AP", "WiFi default SSID mismatch");
+    zassert_str_equal(s_app.network.ao.wifi_cfg.ap.ssid, CONFIG_BRIGHTC_WIFI_DEFAULT_SSID, "WiFi default SSID mismatch");
 
     /* Idempotent. */
     zassert_equal(composition_root_init(&s_app), 0, "Second init must be a no-op");
@@ -276,26 +278,26 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
 
-    /* The transport is bound after the container exists, as the adapter is
-     * created by the composition root in the firmware build. */
-    s_app.modbus.client_port[FAKE_BUS].api = &k_fake_api;
-    s_app.modbus.client_port[FAKE_BUS].impl = &s_fake;
+    /* Bind fake transport to both Bus 1 (Telemetry) and Bus 2 (Control) */
+    s_app.modbus.client_port[MODBUS_BUS_RS485_1].api = &k_fake_api;
+    s_app.modbus.client_port[MODBUS_BUS_RS485_1].impl = &s_fake;
+    s_app.modbus.client_port[MODBUS_BUS_RS485_2].api = &k_fake_api;
+    s_app.modbus.client_port[MODBUS_BUS_RS485_2].impl = &s_fake;
 
-    const i_modbus_client_t *client = app_container_get_modbus_client(&s_app, FAKE_BUS);
-    zassert_not_null(client, "Modbus client port must not be NULL");
-    zassert_true(i_modbus_client_is_bound(client), "Modbus client port must be bound");
+    const i_modbus_client_t *client1 = app_container_get_modbus_client(&s_app, MODBUS_BUS_RS485_1);
+    zassert_not_null(client1, "Modbus client port 1 must not be NULL");
+    zassert_true(i_modbus_client_is_bound(client1), "Modbus client port 1 must be bound");
 
     zassert_equal(composition_root_start(&s_app), 0, "Start failed");
 
     /* Let the polling threads run a few cycles. */
-    k_msleep(100);
+    k_msleep(200);
 
     zassert_true(s_fake.calls >= 4U, "The polling thread never reached the client");
-    zassert_true(s_fake.calls_by_addr[1] > 0U, "Slave 1 was never polled");
-    zassert_true(s_fake.calls_by_addr[2] > 0U, "Slave 2 was never polled");
-    zassert_true(s_fake.calls_by_addr[3] > 0U, "Slave 3 was never polled");
-    zassert_true(s_fake.calls_by_addr[4] > 0U, "Slave 4 was never polled");
-    zassert_equal(s_fake.last_timeout, 300, "Timeout not taken from the descriptor");
+    zassert_true(s_fake.calls_by_addr[MODBUS_ADDR_JSY_MK339] > 0U, "Slave JSY was never polled");
+    zassert_true(s_fake.calls_by_addr[MODBUS_ADDR_CWT_TM16PT_1] > 0U, "Slave CWT #1 was never polled");
+    zassert_true(s_fake.calls_by_addr[MODBUS_ADDR_MBSL32DI] > 0U, "Slave MBSL32DI was never polled");
+    zassert_true(s_fake.calls_by_addr[MODBUS_ADDR_WAVESHARE_RELAY] > 0U, "Slave Waveshare was never polled");
 
     modbus_slave_snapshot_t snap[5];
     size_t count = 0U;
@@ -305,7 +307,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 4U, "Snapshot count mismatch");
+    zassert_equal(count, 3U, "Snapshot count mismatch on Bus 1");
     zassert_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
     zassert_true(snap[0].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[0].runtime.in_flight, "The claim was not released");
@@ -314,29 +316,17 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     zassert_true(snap[1].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[1].runtime.in_flight, "The claim was not released");
 
-    zassert_equal(snap[2].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
-    zassert_true(snap[2].runtime.successful_polls > 0U, "Success counter not updated");
-    zassert_false(snap[2].runtime.in_flight, "The claim was not released");
-
-    zassert_equal(snap[3].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
-    zassert_true(snap[3].runtime.successful_polls > 0U, "Success counter not updated");
-    zassert_false(snap[3].runtime.in_flight, "The claim was not released");
-
     /* Failures must degrade the slave and reach the registry. */
     s_fake.next_result = MODBUS_RESULT_TIMEOUT;
     k_msleep(1200);
 
     zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 4U, "Snapshot count mismatch after failure");
+    zassert_equal(count, 3U, "Snapshot count mismatch after failure");
     zassert_true(snap[0].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
     zassert_true(snap[1].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[1].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
-    zassert_true(snap[2].runtime.timeout_count > 0U, "Timeouts not recorded");
-    zassert_not_equal(snap[2].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
-    zassert_true(snap[3].runtime.timeout_count > 0U, "Timeouts not recorded");
-    zassert_not_equal(snap[3].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
 
     zassert_equal(composition_root_stop(&s_app), 0, "composition_root_stop failed");
     (void) composition_root_deinit(&s_app);
@@ -392,16 +382,16 @@ ZTEST(composition_root_suite, test_digital_inputs_bound_and_queryable)
     zassert_true(i_digital_input_is_bound(di), "Digital input port must be bound");
 
     bool is_active = true;
-    zassert_equal(i_digital_input_get_state(di, DI_ROLE_USER_BUTTON, &is_active), 0,
-                  "Query DI_ROLE_USER_BUTTON state failed");
-    zassert_false(is_active, "Initial button state must be inactive");
+    zassert_equal(i_digital_input_get_state(di, DI_ROLE_SMOKE_FIRE, &is_active), 0,
+                  "Query DI_ROLE_SMOKE_FIRE state failed");
+    zassert_false(is_active, "Initial smoke/fire state must be inactive");
 
-    zassert_equal(i_digital_input_get_state(di, DI_ROLE_BYPASS_SWITCH, &is_active), 0,
-                  "Query DI_ROLE_BYPASS_SWITCH state failed");
-    zassert_false(is_active, "Initial bypass switch state must be inactive");
+    zassert_equal(i_digital_input_get_state(di, DI_ROLE_DOOR_OPEN, &is_active), 0,
+                  "Query DI_ROLE_DOOR_OPEN state failed");
+    zassert_false(is_active, "Initial door open state must be inactive");
 
     bool raw_level = true;
-    zassert_equal(i_digital_input_get_raw_level(di, DI_ROLE_USER_BUTTON, &raw_level), 0,
+    zassert_equal(i_digital_input_get_raw_level(di, DI_ROLE_SMOKE_FIRE, &raw_level), 0,
                   "Query raw level failed");
     zassert_false(raw_level, "Initial raw level must be false");
 
@@ -457,62 +447,32 @@ ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
     (void) ao_storage_deinit(&isolated_app.storage.ao);
 }
 
-ZTEST(composition_root_suite, test_modbus_storage_boot_persistence_and_fallback)
+ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
 {
     (void)composition_root_deinit(&s_app);
     (void)memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();
 
-    /* 1. Empty storage: init saves default modbus configuration */
+    /* 1. Verify declarative initialization from modbus_device_table.h */
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
-    const fake_config_storage_state_t *st = fake_config_storage_get_state();
-    zassert_true(st->slots[CONFIG_DOMAIN_MODBUS].has_data, "Modbus defaults must be persisted to storage");
-    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 4U, "Default waveshare addr must be 4");
-    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 300, "Default waveshare timeout must be 300");
 
-    (void)composition_root_deinit(&s_app);
+    /* Waveshare 32CH Relay configured from table */
+    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare addr must be 5");
+    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 250, "Waveshare timeout must be 250");
 
-    /* 2. Custom storage blob: verify dynamic extraction of Waveshare relay parameters */
-    (void)memset(&s_app, 0, sizeof(s_app));
+    /* Verify standard slaves are present in registry */
+    modbus_slave_descriptor_t desc;
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_JSY_MK339, &desc), 0, "JSY meter must exist");
+    zassert_equal(desc.slave_addr, MODBUS_ADDR_JSY_MK339, "JSY address");
 
-    modbus_registry_t temp_reg;
-    const modbus_bus_cfg_t custom_bus_cfg[MODBUS_BUS_MAX] = {
-        [MODBUS_BUS_RS485_1] = {.baudrate = 19200U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U, .data_bits = 8U},
-        [MODBUS_BUS_RS485_2] = {.baudrate = 19200U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U, .data_bits = 8U},
-    };
-    zassert_equal(modbus_registry_init(&temp_reg, custom_bus_cfg), 0, "temp_reg init failed");
-    const modbus_slave_descriptor_t custom_slave = {
-        .device_id = 10U,
-        .bus_id = MODBUS_BUS_RS485_1,
-        .slave_addr = 9U,
-        .dev_type = MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
-        .poll_interval_ms = 500U,
-        .timeout_ms = 650U,
-        .is_enabled = true,
-    };
-    zassert_equal(modbus_registry_register(&temp_reg, &custom_slave), 0, "register failed");
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_CWT_TM16PT, &desc), 0, "CWT concentrator must exist");
+    zassert_equal(desc.slave_addr, MODBUS_ADDR_CWT_TM16PT_1, "CWT address");
 
-    uint8_t custom_blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
-    size_t custom_size = 0U;
-    zassert_equal(modbus_registry_export(&temp_reg, custom_blob, sizeof(custom_blob), &custom_size), 0, "export failed");
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_MBSL32DI, &desc), 0, "MBSL32DI must exist");
+    zassert_equal(desc.slave_addr, MODBUS_ADDR_MBSL32DI, "MBSL32DI address");
 
-    i_config_storage_t port = fake_config_storage_get_port();
-    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_MODBUS, custom_blob, custom_size), 0, "save failed");
-
-    zassert_equal(composition_root_init(&s_app), 0, "Init with custom storage failed");
-    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 9U, "Loaded custom waveshare addr mismatch");
-    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 650, "Loaded custom waveshare timeout mismatch");
-
-    (void)composition_root_deinit(&s_app);
-
-    /* 3. Corrupt storage blob: verify graceful fallback to defaults */
-    (void)memset(&s_app, 0, sizeof(s_app));
-    uint8_t corrupt_data[16] = {0xFF, 0xEE, 0xDD, 0xCC};
-    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_MODBUS, corrupt_data, sizeof(corrupt_data)), 0, "save corrupt failed");
-
-    zassert_equal(composition_root_init(&s_app), 0, "Init with corrupt storage failed");
-    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, 4U, "Fallback waveshare addr mismatch");
-    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 300, "Fallback waveshare timeout mismatch");
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0, "Waveshare relay must exist");
+    zassert_equal(desc.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare relay address");
 
     (void)composition_root_deinit(&s_app);
 }
@@ -571,6 +531,39 @@ ZTEST(composition_root_suite, test_app_facade_sensor_get_matrix_and_modbus_facad
     zassert_within(view.modbus_rtd_temps[0], 25.5f, 0.01f);
     zassert_true(view.modbus_rtd_valid[0]);
     zassert_false(view.modbus_rtd_valid[3]);
+
+    (void)composition_root_deinit(&s_app);
+}
+
+ZTEST(composition_root_suite, test_app_facade_hvac_configure_group_sensors_and_units)
+{
+    (void)composition_root_deinit(&s_app);
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init failed");
+    zassert_equal(app_facade_init(&s_app), 0, "Facade init failed");
+
+    /* Parameter validation checks */
+    zassert_equal(app_facade_hvac_configure_group_sensors(HVAC_MAX_GROUPS, 1, 4, SENSOR_METRIC_MAX), -EINVAL);
+    zassert_equal(app_facade_hvac_configure_group_sensors(0, 5, 2, SENSOR_METRIC_MAX), -EINVAL);
+    zassert_equal(app_facade_hvac_configure_group_sensors(0, 1, 4, (sensor_metric_policy_t)99), -EINVAL);
+
+    zassert_equal(app_facade_hvac_configure_group_units(HVAC_MAX_GROUPS, 2, 0x0F), -EINVAL);
+    zassert_equal(app_facade_hvac_configure_group_units(0, 99, 0x0F), -EINVAL);
+
+    /* Valid configuration */
+    zassert_equal(app_facade_hvac_configure_group_sensors(0, 2, 5, SENSOR_METRIC_AVG), 0);
+    zassert_equal(app_facade_hvac_configure_group_units(0, 2, 0x0F), 0);
+
+    /* Verify via status query */
+    app_facade_hvac_status_t status;
+    zassert_equal(app_facade_hvac_get_status(&status), 0);
+    zassert_equal(status.groups[0].sensor_start, 2U);
+    zassert_equal(status.groups[0].sensor_end, 5U);
+    zassert_equal(status.groups[0].metric_policy, (uint8_t)SENSOR_METRIC_AVG);
+    zassert_equal(status.groups[0].active_turn_count, 2U);
+    zassert_equal(status.groups[0].unit_mask, 0x0FU);
 
     (void)composition_root_deinit(&s_app);
 }

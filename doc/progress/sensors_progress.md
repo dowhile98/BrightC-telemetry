@@ -1,6 +1,6 @@
 # Sensors & Mathematical Model Subsystem Progress
 
-- **Status**: **IN_PROGRESS (85%)**
+- **Status**: **IN_PROGRESS (90%)**
 - **Architecture Reference**: [`doc/architecture/sensor_subsystem.md`](../architecture/sensor_subsystem.md)
 
 ---
@@ -11,7 +11,7 @@
 | :--- | :--- | :---: | :--- |
 | **Sensor Types** | `app/include/common/sensor_types.h`, `energy_types.h` | 100% | Data structures for RTDs, energy meters, pressure, humidity; multi-concentrator Modbus (up to 4 CWT concentrators = 64 channels) and Revision F limits (16 pairs, 16 room probes, 8 outdoor probes) |
 | **Domain Interfaces** | `app/include/interfaces/i_sensor_matrix.h`, `i_energy_meter.h`, `i_temperature_bank.h` | 100% | Pure abstract ports for sensor ingestion |
-| **Matrix Mapper** | `app/src/domain/services/sensor_matrix_mapper.c` | 100% | Normalizes raw channel data across multi-concentrator CWTs and internal/J9 channels to unified sensor matrix |
+| **Matrix Mapper** | `app/src/domain/services/sensor_matrix_mapper.c` | 100% | Normalizes raw channel data across multi-concentrator CWTs and internal/J9 channels to unified sensor matrix and flat 64-channel snapshot |
 | **Modbus Codecs** | `app/src/domain/services/cwt_tm16pt_codec.c`, `jsy_mk339_codec.c` | 100% | Unpacking of 16 RTD channels and 3-phase AC energy parameters |
 | **Thermodynamic Engine** | `app/src/domain/services/thermodynamic_engine.h`, `app/src/domain/services/thermodynamic_engine.c` | 100% | Pure C99/C11 implementation of Revision F baseline: psychrometrics, mass flow, sensible/latent balances, enthalpies, Carnot COP, exergy efficiency, Flash R410A LUT, 64-bit OLS solver |
 
@@ -25,6 +25,14 @@
 
 ---
 
+## 3. Changelog & Refactoring History
+- **2026-11-07**: Implemented Phase 4 (Telemetry Data Pipeline & Unified Sensor Snapshot):
+  - Added `sensor_matrix_pack_flat_snapshot()` to `sensor_matrix_mapper.h/.c` mapping internal RTDs (IDs 1..5), CWT Concentrator 1 (IDs 10..25), CWT Concentrator 2 (IDs 30..45), and J9 Analog current loop (IDs 50..59) into flat 64-entry array with 64-bit validity mask.
+  - Added `sensor_matrix_raw_bank_t` typedef alias in `sensor_types.h`.
+  - Updated `composition_root.c`:
+    - `on_modbus_cwt_tm16pt_reading()` dynamically dispatches `MODBUS_DEV_ID_CWT_TM16PT_2` to CWT concentrator index 1, and concentrator index 0 otherwise.
+    - `on_sensor_matrix_frame()` extracts raw readings bank, packs flat snapshot, and feeds to `ao_hvac_feed_sensor_snapshot()` with 64-channel capacity.
+  - Added 5 new unit tests in `test_sensor_matrix_mapper.c` covering null argument rejection, internal RTD Callendar-Van Dusen conversion, CWT1/CWT2 mapping and comm-loss handling, and 64-bit bitmask validation. All 20 tests in `sensor_matrix_mapper_suite` passing (100%).
 - **2026-11-06**: Integrated Sensor Matrix and Modbus Expander presentation & validity handling:
   - Added independent `inj_valid_mask` and `ret_valid_mask` to `thermal_matrix_frame_t` in `sensor_types.h`.
   - Updated `sensor_matrix_map()` to evaluate independent probe validity and `sensor_matrix_pack_hvac_bank()` to populate HVAC bank valid channels per-probe instead of requiring both paired probes to be healthy.

@@ -80,6 +80,9 @@ typedef struct {
         uint8_t            current_turn_offset;
         uint8_t            unit_mask;
         bool               is_manual;
+        uint8_t            sensor_start;
+        uint8_t            sensor_end;
+        uint8_t            metric_policy;
     } groups[HVAC_MAX_GROUPS];
     struct {
         uint8_t           unit_id;
@@ -254,6 +257,32 @@ int app_facade_hvac_apply_profile(const hvac_profile_config_t *profile);
  * @return 0 on success, negative errno on error.
  */
 int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compressor, bool run_fan);
+
+/**
+ * @brief Configure sensor probe range and aggregation metric policy for an HVAC group.
+ *
+ * @param[in] group_id     Zero-indexed group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in] sensor_start 1-based start sensor ID (e.g. 1 for ID 1), or 0 if unmapped.
+ * @param[in] sensor_end   1-based end sensor ID (e.g. 4 for ID 4), or 0 if unmapped.
+ * @param[in] policy       Metric policy (@see sensor_metric_policy_t: MAX, AVG, MIN).
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_hvac_configure_group_sensors(uint8_t group_id,
+                                            uint8_t sensor_start,
+                                            uint8_t sensor_end,
+                                            sensor_metric_policy_t policy);
+
+/**
+ * @brief Configure AC unit mask and active turn count (N+M duty rotation) for an HVAC group.
+ *
+ * @param[in] group_id          Zero-indexed group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in] active_turn_count Desired concurrent running units (N).
+ * @param[in] unit_mask         Bitmask of assigned physical units (0 to retain existing mask).
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_hvac_configure_group_units(uint8_t group_id,
+                                          uint8_t active_turn_count,
+                                          uint8_t unit_mask);
 
 /* =========================================================================
  * Sensor Matrix Service APIs

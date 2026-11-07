@@ -29,7 +29,7 @@ static int dispatch_endpoint_relay(adapter_hvac_actuator_t *self,
         }
         /* Validate device_id routing: accept default (0) or Waveshare relay slave ID */
         if (endpoint->device_id != 0U &&
-            endpoint->device_id != DEFAULT_MODBUS_DEV_ID_WAVESHARE_RELAY) {
+            endpoint->device_id != MODBUS_ADDR_WAVESHARE_RELAY) {
             return -ENODEV;
         }
         return i_relay_set_state(&self->remote_relay_port,

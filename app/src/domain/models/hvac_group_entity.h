@@ -67,6 +67,11 @@ typedef struct {
     uint8_t active_turn_count;    /**< Number of units actively running in turn (N) */
     uint8_t current_turn_offset;  /**< Circular head pointer for duty shift rotation */
 
+    /* Sensor Range & Metric Policy */
+    uint8_t metric_policy; /**< Temperature selection policy (MAX, AVG, MIN) */
+    uint8_t sensor_start;  /**< Range start sensor ID */
+    uint8_t sensor_end;    /**< Range end sensor ID */
+
     /* Feature Flags & Manual Override */
     bool     enable_fan_delay;  /**< Fan purge sub-FSM enabled */
     bool     is_fire_active;    /**< Emergency fire interlock active */
@@ -167,6 +172,27 @@ int hvac_compute_group_metrics(const float *temperatures,
                                size_t temp_count,
                                uint16_t sensor_mask,
                                group_temperature_metrics_t *out_metrics);
+
+/**
+ * @brief Compute aggregated group temperature metrics from a flat sensor ID range.
+ *
+ * Aggregates readings for all channels in the range [sensor_start, sensor_end] (1-based, 1..59).
+ * Hardware-agnostic: operates strictly on floating-point temperatures in Celsius.
+ *
+ * @param[in]  temperatures Temperature array in °C.
+ * @param[in]  valid_mask   64-bit mask indicating healthy/valid sensors (bit id-1 = 1).
+ * @param[in]  temp_count   Number of elements in @p temperatures.
+ * @param[in]  sensor_start Range start flat sensor ID (1..59).
+ * @param[in]  sensor_end   Range end flat sensor ID (1..59).
+ * @param[out] out_metrics  Destination for computed metrics.
+ * @return 0 on success, -EINVAL on invalid arguments.
+ */
+int hvac_compute_group_metrics_range(const float *temperatures,
+                                     uint64_t valid_mask,
+                                     size_t temp_count,
+                                     uint8_t sensor_start,
+                                     uint8_t sensor_end,
+                                     group_temperature_metrics_t *out_metrics);
 
 #ifdef __cplusplus
 }

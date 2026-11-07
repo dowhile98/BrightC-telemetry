@@ -41,7 +41,6 @@ target_sources(app PRIVATE
     src/application/zbus/hvac_channels.c
     src/infrastructure/adapters/adapter_hvac_actuator.c
     src/application/active_objects/ao_hvac.c
-    src/application/config/default_config_profiles.c
     src/application/services/app_facade.c
 )
 

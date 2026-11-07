@@ -185,8 +185,6 @@ struct app_container {
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
     config_calibration_t calibration_cfg;
-    config_sensor_cfg_t sensor_cfg;
-    config_baseline_t baseline_cfg;
 
     /* Container-level status */
     bool is_initialized;                               /**< True when container is initialized */

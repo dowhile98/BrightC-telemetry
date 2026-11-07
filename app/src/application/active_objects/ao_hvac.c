@@ -328,10 +328,10 @@ int ao_hvac_set_group_metrics(ao_hvac_t *self,
     return 0;
 }
 
-int ao_hvac_feed_temperatures(ao_hvac_t *self,
-                              const float *temperatures,
-                              uint16_t valid_mask,
-                              size_t count)
+int ao_hvac_feed_sensor_snapshot(ao_hvac_t *self,
+                                 const float *temperatures,
+                                 uint64_t valid_mask,
+                                 size_t count)
 {
     if (self == NULL || !self->is_initialized || temperatures == NULL) {
         return -EINVAL;
@@ -340,16 +340,34 @@ int ao_hvac_feed_temperatures(ao_hvac_t *self,
     k_mutex_lock(&self->lock, K_FOREVER);
     for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
         if (self->group_active[g]) {
-            (void)hvac_compute_group_metrics(temperatures,
-                                             valid_mask,
-                                             count,
-                                             self->config.groups[g].sensor_mask,
-                                             &self->group_metrics[g]);
+            const config_hvac_group_t *grp = &self->config.groups[g];
+            if (grp->sensor_start > 0U && grp->sensor_end >= grp->sensor_start) {
+                (void)hvac_compute_group_metrics_range(temperatures,
+                                                       valid_mask,
+                                                       count,
+                                                       grp->sensor_start,
+                                                       grp->sensor_end,
+                                                       &self->group_metrics[g]);
+            } else {
+                (void)hvac_compute_group_metrics(temperatures,
+                                                 (uint16_t)(valid_mask & 0xFFFFU),
+                                                 count,
+                                                 grp->sensor_mask,
+                                                 &self->group_metrics[g]);
+            }
         }
     }
     k_mutex_unlock(&self->lock);
 
     return 0;
+}
+
+int ao_hvac_feed_temperatures(ao_hvac_t *self,
+                              const float *temperatures,
+                              uint16_t valid_mask,
+                              size_t count)
+{
+    return ao_hvac_feed_sensor_snapshot(self, temperatures, (uint64_t)valid_mask, count);
 }
 
 int ao_hvac_set_unit_alarms(ao_hvac_t *self,

@@ -33,6 +33,10 @@ void hvac_group_entity_init(hvac_group_entity_t *self, uint8_t group_id)
     self->active_turn_count = 1U;
     self->current_turn_offset = 0U;
     self->enable_fan_delay = true;
+
+    self->metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+    self->sensor_start = 0U;
+    self->sensor_end = 0U;
 }
 
 void hvac_group_entity_set_config(hvac_group_entity_t *self, const config_hvac_group_t *cfg)
@@ -51,6 +55,10 @@ void hvac_group_entity_set_config(hvac_group_entity_t *self, const config_hvac_g
     self->manual_timeout_s = cfg->manual_timeout_s;
     self->active_turn_count = cfg->active_turn_count;
     self->enable_fan_delay = (cfg->enable_fan_delay != 0U);
+
+    self->metric_policy = cfg->metric_policy;
+    self->sensor_start = cfg->sensor_start;
+    self->sensor_end = cfg->sensor_end;
 
     for (uint8_t i = 0U; i < self->unit_count; i++) {
         if (self->units[i] != NULL) {
@@ -205,11 +213,19 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
         }
     }
 
+    /* Compute controlling temperature based on configured metric policy */
+    float ctrl_temp = metrics->highest_temp;
+    if (self->metric_policy == (uint8_t)SENSOR_METRIC_AVG) {
+        ctrl_temp = metrics->average_temp;
+    } else if (self->metric_policy == (uint8_t)SENSOR_METRIC_MIN) {
+        ctrl_temp = metrics->lowest_temp;
+    }
+
     /* 4. High-temperature bypass trigger and hysteresis */
-    if (metrics->highest_temp >= self->temp_bypass) {
+    if (ctrl_temp >= self->temp_bypass) {
         hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_HIGH_TEMP, true);
     } else if ((self->bypass_causes_mask & (uint32_t)BYPASS_CAUSE_HIGH_TEMP) != 0U) {
-        if (metrics->highest_temp <= self->temp_min) {
+        if (ctrl_temp <= self->temp_min) {
             hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_HIGH_TEMP, false);
         }
     }
@@ -232,7 +248,7 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
     }
 
     /* 7. Thermal FSM sequencing */
-    if (metrics->highest_temp <= self->temp_min) {
+    if (ctrl_temp <= self->temp_min) {
         self->state = GROUP_STATE_IDLE;
         self->cooling_timer_s = 0U;
         self->cooling_timeout_count = 0U;
@@ -241,7 +257,7 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
                 hvac_unit_entity_request_stop(self->units[i], self->enable_fan_delay);
             }
         }
-    } else if ((metrics->highest_temp >= self->temp_alarm) || (self->cooling_timeout_count == 1U)) {
+    } else if ((ctrl_temp >= self->temp_alarm) || (self->cooling_timeout_count == 1U)) {
         self->state = GROUP_STATE_COOL_BOOST;
         for (uint8_t k = 0U; k < self->unit_count; k++) {
             uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
@@ -249,7 +265,7 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
                 hvac_unit_entity_request_start_staggered(self->units[idx], (uint16_t)(k * self->delay_on_s));
             }
         }
-    } else if ((metrics->highest_temp >= self->temp_max) || (self->state == GROUP_STATE_COOLING)) {
+    } else if ((ctrl_temp >= self->temp_max) || (self->state == GROUP_STATE_COOLING)) {
         self->state = GROUP_STATE_COOLING;
         for (uint8_t k = 0U; k < self->unit_count; k++) {
             uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
@@ -373,6 +389,59 @@ int hvac_compute_group_metrics(const float *temperatures,
             if ((valid_mask & bit) != 0U) {
                 out_metrics->valid_sensors++;
                 float t = temperatures[s];
+                sum += t;
+                if (t > out_metrics->highest_temp) {
+                    out_metrics->highest_temp = t;
+                }
+                if (t < out_metrics->lowest_temp) {
+                    out_metrics->lowest_temp = t;
+                }
+            }
+        }
+    }
+
+    if (out_metrics->valid_sensors > 0U) {
+        out_metrics->average_temp = sum / (float)out_metrics->valid_sensors;
+    } else {
+        out_metrics->highest_temp = 0.0f;
+        out_metrics->lowest_temp = 0.0f;
+        out_metrics->average_temp = 0.0f;
+    }
+
+    return 0;
+}
+
+int hvac_compute_group_metrics_range(const float *temperatures,
+                                     uint64_t valid_mask,
+                                     size_t temp_count,
+                                     uint8_t sensor_start,
+                                     uint8_t sensor_end,
+                                     group_temperature_metrics_t *out_metrics)
+{
+    if (temperatures == NULL || out_metrics == NULL) {
+        return -EINVAL;
+    }
+
+    if (sensor_start == 0U || sensor_end < sensor_start || sensor_end > 64U) {
+        return -EINVAL;
+    }
+
+    out_metrics->highest_temp = -999.0f;
+    out_metrics->lowest_temp = 999.0f;
+    out_metrics->valid_sensors = 0U;
+    out_metrics->total_sensors = 0U;
+    out_metrics->average_temp = 0.0f;
+
+    float sum = 0.0f;
+
+    for (uint8_t id = sensor_start; id <= sensor_end; id++) {
+        out_metrics->total_sensors++;
+        size_t idx = (size_t)(id - 1U);
+        if (idx < temp_count && idx < 64U) {
+            uint64_t bit = 1ULL << idx;
+            if ((valid_mask & bit) != 0ULL) {
+                out_metrics->valid_sensors++;
+                float t = temperatures[idx];
                 sum += t;
                 if (t > out_metrics->highest_temp) {
                     out_metrics->highest_temp = t;

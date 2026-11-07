@@ -80,6 +80,26 @@ int sensor_matrix_pack_hvac_bank(const thermal_matrix_frame_t *frame,
                                  float out_temps[TEMPERATURE_BANK_MAX_CHANNELS],
                                  uint16_t *out_valid_mask);
 
+/**
+ * @brief Pack raw sensor readings into a unified flat sensor snapshot.
+ *
+ * Maps physical acquisition channels into flat 1-byte sensor IDs (1..59):
+ * - Internal on-board RTDs 1..5 (PHYS_CH_INTERNAL_RTD_1..5) -> flat IDs 1..5 (index 0..4, bit 0..4)
+ * - Modbus CWT Concentrator 1 channels 1..16 (PHYS_CH_CWT_1..16) -> flat IDs 10..25 (index 9..24, bit 9..24)
+ * - Modbus CWT Concentrator 2 channels 1..16 (PHYS_CH_CWT2_1..16) -> flat IDs 30..45 (index 29..44, bit 29..44)
+ * - Analog J9 channels 1..10 (PHYS_CH_ANALOG_J9_CH1..10) -> flat IDs 50..59 (index 49..58, bit 49..58)
+ *
+ * Bounds checked: all flat IDs satisfy (id - 1 < 64).
+ *
+ * @param[in]  raw            Raw readings bank from sensor matrix adapter.
+ * @param[out] out_temps      Flat 64-element array indexed by (id - 1).
+ * @param[out] out_valid_mask 64-bit mask where bit (id - 1) is set if valid.
+ * @return 0 on success, -EINVAL on null pointers.
+ */
+int sensor_matrix_pack_flat_snapshot(const sensor_matrix_raw_bank_t *raw,
+                                     float out_temps[64],
+                                     uint64_t *out_valid_mask);
+
 #ifdef __cplusplus
 }
 #endif

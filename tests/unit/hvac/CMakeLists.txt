@@ -17,7 +17,6 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_relay_gpio.c
     ${APP_DIR}/app/src/application/active_objects/ao_hvac.c
     ${APP_DIR}/app/src/application/zbus/hvac_channels.c
-    ${APP_DIR}/app/src/application/config/default_config_profiles.c
     ${APP_DIR}/tests/fakes/src/fake_hvac_unit.c
     ${APP_DIR}/tests/fakes/src/fake_relay.c
 )

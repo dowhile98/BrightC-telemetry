@@ -592,3 +592,146 @@ ZTEST(sensor_matrix_mapper_suite, test_pack_hvac_bank_rejects_null)
     zassert_equal(sensor_matrix_pack_hvac_bank(&frame, NULL, &valid), -EINVAL);
     zassert_equal(sensor_matrix_pack_hvac_bank(&frame, bank, NULL), -EINVAL);
 }
+
+/* ============================================================================
+ * Tests for sensor_matrix_pack_flat_snapshot (Phase 4 Telemetry Isolation)
+ * ============================================================================ */
+
+ZTEST(sensor_matrix_mapper_suite, test_pack_flat_snapshot_rejects_null)
+{
+    raw_sensor_readings_t raw = {0};
+    float temps[64];
+    uint64_t valid_mask = 0ULL;
+
+    zassert_equal(sensor_matrix_pack_flat_snapshot(NULL, temps, &valid_mask), -EINVAL);
+    zassert_equal(sensor_matrix_pack_flat_snapshot(&raw, NULL, &valid_mask), -EINVAL);
+    zassert_equal(sensor_matrix_pack_flat_snapshot(&raw, temps, NULL), -EINVAL);
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_pack_flat_snapshot_internal_rtds)
+{
+    raw_sensor_readings_t raw = {0};
+    float temps[64];
+    uint64_t valid_mask = 0ULL;
+
+    /* Populate 5 internal RTDs with valid simulated counts */
+    raw.internal_rtd_valid_mask = 0x1FU; /* Channels 0..4 valid */
+    for (int i = 0; i < 5; i++) {
+        raw.internal_rtd_raw_adc[i] = 16700.0f; /* ~20.0 C */
+    }
+
+    zassert_ok(sensor_matrix_pack_flat_snapshot(&raw, temps, &valid_mask));
+
+    /* Bits 0..4 corresponding to flat IDs 1..5 must be set */
+    uint64_t expected_mask = 0x1FULL;
+    zassert_equal(valid_mask & expected_mask, expected_mask, "Bits 0..4 must be set for RTDs 1..5");
+
+    /* Other bits must be 0 */
+    zassert_equal(valid_mask & ~expected_mask, 0ULL, "Unpopulated bits must be zero");
+
+    /* Values at indices 0..4 must be valid temperatures (~20.0 C) */
+    for (int i = 0; i < 5; i++) {
+        zassert_within(temps[i], 20.0f, 2.0f, "RTD %d value mismatch", i + 1);
+    }
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_pack_flat_snapshot_cwt1)
+{
+    raw_sensor_readings_t raw = {0};
+    float temps[64];
+    uint64_t valid_mask = 0ULL;
+
+    raw.cwt_comm_ok[0] = true;
+    raw.cwt_valid_mask[0] = 0xFFFFU;      /* All 16 channels valid */
+    raw.cwt_open_probe_mask[0] = 0x0004U; /* Channel 2 (probe 3) is open */
+
+    for (int c = 0; c < 16; c++) {
+        raw.cwt_temperatures_c[0][c] = 10.0f + (float)c;
+    }
+
+    zassert_ok(sensor_matrix_pack_flat_snapshot(&raw, temps, &valid_mask));
+
+    /* Flat IDs 10..25 correspond to array indices 9..24 and bits 9..24 */
+    for (int c = 0; c < 16; c++) {
+        uint8_t idx = 9U + (uint8_t)c;
+        uint64_t bit = 1ULL << idx;
+        if (c == 2) {
+            /* Open probe must be marked invalid */
+            zassert_equal(valid_mask & bit, 0ULL, "Open probe channel 2 (ID 12) must be invalid");
+        } else {
+            zassert_true((valid_mask & bit) != 0ULL, "Channel %d (ID %d) must be valid", c, 10 + c);
+            zassert_within(temps[idx], 10.0f + (float)c, 0.001f, "Channel %d value mismatch", c);
+        }
+    }
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_pack_flat_snapshot_cwt2)
+{
+    raw_sensor_readings_t raw = {0};
+    float temps[64];
+    uint64_t valid_mask = 0ULL;
+
+    raw.cwt_comm_ok[1] = true;
+    raw.cwt_valid_mask[1] = 0xFFFFU;      /* All 16 channels valid */
+    raw.cwt_open_probe_mask[1] = 0x0000U; /* No open probes */
+
+    for (int c = 0; c < 16; c++) {
+        raw.cwt_temperatures_c[1][c] = 25.0f + (float)c;
+    }
+
+    zassert_ok(sensor_matrix_pack_flat_snapshot(&raw, temps, &valid_mask));
+
+    /* Flat IDs 30..45 correspond to array indices 29..44 and bits 29..44 */
+    for (int c = 0; c < 16; c++) {
+        uint8_t idx = 29U + (uint8_t)c;
+        uint64_t bit = 1ULL << idx;
+        zassert_true((valid_mask & bit) != 0ULL, "CWT2 Channel %d (ID %d) must be valid", c, 30 + c);
+        zassert_within(temps[idx], 25.0f + (float)c, 0.001f, "CWT2 Channel %d value mismatch", c);
+    }
+
+    /* Verify that comm loss on CWT2 clears all CWT2 bits */
+    raw.cwt_comm_ok[1] = false;
+    zassert_ok(sensor_matrix_pack_flat_snapshot(&raw, temps, &valid_mask));
+    for (int c = 0; c < 16; c++) {
+        uint8_t idx = 29U + (uint8_t)c;
+        uint64_t bit = 1ULL << idx;
+        zassert_equal(valid_mask & bit, 0ULL, "CWT2 Channel %d must be invalid on comm loss", c);
+    }
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_pack_flat_snapshot_bitmask_and_j9)
+{
+    raw_sensor_readings_t raw = {0};
+    float temps[64];
+    uint64_t valid_mask = 0ULL;
+
+    /* Setup 1 RTD, 1 CWT1 channel, 1 CWT2 channel, 1 J9 channel */
+    raw.internal_rtd_valid_mask = 0x01U; /* ID 1 (idx 0) */
+    raw.internal_rtd_raw_adc[0] = 16700.0f;
+
+    raw.cwt_comm_ok[0] = true;
+    raw.cwt_valid_mask[0] = 0x0001U; /* ID 10 (idx 9) */
+    raw.cwt_temperatures_c[0][0] = 22.5f;
+
+    raw.cwt_comm_ok[1] = true;
+    raw.cwt_valid_mask[1] = 0x0001U; /* ID 30 (idx 29) */
+    raw.cwt_temperatures_c[1][0] = 23.5f;
+
+    /* J9 CH1 (flat ID 50, idx 49) with 12.0 mA */
+    current_loop_circuit_cfg_t circ_cfg;
+    transducer_current_loop_get_brightc_v3_default_config(&circ_cfg);
+    float denom = circ_cfg.shunt_ohms * circ_cfg.gain * circ_cfg.adc_max;
+    float adc_counts = (12.0f * denom / 1000.0f) / (circ_cfg.scale_factor * circ_cfg.v_ref);
+    raw.analog_j9_raw_adc[0] = adc_counts;
+    raw.analog_j9_valid_mask = 0x0001U;
+
+    zassert_ok(sensor_matrix_pack_flat_snapshot(&raw, temps, &valid_mask));
+
+    uint64_t expected = (1ULL << 0) | (1ULL << 9) | (1ULL << 29) | (1ULL << 49);
+    zassert_equal(valid_mask, expected, "Valid mask must match exactly the 4 populated bits");
+
+    zassert_within(temps[0], 20.0f, 2.0f, "RTD 1 value");
+    zassert_within(temps[9], 22.5f, 0.001f, "CWT1 CH1 value");
+    zassert_within(temps[29], 23.5f, 0.001f, "CWT2 CH1 value");
+    zassert_within(temps[49], 12.0f, 0.1f, "J9 CH1 value in mA");
+}

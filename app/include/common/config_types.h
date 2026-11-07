@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Domain types, enums, event definitions and memory layout definitions
- * for the storage subsystem.
+ * for the persistent storage subsystem (AT24C256C EEPROM).
  *
  * Pure C99/C11 - zero Zephyr headers, zero dynamic memory.
  */
@@ -22,17 +22,18 @@ extern "C" {
 
 /**
  * @brief Logical configuration categories persisted in non-volatile storage.
+ *
+ * Reduced to the 5 essential site-commissioning domains per Architectural Decision
+ * Record (ADR-6). Hardware pinouts, Modbus topologies, and sensor channels are
+ * declared compile-time in firmware.
  */
 typedef enum {
-    CONFIG_DOMAIN_DEVICE = 0,    /**< Device information and metadata */
-    CONFIG_DOMAIN_MODBUS,        /**< Bus and slave configuration */
-    CONFIG_DOMAIN_NET_ETH,       /**< Ethernet interface configuration (IP, DHCP, MAC) */
-    CONFIG_DOMAIN_NET_WIFI,      /**< Wi-Fi interface configuration (mode, SSID, credentials) */
-    CONFIG_DOMAIN_CALIBRATION,   /**< Analog input calibration constants */
-    CONFIG_DOMAIN_SENSOR_CFG,    /**< Physical to semantic sensor routing table */
-    CONFIG_DOMAIN_BASELINE,      /**< 7-day learned OLS coefficients and thermal baseline */
-    CONFIG_DOMAIN_HVAC,          /**< Industrial HVAC sequencer & hardware routing config */
-    CONFIG_DOMAIN_MAX            /**< Upper limit of domains */
+    CONFIG_DOMAIN_DEVICE = 0,    /**< Device serial number, hardware rev, station alias */
+    CONFIG_DOMAIN_NET_ETH,       /**< Ethernet interface configuration (IP, DHCP, MAC, Gateway) */
+    CONFIG_DOMAIN_NET_WIFI,      /**< Wi-Fi interface configuration (Mode, SSID, Credentials) */
+    CONFIG_DOMAIN_HVAC,          /**< Industrial HVAC sequencer operational setpoints & group ranges */
+    CONFIG_DOMAIN_CALIBRATION,   /**< Analog input & PT100 temperature calibration offsets */
+    CONFIG_DOMAIN_MAX            /**< Upper limit of active storage domains (5) */
 } config_domain_t;
 
 /**
@@ -50,9 +51,35 @@ typedef enum {
 typedef struct {
     config_domain_t     domain;      /**< Target domain */
     config_event_type_t event_type;  /**< Event type (DIRTY, PERSISTED, ERROR) */
-    uint16_t            sub_id;      /**< Optional sub-identifier (e.g. slave index or interface) */
+    uint16_t            sub_id;      /**< Optional sub-identifier */
     int32_t             status;      /**< Result code (0 on success, negative errno on error) */
 } system_config_event_t;
+
+/* ========================================================================= */
+/* Domain Payload Structures Persisted in EEPROM                             */
+/* ========================================================================= */
+
+/**
+ * @brief Device identity & hardware revision configuration.
+ */
+typedef struct {
+    char serial_number[32];
+    char hardware_rev[16];
+    char device_alias[32];
+} config_device_t;
+
+/**
+ * @brief Analog & temperature calibration trim offsets.
+ */
+typedef struct {
+    int16_t  temp_offsets_x10[21]; /**< PT100 cable calibration offsets in 0.1 deg C */
+    int16_t  analog_offsets[16];   /**< ADC channel raw offsets */
+    uint16_t analog_gains[16];     /**< Gain scale factors (10000 = 1.0) */
+} config_calibration_t;
+
+/* ========================================================================= */
+/* Pure Validation & Layout Functions                                        */
+/* ========================================================================= */
 
 /**
  * @brief Validate if domain enumerator is within defined bounds.
@@ -81,15 +108,13 @@ static inline bool config_event_type_is_valid(config_event_type_t type)
 /**
  * @brief Retrieve memory layout for a given configuration domain.
  *
- * According to EEPROM AT24C256C Memory Map (doc/architecture/storage_subsystem.md):
- * - CONFIG_DOMAIN_DEVICE:      0x0000, 1024 B (2 slots of 512 B)
- * - CONFIG_DOMAIN_MODBUS:      0x0400, 2048 B (2 slots of 1024 B)
- * - CONFIG_DOMAIN_NET_ETH:     0x0C00, 1024 B (2 slots of 512 B)
- * - CONFIG_DOMAIN_NET_WIFI:    0x1000, 1024 B (2 slots of 512 B)
- * - CONFIG_DOMAIN_CALIBRATION: 0x1400, 1024 B (2 slots of 512 B)
- * - CONFIG_DOMAIN_SENSOR_CFG:  0x1800, 2048 B (2 slots of 1024 B)
- * - CONFIG_DOMAIN_BASELINE:    0x2000, 2048 B (2 slots of 1024 B)
- * - CONFIG_DOMAIN_HVAC:        0x2800, 2048 B (2 slots of 1024 B)
+ * Partitioning of the 32 KB AT24C256C EEPROM (ADR-6):
+ * - CONFIG_DOMAIN_DEVICE:      0x0000, 1024 B (2 ping-pong slots of 512 B)
+ * - CONFIG_DOMAIN_NET_ETH:     0x0400, 1024 B (2 ping-pong slots of 512 B)
+ * - CONFIG_DOMAIN_NET_WIFI:    0x0800, 1024 B (2 ping-pong slots of 512 B)
+ * - CONFIG_DOMAIN_HVAC:        0x0C00, 2048 B (2 ping-pong slots of 1024 B)
+ * - CONFIG_DOMAIN_CALIBRATION: 0x1400, 1024 B (2 ping-pong slots of 512 B)
+ * - RESERVED / EVENT LOG:      0x1800 .. 0x7FFF (26 KB available)
  *
  * @param domain           Target domain.
  * @param out_base_offset  Output pointer for starting offset in bytes.
@@ -116,40 +141,25 @@ static inline int config_domain_get_layout(config_domain_t domain,
         total = 1024;
         slot = 512;
         break;
-    case CONFIG_DOMAIN_MODBUS:
-        base = 0x0400;
-        total = 2048;
-        slot = 1024;
-        break;
     case CONFIG_DOMAIN_NET_ETH:
-        base = 0x0C00;
+        base = 0x0400;
         total = 1024;
         slot = 512;
         break;
     case CONFIG_DOMAIN_NET_WIFI:
-        base = 0x1000;
+        base = 0x0800;
         total = 1024;
         slot = 512;
+        break;
+    case CONFIG_DOMAIN_HVAC:
+        base = 0x0C00;
+        total = 2048;
+        slot = 1024;
         break;
     case CONFIG_DOMAIN_CALIBRATION:
         base = 0x1400;
         total = 1024;
         slot = 512;
-        break;
-    case CONFIG_DOMAIN_SENSOR_CFG:
-        base = 0x1800;
-        total = 2048;
-        slot = 1024;
-        break;
-    case CONFIG_DOMAIN_BASELINE:
-        base = 0x2000;
-        total = 2048;
-        slot = 1024;
-        break;
-    case CONFIG_DOMAIN_HVAC:
-        base = 0x2800;
-        total = 2048;
-        slot = 1024;
         break;
     default:
         return -EINVAL;

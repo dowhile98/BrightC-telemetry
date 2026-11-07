@@ -452,3 +452,91 @@ int sensor_matrix_pack_hvac_bank(const thermal_matrix_frame_t *frame,
 
     return 0;
 }
+
+int sensor_matrix_pack_flat_snapshot(const sensor_matrix_raw_bank_t *raw,
+                                     float out_temps[64],
+                                     uint64_t *out_valid_mask)
+{
+    if (raw == NULL || out_temps == NULL || out_valid_mask == NULL) {
+        return -EINVAL;
+    }
+
+    memset(out_temps, 0, sizeof(float) * 64U);
+    *out_valid_mask = 0ULL;
+
+    /* 1. Internal On-Board RTDs 1..5 (PHYS_CH_INTERNAL_RTD_1..5)
+     * -> flat IDs 1..5 (indices 0..4, bits 0..4) */
+    for (uint8_t i = 0U; i < 5U; i++) {
+        uint8_t flat_id = 1U + i;
+        uint8_t idx = flat_id - 1U;
+        if (idx < 64U) {
+            bool adc_valid = (raw->internal_rtd_valid_mask & (1U << i)) != 0;
+            if (adc_valid) {
+                float adc_counts = raw->internal_rtd_raw_adc[i];
+                float temp_c = 0.0f;
+                int cvd_res = transducer_rtd_adc_to_celsius(NULL, adc_counts, &temp_c);
+                if (cvd_res == 0 && temp_c >= SENSOR_TEMP_MIN_VALID_C && temp_c <= SENSOR_TEMP_MAX_VALID_C) {
+                    out_temps[idx] = temp_c;
+                    *out_valid_mask |= (1ULL << idx);
+                }
+            }
+        }
+    }
+
+    /* 2. CWT 1 channels 1..16 (PHYS_CH_CWT_1..16)
+     * -> flat IDs 10..25 (indices 9..24, bits 9..24) */
+    if (raw->cwt_comm_ok[0]) {
+        for (uint8_t c = 0U; c < 16U; c++) {
+            uint8_t flat_id = 10U + c;
+            uint8_t idx = flat_id - 1U;
+            if (idx < 64U) {
+                bool channel_valid = (raw->cwt_valid_mask[0] & (1U << c)) != 0;
+                bool is_open = (raw->cwt_open_probe_mask[0] & (1U << c)) != 0;
+                float val = raw->cwt_temperatures_c[0][c];
+                if (channel_valid && !is_open && val >= SENSOR_TEMP_MIN_VALID_C && val <= SENSOR_TEMP_MAX_VALID_C) {
+                    out_temps[idx] = val;
+                    *out_valid_mask |= (1ULL << idx);
+                }
+            }
+        }
+    }
+
+    /* 3. CWT 2 channels 1..16 (PHYS_CH_CWT_17..32 / CWT2_1..16)
+     * -> flat IDs 30..45 (indices 29..44, bits 29..44) */
+    if (raw->cwt_comm_ok[1]) {
+        for (uint8_t c = 0U; c < 16U; c++) {
+            uint8_t flat_id = 30U + c;
+            uint8_t idx = flat_id - 1U;
+            if (idx < 64U) {
+                bool channel_valid = (raw->cwt_valid_mask[1] & (1U << c)) != 0;
+                bool is_open = (raw->cwt_open_probe_mask[1] & (1U << c)) != 0;
+                float val = raw->cwt_temperatures_c[1][c];
+                if (channel_valid && !is_open && val >= SENSOR_TEMP_MIN_VALID_C && val <= SENSOR_TEMP_MAX_VALID_C) {
+                    out_temps[idx] = val;
+                    *out_valid_mask |= (1ULL << idx);
+                }
+            }
+        }
+    }
+
+    /* 4. Analog J9 channels 1..10 (PHYS_CH_ANALOG_J9_CH1..10)
+     * -> flat IDs 50..59 (indices 49..58, bits 49..58) */
+    for (uint8_t j = 0U; j < 10U; j++) {
+        uint8_t flat_id = 50U + j;
+        uint8_t idx = flat_id - 1U;
+        if (idx < 64U) {
+            bool adc_valid = (raw->analog_j9_valid_mask & (1U << j)) != 0;
+            if (adc_valid) {
+                float adc_counts = raw->analog_j9_raw_adc[j];
+                float current_ma = 0.0f;
+                int loop_res = transducer_current_loop_adc_to_ma(NULL, adc_counts, &current_ma);
+                if (loop_res == 0 && current_ma >= SENSOR_4_20MA_LOOP_MIN_MA && current_ma <= SENSOR_4_20MA_LOOP_MAX_MA) {
+                    out_temps[idx] = current_ma;
+                    *out_valid_mask |= (1ULL << idx);
+                }
+            }
+        }
+    }
+
+    return 0;
+}

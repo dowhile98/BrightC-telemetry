@@ -17,7 +17,8 @@
 
 #include "infrastructure/di/composition_root.h"
 #include "common/config_envelope.h"
-#include "common/default_config_profiles.h"
+#include "common/app_defaults.h"
+#include "common/modbus_device_table.h"
 
 LOG_MODULE_REGISTER(app_facade, LOG_LEVEL_INF);
 
@@ -160,6 +161,9 @@ int app_facade_hvac_get_status(app_facade_hvac_status_t *out_status)
         out_status->groups[g].current_turn_offset = ao->groups[g].current_turn_offset;
         out_status->groups[g].unit_mask = s_app->hvac.config.groups[g].unit_mask;
         out_status->groups[g].is_manual = ao->groups[g].is_manual_active;
+        out_status->groups[g].sensor_start = s_app->hvac.config.groups[g].sensor_start;
+        out_status->groups[g].sensor_end = s_app->hvac.config.groups[g].sensor_end;
+        out_status->groups[g].metric_policy = s_app->hvac.config.groups[g].metric_policy;
     }
 
     for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
@@ -332,6 +336,71 @@ int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compr
         hvac_unit_entity_request_stop(&ao->units[unit_id], false);
     }
     k_mutex_unlock(&ao->lock);
+
+    return 0;
+}
+
+int app_facade_hvac_configure_group_sensors(uint8_t group_id,
+                                            uint8_t sensor_start,
+                                            uint8_t sensor_end,
+                                            sensor_metric_policy_t policy)
+{
+    if (s_app == NULL || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+    if (!s_app->hvac.initialized) {
+        return -EAGAIN;
+    }
+    if (!sensor_metric_policy_is_valid((uint8_t)policy)) {
+        return -EINVAL;
+    }
+    if (sensor_start > 0U && sensor_start > sensor_end) {
+        return -EINVAL;
+    }
+
+    s_app->hvac.config.groups[group_id].sensor_start = sensor_start;
+    s_app->hvac.config.groups[group_id].sensor_end = sensor_end;
+    s_app->hvac.config.groups[group_id].metric_policy = (uint8_t)policy;
+
+    int rc = ao_hvac_set_group_config(&s_app->hvac.ao, group_id, &s_app->hvac.config.groups[group_id]);
+    if (rc != 0) {
+        return rc;
+    }
+
+    if (s_app->storage.initialized) {
+        (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
+    }
+
+    return 0;
+}
+
+int app_facade_hvac_configure_group_units(uint8_t group_id,
+                                          uint8_t active_turn_count,
+                                          uint8_t unit_mask)
+{
+    if (s_app == NULL || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+    if (!s_app->hvac.initialized) {
+        return -EAGAIN;
+    }
+    if (active_turn_count > HVAC_MAX_UNITS_TOTAL) {
+        return -EINVAL;
+    }
+
+    s_app->hvac.config.groups[group_id].active_turn_count = active_turn_count;
+    if (unit_mask != 0U) {
+        s_app->hvac.config.groups[group_id].unit_mask = unit_mask;
+    }
+
+    int rc = ao_hvac_set_group_config(&s_app->hvac.ao, group_id, &s_app->hvac.config.groups[group_id]);
+    if (rc != 0) {
+        return rc;
+    }
+
+    if (s_app->storage.initialized) {
+        (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
+    }
 
     return 0;
 }
@@ -539,11 +608,6 @@ int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave)
         return ret;
     }
 
-    /* Mark domain dirty to commit changes to EEPROM */
-    if (s_app->storage.initialized) {
-        (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_MODBUS, 0U);
-    }
-
     return 0;
 }
 
@@ -581,11 +645,6 @@ int app_facade_modbus_configure_bus(uint8_t bus_id, const modbus_bus_config_t *c
     int ret = modbus_registry_set_bus_cfg(&s_app->modbus.registry_impl, bus_id, cfg);
     if (ret != 0) {
         return ret;
-    }
-
-    /* Mark domain dirty to persist new bus config to EEPROM */
-    if (s_app->storage.initialized) {
-        (void)ao_storage_mark_dirty(&s_app->storage.ao, CONFIG_DOMAIN_MODBUS, (uint16_t)bus_id);
     }
 
     return 0;
@@ -640,32 +699,6 @@ int app_facade_storage_reload_all(void)
             unpacked_size == sizeof(config_hvac_t) &&
             config_hvac_is_valid(&hvac_cfg)) {
             (void)app_container_set_hvac_config(s_app, &hvac_cfg);
-        } else {
-            reload_err = -EIO;
-        }
-    }
-
-    /* 2. Modbus */
-    if (s_app->modbus.initialized) {
-        uint8_t modbus_blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
-        size_t loaded_size = 0U;
-        int load_res = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_MODBUS,
-                                             modbus_blob, sizeof(modbus_blob), &loaded_size);
-        if (load_res == 0 && loaded_size > 0U) {
-            int import_res = modbus_registry_import(&s_app->modbus.registry_impl, modbus_blob, loaded_size);
-            if (import_res == 0) {
-                for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++) {
-                    modbus_bus_cfg_t bcfg;
-                    if (modbus_registry_get_bus_cfg(&s_app->modbus.registry_impl, bus, &bcfg) == 0) {
-                        s_app->modbus.bus_cfg[bus] = bcfg;
-                        if (s_app->modbus.client_port[bus].api != NULL) {
-                            (void)i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus], &bcfg);
-                        }
-                    }
-                }
-            } else {
-                reload_err = -EIO;
-            }
         } else {
             reload_err = -EIO;
         }
@@ -753,43 +786,7 @@ int app_facade_storage_reload_all(void)
         }
     }
 
-    /* 7. Sensor Cfg */
-    {
-        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_sensor_cfg_t)];
-        config_sensor_cfg_t sensor_cfg;
-        memset(&sensor_cfg, 0, sizeof(sensor_cfg));
-        size_t loaded_size = 0;
-        size_t unpacked_size = 0;
-        int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_SENSOR_CFG,
-                                        buf, sizeof(buf), &loaded_size);
-        if (ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_SENSOR_CFG, buf, loaded_size,
-                                   &sensor_cfg, sizeof(sensor_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(config_sensor_cfg_t)) {
-            s_app->sensor_cfg = sensor_cfg;
-        } else {
-            reload_err = -EIO;
-        }
-    }
 
-    /* 8. Baseline */
-    {
-        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_baseline_t)];
-        config_baseline_t baseline_cfg;
-        memset(&baseline_cfg, 0, sizeof(baseline_cfg));
-        size_t loaded_size = 0;
-        size_t unpacked_size = 0;
-        int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_BASELINE,
-                                        buf, sizeof(buf), &loaded_size);
-        if (ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_BASELINE, buf, loaded_size,
-                                   &baseline_cfg, sizeof(baseline_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(config_baseline_t)) {
-            s_app->baseline_cfg = baseline_cfg;
-        } else {
-            reload_err = -EIO;
-        }
-    }
 
     return reload_err;
 }
@@ -811,20 +808,21 @@ int app_facade_storage_reset_defaults(void)
     /* 2. Reset RAM domains to factory defaults */
     s_app->device_cfg = *default_config_get_device_cfg();
     s_app->calibration_cfg = *default_config_get_calibration_cfg();
-    s_app->sensor_cfg = *default_config_get_sensor_cfg();
-    s_app->baseline_cfg = *default_config_get_baseline_cfg();
 
     /* 3. Reset Modbus bus configs & registry */
     if (s_app->modbus.initialized) {
-        memcpy(s_app->modbus.bus_cfg, k_default_modbus_bus_cfg, sizeof(s_app->modbus.bus_cfg));
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++) {
+            const modbus_bus_cfg_t *bcfg = modbus_device_table_get_bus_cfg((modbus_bus_id_t)bus);
+            if (bcfg != NULL) {
+                s_app->modbus.bus_cfg[bus] = *bcfg;
+            }
             if (s_app->modbus.client_port[bus].api != NULL) {
                 (void)i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus], &s_app->modbus.bus_cfg[bus]);
             }
         }
         (void)modbus_registry_init(&s_app->modbus.registry_impl, s_app->modbus.bus_cfg);
         size_t def_count = 0;
-        const modbus_slave_descriptor_t *def_slaves = default_config_get_modbus_slaves(&def_count);
+        const modbus_slave_descriptor_t *def_slaves = modbus_device_table_get_slaves(&def_count);
         for (size_t i = 0; i < def_count; i++) {
             (void)modbus_registry_register(&s_app->modbus.registry_impl, &def_slaves[i]);
         }

@@ -107,6 +107,15 @@ typedef enum {
     BYPASS_CAUSE_DISCREPANCY     = (1U << 6), /**< Contactor feedback discrepancy detected */
 } hvac_bypass_cause_t;
 
+/**
+ * @brief Temperature selection policy for a coordination group.
+ */
+typedef enum {
+    SENSOR_METRIC_MAX = 0, /**< Highest temp in zone (hot-spot protection) */
+    SENSOR_METRIC_AVG = 1, /**< Average of healthy zone probes */
+    SENSOR_METRIC_MIN = 2  /**< Minimum temp in zone */
+} sensor_metric_policy_t;
+
 /* ========================================================================= */
 /* Structures                                                                */
 /* ========================================================================= */
@@ -168,7 +177,10 @@ typedef struct {
     uint8_t enable_fan_delay;   /**< 1 to enable fan purge cycle, 0 to disable */
     uint8_t hum_min;            /**< Minimum relative humidity threshold (%) */
     uint8_t hum_max;            /**< Maximum relative humidity threshold (%) */
-    uint8_t reserved[2];        /**< Reserved alignment padding */
+    uint8_t sensor_start;       /**< Start sensor flat ID (1..59; 0 = unassigned) */
+    uint8_t sensor_end;         /**< End sensor flat ID (1..59; 0 = unassigned) */
+    uint8_t metric_policy;      /**< Metric policy (@see sensor_metric_policy_t) */
+    uint8_t reserved[1];        /**< Reserved alignment padding */
 } config_hvac_group_t;
 
 /**
@@ -253,9 +265,21 @@ static inline bool hvac_tri_state_is_valid(uint8_t tri)
 }
 
 /**
+ * @brief Validate sensor metric policy enumerator.
+ *
+ * @param policy Metric policy to validate.
+ * @return true if valid, false otherwise.
+ */
+static inline bool sensor_metric_policy_is_valid(uint8_t policy)
+{
+    return (policy <= (uint8_t)SENSOR_METRIC_MIN);
+}
+
+/**
  * @brief Validate configuration parameters of an HVAC group.
  *
- * Checks setpoint ordering (temp_min <= temp_max <= temp_alarm <= temp_bypass),
+ * Checks metric policy, sensor range, setpoint ordering
+ * (temp_min <= temp_max <= temp_alarm <= temp_bypass),
  * humidity range (hum_min <= hum_max <= 100%), and active unit count limit.
  *
  * @param group Group configuration to check (may be NULL).
@@ -264,6 +288,14 @@ static inline bool hvac_tri_state_is_valid(uint8_t tri)
 static inline bool config_hvac_group_is_valid(const config_hvac_group_t *group)
 {
     if (group == NULL) {
+        return false;
+    }
+
+    if (!sensor_metric_policy_is_valid(group->metric_policy)) {
+        return false;
+    }
+
+    if (group->sensor_start > 0U && group->sensor_end < group->sensor_start) {
         return false;
     }
 

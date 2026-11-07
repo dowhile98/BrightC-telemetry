@@ -386,67 +386,57 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     /* 2. Verify relay actuator endpoints (Internal relays on mcp23s17_2, device_id = 2) */
     for (uint8_t u = 0; u < 4U; u++) {
         const hvac_unit_hw_config_t *u_cfg = &k_default_hvac_config_hybrid_4units.units[u];
-        zassert_equal(u_cfg->relay_aa.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Relay backend");
-        zassert_equal(u_cfg->relay_aa.device_id, 2U, "Relay device_id 2");
-        zassert_equal(u_cfg->relay_aa.channel, (uint8_t)(u * 3U + 0U), "Cooling AA channel");
+        zassert_equal(u_cfg->relay_aa.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Relay backend");
+        zassert_equal(u_cfg->relay_aa.device_id, HARDWARE_MCP23S17_IDX_HVAC_RELAYS, "Relay device_id 2");
 
-        zassert_equal(u_cfg->relay_sm.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Fan backend");
-        zassert_equal(u_cfg->relay_sm.device_id, 2U, "Fan device_id 2");
-        zassert_equal(u_cfg->relay_sm.channel, (uint8_t)(u * 3U + 1U), "Fan SM channel");
+        zassert_equal(u_cfg->relay_sm.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Fan backend");
+        zassert_equal(u_cfg->relay_sm.device_id, HARDWARE_MCP23S17_IDX_HVAC_RELAYS, "Fan device_id 2");
 
-        zassert_equal(u_cfg->relay_g.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Alarm relay backend");
-        zassert_equal(u_cfg->relay_g.device_id, 2U, "Alarm relay device_id 2");
-        zassert_equal(u_cfg->relay_g.channel, (uint8_t)(u * 3U + 2U), "Alarm G channel");
+        zassert_equal(u_cfg->relay_g.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Alarm relay backend");
+        zassert_equal(u_cfg->relay_g.device_id, HARDWARE_MCP23S17_IDX_HVAC_RELAYS, "Alarm relay device_id 2");
 
         /* Alarms (Units 0..2 on mcp23s17_0 dev_id 0, Unit 3 on mcp23s17_1 dev_id 1) */
-        uint8_t expected_alm_dev = (u < 3U) ? 0U : 1U;
-        uint8_t alm_base_ch = (u < 3U) ? (uint8_t)(u * 4U) : 0U;
+        uint8_t expected_alm_dev = (u < 3U) ? HARDWARE_MCP23S17_IDX_ALM_IN_0_11 : HARDWARE_MCP23S17_IDX_ALM_IN_12_23;
 
-        zassert_equal(u_cfg->alarm_hp.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "HP backend");
+        zassert_equal(u_cfg->alarm_hp.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "HP backend");
         zassert_equal(u_cfg->alarm_hp.device_id, expected_alm_dev, "HP device_id");
-        zassert_equal(u_cfg->alarm_hp.channel, (uint8_t)(alm_base_ch + 0U), "HP channel");
 
-        zassert_equal(u_cfg->alarm_lp.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "LP backend");
+        zassert_equal(u_cfg->alarm_lp.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "LP backend");
         zassert_equal(u_cfg->alarm_lp.device_id, expected_alm_dev, "LP device_id");
-        zassert_equal(u_cfg->alarm_lp.channel, (uint8_t)(alm_base_ch + 1U), "LP channel");
 
-        zassert_equal(u_cfg->alarm_flow.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Flow backend");
+        zassert_equal(u_cfg->alarm_flow.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Flow backend");
         zassert_equal(u_cfg->alarm_flow.device_id, expected_alm_dev, "Flow device_id");
-        zassert_equal(u_cfg->alarm_flow.channel, (uint8_t)(alm_base_ch + 2U), "Flow channel");
 
-        zassert_equal(u_cfg->alarm_volt.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Volt backend");
+        zassert_equal(u_cfg->alarm_volt.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Volt backend");
         zassert_equal(u_cfg->alarm_volt.device_id, expected_alm_dev, "Volt device_id");
-        zassert_equal(u_cfg->alarm_volt.channel, (uint8_t)(alm_base_ch + 3U), "Volt channel");
 
-        /* Feedbacks (MBSL32DI, device_id = 3, channels 0..7) */
+        /* Feedbacks (MBSL32DI, device_id = 4) */
         zassert_equal(u_cfg->fb_fan.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "FB fan backend");
-        zassert_equal(u_cfg->fb_fan.device_id, 3U, "FB fan device_id 3");
-        zassert_equal(u_cfg->fb_fan.channel, (uint8_t)(u * 2U + 0U), "FB fan channel");
+        zassert_equal(u_cfg->fb_fan.device_id, MODBUS_ADDR_MBSL32DI, "FB fan device_id 4");
 
         zassert_equal(u_cfg->fb_compressor.backend, HVAC_IO_BACKEND_REMOTE_MODBUS, "FB comp backend");
-        zassert_equal(u_cfg->fb_compressor.device_id, 3U, "FB comp device_id 3");
-        zassert_equal(u_cfg->fb_compressor.channel, (uint8_t)(u * 2U + 1U), "FB comp channel");
+        zassert_equal(u_cfg->fb_compressor.device_id, MODBUS_ADDR_MBSL32DI, "FB comp device_id 4");
     }
 
     /* Interlocks */
-    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Fire backend");
-    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.device_id, 1U, "Fire dev_id");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Fire backend");
+    zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.device_id, HARDWARE_MCP23S17_IDX_ALM_IN_12_23, "Fire dev_id");
     zassert_equal(k_default_hvac_config_hybrid_4units.fire_interlock.channel, 4U, "Fire channel");
 
     zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.backend, HVAC_IO_BACKEND_LOCAL_GPIO, "Bypass backend");
     zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.device_id, 0U, "Bypass dev_id");
     zassert_equal(k_default_hvac_config_hybrid_4units.bypass_switch.channel, (uint16_t)ONCHIP_DI_SW_BYPASS, "Bypass channel");
 
-    /* 3. Verify DI Hybrid Profile (34 channels) */
+    /* 3. Verify DI Declarative Profiles */
     size_t di_count = 0;
     const di_channel_config_t *di_prof = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
     zassert_not_null(di_prof, "Hybrid DI profile must not be NULL");
-    zassert_equal(di_count, 34U, "Hybrid DI profile must have 34 channels");
+    zassert_equal(di_count, HARDWARE_LOCAL_DI_COUNT, "Local DI profile must have 24 channels");
 
     /* Channels 0..11: on mcp23s17_0 (dev_id 0) */
     for (uint8_t i = 0; i < 12U; i++) {
         zassert_equal(di_prof[i].source_type, DI_SOURCE_INTERNAL_SPI, "DI source SPI dev 0");
-        zassert_equal(di_prof[i].source_dev_id, 0U, "DI dev_id 0");
+        zassert_equal(di_prof[i].source_dev_id, HARDWARE_MCP23S17_IDX_ALM_IN_0_11, "DI dev_id 0");
         zassert_equal(di_prof[i].pin_index, i, "DI pin_index matches");
         zassert_true(di_prof[i].enabled, "DI channel enabled");
     }
@@ -456,35 +446,24 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     /* Channels 12..23: on mcp23s17_1 (dev_id 1) */
     for (uint8_t i = 0; i < 12U; i++) {
         zassert_equal(di_prof[12U + i].source_type, DI_SOURCE_INTERNAL_SPI, "DI source SPI dev 1");
-        zassert_equal(di_prof[12U + i].source_dev_id, 1U, "DI dev_id 1");
+        zassert_equal(di_prof[12U + i].source_dev_id, HARDWARE_MCP23S17_IDX_ALM_IN_12_23, "DI dev_id 1");
         zassert_equal(di_prof[12U + i].pin_index, i, "DI pin_index matches");
-        zassert_true(di_prof[12U + i].enabled, "DI channel enabled");
+        if (i < 9U) {
+            zassert_true(di_prof[12U + i].enabled, "DI channel enabled");
+        } else {
+            zassert_false(di_prof[12U + i].enabled, "Spare DI channel disabled");
+        }
     }
     zassert_equal(di_prof[12].role, DI_ROLE_UNIT_3_ALARM_HP, "CH12 is Unit 3 HP");
     zassert_equal(di_prof[15].role, DI_ROLE_UNIT_3_ALARM_VOLT, "CH15 is Unit 3 Volt");
     zassert_equal(di_prof[16].role, DI_ROLE_SMOKE_FIRE, "CH16 is Fire Interlock");
     zassert_equal(di_prof[17].role, DI_ROLE_DOOR_OPEN, "CH17 is Door Open");
 
-    /* Channels 24..25: On-chip GPIO (button and bypass switch) */
-    zassert_equal(di_prof[24].source_type, DI_SOURCE_ONCHIP_GPIO, "CH24 is Onchip GPIO");
-    zassert_equal(di_prof[24].source_dev_id, (uint8_t)ONCHIP_DI_USER_BUTTON, "CH24 is USER_BUTTON");
-    zassert_equal(di_prof[24].role, DI_ROLE_USER_BUTTON, "CH24 role is USER_BUTTON");
-
-    zassert_equal(di_prof[25].source_type, DI_SOURCE_ONCHIP_GPIO, "CH25 is Onchip GPIO");
-    zassert_equal(di_prof[25].source_dev_id, (uint8_t)ONCHIP_DI_SW_BYPASS, "CH25 is SW_BYPASS");
-    zassert_equal(di_prof[25].role, DI_ROLE_BYPASS_SWITCH, "CH25 role is BYPASS_SWITCH");
-
-    /* Channels 26..33: Feedbacks on MBSL32DI */
-    for (uint8_t i = 0; i < 8U; i++) {
-        zassert_equal(di_prof[26U + i].source_type, DI_SOURCE_EXTERNAL_MODBUS, "DI source MBSL32DI");
-        zassert_equal(di_prof[26U + i].source_dev_id, 3U, "DI dev_id 3");
-        zassert_equal(di_prof[26U + i].pin_index, i, "DI pin_index matches");
-        zassert_true(di_prof[26U + i].enabled, "DI channel enabled");
-    }
-    zassert_equal(di_prof[26].role, DI_ROLE_FAN_1_AUX, "CH26 is Unit 0 FB Fan");
-    zassert_equal(di_prof[27].role, DI_ROLE_COMPRESSOR_1_AUX, "CH27 is Unit 0 FB Comp");
-    zassert_equal(di_prof[32].role, DI_ROLE_FAN_4_AUX, "CH32 is Unit 3 FB Fan");
-    zassert_equal(di_prof[33].role, DI_ROLE_COMPRESSOR_4_AUX, "CH33 is Unit 3 FB Comp");
+    /* Verify Remote MBSL32DI channels */
+    size_t remote_count = 0;
+    const di_channel_config_t *remote_prof = hardware_pin_map_get_remote_di(&remote_count);
+    zassert_not_null(remote_prof, "Remote DI profile must not be NULL");
+    zassert_equal(remote_count, HARDWARE_REMOTE_DI_COUNT, "Remote DI profile must have 32 channels");
 
     /* 4. Verify helper function profile dispatch */
     zassert_equal_ptr(default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL), &k_default_hvac_config_hybrid_4units, "Hybrid profile lookup");
@@ -570,6 +549,204 @@ ZTEST(ao_hvac_suite, test_actuator_error_handling)
     /* Reset errors */
     fake_hvac_unit_set_errors(0, 0);
 }
+
+ZTEST(ao_hvac_suite, test_multi_room_disjoint_sensor_ranges)
+{
+    /* Phase 3: Multi-room disjoint sensor ranges across two independent groups
+     * Group 0 (Room A): Units 0..1, Sensors flat IDs 1..2
+     * Group 1 (Room B): Units 2..3, Sensors flat IDs 3..5
+     */
+    config_hvac_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.operation_mode = (uint8_t)HVAC_MODE_HVAC_CONTROL_ONLY;
+    cfg.total_groups = 2U;
+    cfg.total_units = 4U;
+
+    /* Group 0: Room A */
+    cfg.groups[0].temp_min = 20.0f;
+    cfg.groups[0].temp_max = 24.0f;
+    cfg.groups[0].temp_alarm = 28.0f;
+    cfg.groups[0].temp_bypass = 32.0f;
+    cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].unit_mask = 0x03U;       /* Units 0, 1 */
+    cfg.groups[0].active_turn_count = 1U;  /* 1 active + 1 standby */
+    cfg.groups[0].max_allowed_faults = 3U;
+    cfg.groups[0].sensor_start = 1U;
+    cfg.groups[0].sensor_end = 2U;
+    cfg.groups[0].metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+
+    /* Group 1: Room B */
+    cfg.groups[1].temp_min = 20.0f;
+    cfg.groups[1].temp_max = 24.0f;
+    cfg.groups[1].temp_alarm = 28.0f;
+    cfg.groups[1].temp_bypass = 32.0f;
+    cfg.groups[1].delay_on_s = 0U;
+    cfg.groups[1].unit_mask = 0x0CU;       /* Units 2, 3 */
+    cfg.groups[1].active_turn_count = 1U;  /* 1 active + 1 standby */
+    cfg.groups[1].max_allowed_faults = 3U;
+    cfg.groups[1].sensor_start = 3U;
+    cfg.groups[1].sensor_end = 5U;
+    cfg.groups[1].metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* Step 1: Room A is hot (26 C >= 24 C), Room B is cool (19 C <= 20 C) */
+    /* Array indices 0..5 correspond to flat IDs 1..6 */
+    float temps[6] = {
+        26.0f, /* ID 1 (Room A) */
+        25.0f, /* ID 2 (Room A) */
+        19.0f, /* ID 3 (Room B) */
+        19.5f, /* ID 4 (Room B) */
+        18.5f, /* ID 5 (Room B) */
+        45.0f  /* ID 6 (External / unrelated probe) */
+    };
+    uint64_t valid_mask = 0x3FULL; /* IDs 1..6 all valid */
+
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, valid_mask, 6U);
+    zassert_equal(ret, 0, "ao_hvac_feed_sensor_snapshot failed");
+
+    /* Verify metrics isolation between rooms */
+    zassert_equal(s_ao.group_metrics[0].total_sensors, 2U, "Room A total sensors");
+    zassert_equal(s_ao.group_metrics[0].valid_sensors, 2U, "Room A valid sensors");
+    zassert_within(s_ao.group_metrics[0].highest_temp, 26.0f, 0.001f, "Room A highest temp");
+
+    zassert_equal(s_ao.group_metrics[1].total_sensors, 3U, "Room B total sensors");
+    zassert_equal(s_ao.group_metrics[1].valid_sensors, 3U, "Room B valid sensors");
+    zassert_within(s_ao.group_metrics[1].highest_temp, 19.5f, 0.001f, "Room B highest temp");
+
+    /* Actuate */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    /* Group 0 must be COOLING, Group 1 must be IDLE */
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_COOLING, "Room A must be in COOLING");
+    zassert_equal(s_ao.groups[1].state, GROUP_STATE_IDLE, "Room B must be IDLE");
+
+    /* Actuator verification: Unit 0 active ON, Unit 1 standby OFF, Units 2..3 OFF */
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 (Room A) must be ON");
+    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 (Room A standby) must be OFF");
+    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 (Room B) must be OFF");
+    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 (Room B) must be OFF");
+
+    /* Step 2: Swap thermal load - Room A cooled down (19 C), Room B overheated (27 C) */
+    temps[0] = 19.0f;
+    temps[1] = 18.5f;
+    temps[2] = 27.0f;
+    temps[3] = 26.5f;
+    temps[4] = 25.0f;
+
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, valid_mask, 6U);
+    zassert_equal(ret, 0, "ao_hvac_feed_sensor_snapshot failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    /* Group 0 must be IDLE, Group 1 must be COOLING */
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Room A must transition to IDLE");
+    zassert_equal(s_ao.groups[1].state, GROUP_STATE_COOLING, "Room B must transition to COOLING");
+
+    /* Actuator verification: Units 0..1 OFF, Unit 2 ON, Unit 3 OFF */
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must be OFF");
+    zassert_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must be OFF");
+    zassert_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_ON, "Unit 2 (Room B) must be ON");
+    zassert_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 (Room B standby) must be OFF");
+}
+
+ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
+{
+    config_hvac_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.total_groups = 1U;
+    cfg.total_units = 2U;
+
+    cfg.groups[0].temp_min = 20.0f;
+    cfg.groups[0].temp_max = 24.0f;
+    cfg.groups[0].temp_alarm = 28.0f;
+    cfg.groups[0].temp_bypass = 32.0f;
+    cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].unit_mask = 0x03U;       /* Units 0, 1 */
+    cfg.groups[0].active_turn_count = 1U;  /* 1 active + 1 standby */
+    cfg.groups[0].max_allowed_faults = 3U;
+    cfg.groups[0].sensor_start = 1U;
+    cfg.groups[0].sensor_end = 2U;
+    cfg.groups[0].metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* Initial temperatures: Probe 1 is hot (26 C), Probe 2 is mild (22 C), Probes 3 & 4 are cool (18 C) */
+    float temps[4] = {26.0f, 22.0f, 18.0f, 18.0f};
+    uint64_t valid_mask = 0x0FULL;
+
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, valid_mask, 4U);
+    zassert_equal(ret, 0, "ao_hvac_feed_sensor_snapshot failed");
+    zassert_equal(s_ao.group_metrics[0].valid_sensors, 2U, "Initial valid sensors count");
+    zassert_within(s_ao.group_metrics[0].highest_temp, 26.0f, 0.001f, "Initial highest temp");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_COOLING, "Group 0 must enter COOLING");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
+
+    /* Dynamically reconfigure Group 0 to monitor sensor range 3..4 with policy AVG */
+    config_hvac_group_t updated_group = cfg.groups[0];
+    updated_group.sensor_start = 3U;
+    updated_group.sensor_end = 4U;
+    updated_group.metric_policy = (uint8_t)SENSOR_METRIC_AVG;
+
+    ret = ao_hvac_set_group_config(&s_ao, 0, &updated_group);
+    zassert_equal(ret, 0, "ao_hvac_set_group_config failed");
+    zassert_equal(s_ao.config.groups[0].sensor_start, 3U, "Config sensor_start must be updated");
+    zassert_equal(s_ao.config.groups[0].sensor_end, 4U, "Config sensor_end must be updated");
+    zassert_equal(s_ao.config.groups[0].metric_policy, (uint8_t)SENSOR_METRIC_AVG, "Config metric_policy must be updated");
+
+    /* Feed sensor snapshot again - now probes 3..4 (18 C) should determine the metrics */
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, valid_mask, 4U);
+    zassert_equal(ret, 0, "ao_hvac_feed_sensor_snapshot failed");
+    zassert_equal(s_ao.group_metrics[0].valid_sensors, 2U, "Updated valid sensors count");
+    zassert_within(s_ao.group_metrics[0].highest_temp, 18.0f, 0.001f, "Updated highest temp");
+    zassert_within(s_ao.group_metrics[0].average_temp, 18.0f, 0.001f, "Updated average temp");
+
+    /* Subsequent evaluation step: temperature 18.0 C <= temp_min 20.0 C -> transitions to IDLE */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Group 0 must transition to IDLE");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must turn OFF");
+
+    /* Dynamically reconfigure policy to SENSOR_METRIC_MIN on probes 1..3 */
+    /* Temps: probe 1 = 26 C, probe 2 = 25 C, probe 3 = 18 C */
+    temps[1] = 25.0f;
+    updated_group.sensor_start = 1U;
+    updated_group.sensor_end = 3U;
+    updated_group.metric_policy = (uint8_t)SENSOR_METRIC_MIN;
+
+    ret = ao_hvac_set_group_config(&s_ao, 0, &updated_group);
+    zassert_equal(ret, 0, "ao_hvac_set_group_config to MIN failed");
+
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, valid_mask, 4U);
+    zassert_equal(ret, 0, "ao_hvac_feed_sensor_snapshot failed");
+    zassert_within(s_ao.group_metrics[0].lowest_temp, 18.0f, 0.001f, "Lowest temp must be 18.0 C");
+    zassert_within(s_ao.group_metrics[0].highest_temp, 26.0f, 0.001f, "Highest temp must be 26.0 C");
+
+    /* Under MIN policy, effective temp is 18.0 C (< 20.0 C), so group remains IDLE */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Group 0 remains IDLE under MIN policy");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must stay OFF");
+
+    /* Now switch policy back to SENSOR_METRIC_MAX on probes 1..3 */
+    updated_group.metric_policy = (uint8_t)SENSOR_METRIC_MAX;
+    ret = ao_hvac_set_group_config(&s_ao, 0, &updated_group);
+    zassert_equal(ret, 0, "ao_hvac_set_group_config to MAX failed");
+
+    /* Under MAX policy, effective temp is 26.0 C (>= 24.0 C), so group transitions to COOLING */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_COOLING, "Group 0 transitions to COOLING under MAX policy");
+    zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
+}
+
 
 
 

@@ -7,7 +7,10 @@
 #include "application/services/app_facade.h"
 #include "application/active_objects/ao_sensor_matrix.h"
 #include "common/config_envelope.h"
-#include "common/default_config_profiles.h"
+#include "common/app_defaults.h"
+#include "common/modbus_device_table.h"
+#include "common/hardware_pin_map.h"
+#include "common/sensor_hardware_map.h"
 #include "domain/services/cwt_tm16pt_codec.h"
 #include "domain/services/sensor_matrix_mapper.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
@@ -20,7 +23,7 @@
 
 LOG_MODULE_REGISTER(composition_root, LOG_LEVEL_INF);
 
-/* Compile-time assertions for persistent storage layout */
+/* Compile-time assertions for persistent storage layout (5 domains per ADR-6) */
 BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
              "config_hvac_t envelope exceeds storage slot size (1024 - 32 bytes)");
 BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
@@ -31,24 +34,17 @@ BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= 512 -
              "config_device_t envelope exceeds storage slot size (512 - 32 bytes)");
 BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= 512 - 32,
              "config_calibration_t envelope exceeds storage slot size (512 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_sensor_cfg_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
-             "config_sensor_cfg_t envelope exceeds storage slot size (1024 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_baseline_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
-             "config_baseline_t envelope exceeds storage slot size (1024 - 32 bytes)");
 
 /* EEPROM capacity check: 32 KB AT24C256C */
 #define EEPROM_AT24C256C_CAPACITY_BYTES 32768U
-BUILD_ASSERT(0x2800 + 2048 <= EEPROM_AT24C256C_CAPACITY_BYTES,
+BUILD_ASSERT(0x1400 + 1024 <= EEPROM_AT24C256C_CAPACITY_BYTES,
              "Storage domains exceed physical EEPROM capacity (32KB)");
 
-/* Non-overlapping domain layout checks */
-BUILD_ASSERT(0x0000 + 1024 <= 0x0400, "DEVICE domain overlaps MODBUS");
-BUILD_ASSERT(0x0400 + 2048 <= 0x0C00, "MODBUS domain overlaps NET_ETH");
-BUILD_ASSERT(0x0C00 + 1024 <= 0x1000, "NET_ETH domain overlaps NET_WIFI");
-BUILD_ASSERT(0x1000 + 1024 <= 0x1400, "NET_WIFI domain overlaps CALIBRATION");
-BUILD_ASSERT(0x1400 + 1024 <= 0x1800, "CALIBRATION domain overlaps SENSOR_CFG");
-BUILD_ASSERT(0x1800 + 2048 <= 0x2000, "SENSOR_CFG domain overlaps BASELINE");
-BUILD_ASSERT(0x2000 + 2048 <= 0x2800, "BASELINE domain overlaps HVAC");
+/* Non-overlapping domain layout checks (ADR-6) */
+BUILD_ASSERT(0x0000 + 1024 <= 0x0400, "DEVICE domain overlaps NET_ETH");
+BUILD_ASSERT(0x0400 + 1024 <= 0x0800, "NET_ETH domain overlaps NET_WIFI");
+BUILD_ASSERT(0x0800 + 1024 <= 0x0C00, "NET_WIFI domain overlaps HVAC");
+BUILD_ASSERT(0x0C00 + 2048 <= 0x1400, "HVAC domain overlaps CALIBRATION");
 
 #ifdef CONFIG_NANOMODBUS
 /**
@@ -108,16 +104,7 @@ static int storage_provider_wifi(void *ctx, config_domain_t domain,
     return config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, &cfg, sizeof(cfg), out_buf, max_size, out_size);
 }
 
-static int storage_provider_modbus(void *ctx, config_domain_t domain,
-                                   void *out_buf, size_t max_size, size_t *out_size)
-{
-    app_container_t *app = (app_container_t *)ctx;
-    if (app == NULL || domain != CONFIG_DOMAIN_MODBUS || out_buf == NULL)
-    {
-        return -EINVAL;
-    }
-    return modbus_registry_export(&app->modbus.registry_impl, out_buf, max_size, out_size);
-}
+
 
 static int storage_provider_hvac(void *ctx, config_domain_t domain,
                                  void *out_buf, size_t max_size, size_t *out_size)
@@ -158,27 +145,7 @@ static int storage_provider_calibration(void *ctx, config_domain_t domain,
     return config_envelope_pack(CONFIG_DOMAIN_CALIBRATION, &self->calibration_cfg, sizeof(self->calibration_cfg), out_buf, max_size, out_size);
 }
 
-static int storage_provider_sensor_cfg(void *ctx, config_domain_t domain,
-                                       void *out_buf, size_t max_size, size_t *out_size)
-{
-    app_container_t *self = (app_container_t *)ctx;
-    if (domain != CONFIG_DOMAIN_SENSOR_CFG || out_buf == NULL || self == NULL)
-    {
-        return -EINVAL;
-    }
-    return config_envelope_pack(CONFIG_DOMAIN_SENSOR_CFG, &self->sensor_cfg, sizeof(self->sensor_cfg), out_buf, max_size, out_size);
-}
 
-static int storage_provider_baseline(void *ctx, config_domain_t domain,
-                                     void *out_buf, size_t max_size, size_t *out_size)
-{
-    app_container_t *self = (app_container_t *)ctx;
-    if (domain != CONFIG_DOMAIN_BASELINE || out_buf == NULL || self == NULL)
-    {
-        return -EINVAL;
-    }
-    return config_envelope_pack(CONFIG_DOMAIN_BASELINE, &self->baseline_cfg, sizeof(self->baseline_cfg), out_buf, max_size, out_size);
-}
 
 #if defined(CONFIG_ZTEST)
 #include "fake_network.h"
@@ -210,7 +177,7 @@ int composition_root_init_modbus(app_container_t *self)
         return -EAGAIN;
     }
 
-    (void)memcpy(self->modbus.bus_cfg, k_default_modbus_bus_cfg, sizeof(self->modbus.bus_cfg));
+    (void)memcpy(self->modbus.bus_cfg, k_brightc_modbus_bus_table, sizeof(self->modbus.bus_cfg));
 
 #ifdef CONFIG_NANOMODBUS
     size_t bound_buses = 0U;
@@ -262,7 +229,7 @@ int composition_root_init_modbus(app_container_t *self)
     }
 
     size_t slave_count = 0U;
-    const modbus_slave_descriptor_t *default_slaves = default_config_get_modbus_slaves(&slave_count);
+    const modbus_slave_descriptor_t *default_slaves = modbus_device_table_get_slaves(&slave_count);
     for (size_t i = 0U; i < slave_count; i++)
     {
         err = modbus_registry_register(&self->modbus.registry_impl, &default_slaves[i]);
@@ -270,65 +237,6 @@ int composition_root_init_modbus(app_container_t *self)
         {
             LOG_ERR("registering device %u failed (%d)", default_slaves[i].device_id, err);
             return err;
-        }
-    }
-
-    if (i_config_storage_is_bound(&self->storage.port))
-    {
-        uint8_t modbus_blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
-        size_t loaded_size = 0U;
-        int load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_MODBUS,
-                                             modbus_blob, sizeof(modbus_blob),
-                                             &loaded_size);
-        if (load_res == 0 && loaded_size > 0U)
-        {
-            int import_res = modbus_registry_import(&self->modbus.registry_impl, modbus_blob, loaded_size);
-            if (import_res == 0)
-            {
-                LOG_INF("Loaded Modbus registry config from storage (%zu bytes)", loaded_size);
-                for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
-                {
-                    modbus_bus_cfg_t bcfg;
-                    if (modbus_registry_get_bus_cfg(&self->modbus.registry_impl, bus, &bcfg) == 0)
-                    {
-                        self->modbus.bus_cfg[bus] = bcfg;
-                        if (self->modbus.client_port[bus].api != NULL)
-                        {
-                            int cfg_rc = i_modbus_client_set_bus_cfg(&self->modbus.client_port[bus], &bcfg);
-                            if (cfg_rc != 0)
-                            {
-                                LOG_WRN("bus %u: failed to set runtime bus cfg: %d", bus, cfg_rc);
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                LOG_WRN("Failed to import Modbus registry config (%d), re-persisting defaults", import_res);
-                size_t export_size = 0U;
-                if (modbus_registry_export(&self->modbus.registry_impl, modbus_blob, sizeof(modbus_blob), &export_size) == 0)
-                {
-                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
-                    if (save_rc != 0)
-                    {
-                        LOG_ERR("Failed to persist default Modbus config: %d", save_rc);
-                    }
-                }
-            }
-        }
-        else
-        {
-            LOG_INF("No valid Modbus config in storage (%d), persisting defaults", load_res);
-            size_t export_size = 0U;
-            if (modbus_registry_export(&self->modbus.registry_impl, modbus_blob, sizeof(modbus_blob), &export_size) == 0)
-            {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_MODBUS, modbus_blob, export_size);
-                if (save_rc != 0)
-                {
-                    LOG_ERR("Failed to persist default Modbus config: %d", save_rc);
-                }
-            }
         }
     }
 
@@ -348,7 +256,7 @@ int composition_root_init_modbus(app_container_t *self)
     }
 
     uint8_t waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
-    uint8_t waveshare_addr = DEFAULT_MODBUS_DEV_ID_WAVESHARE_RELAY;
+    uint8_t waveshare_addr = MODBUS_ADDR_WAVESHARE_RELAY;
     uint16_t waveshare_timeout_ms = DEFAULT_MODBUS_WAVESHARE_TIMEOUT_MS;
 
     modbus_slave_descriptor_t ws_desc;
@@ -447,8 +355,6 @@ int composition_root_init_storage(app_container_t *self)
     /* Initialize RAM defaults for persistent configuration domains */
     self->device_cfg = *default_config_get_device_cfg();
     self->calibration_cfg = *default_config_get_calibration_cfg();
-    self->sensor_cfg = *default_config_get_sensor_cfg();
-    self->baseline_cfg = *default_config_get_baseline_cfg();
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
@@ -484,37 +390,7 @@ int composition_root_init_storage(app_container_t *self)
             LOG_INF("Loaded CALIBRATION config from storage");
         }
 
-        /* 3. SENSOR_CFG */
-        uint8_t sensor_buf[sizeof(config_envelope_header_t) + sizeof(config_sensor_cfg_t)];
-        size_t sensor_size = 0U;
-        config_sensor_cfg_t s_cfg;
-        memset(&s_cfg, 0, sizeof(s_cfg));
-        size_t sensor_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_SENSOR_CFG,
-                                  sensor_buf, sizeof(sensor_buf), &sensor_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_SENSOR_CFG, sensor_buf, sensor_size,
-                                   &s_cfg, sizeof(s_cfg), &sensor_unpacked) == 0 &&
-            sensor_unpacked == sizeof(config_sensor_cfg_t))
-        {
-            self->sensor_cfg = s_cfg;
-            LOG_INF("Loaded SENSOR_CFG from storage");
-        }
 
-        /* 4. BASELINE */
-        uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_baseline_t)];
-        size_t base_size = 0U;
-        config_baseline_t b_cfg;
-        memset(&b_cfg, 0, sizeof(b_cfg));
-        size_t base_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_BASELINE,
-                                  base_buf, sizeof(base_buf), &base_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_BASELINE, base_buf, base_size,
-                                   &b_cfg, sizeof(b_cfg), &base_unpacked) == 0 &&
-            base_unpacked == sizeof(config_baseline_t))
-        {
-            self->baseline_cfg = b_cfg;
-            LOG_INF("Loaded BASELINE config from storage");
-        }
     }
 
     self->storage.initialized = true;
@@ -966,7 +842,6 @@ static void on_modbus_mbsl32di_reading(void *ctx, uint8_t device_id, uint32_t ra
 
 static void on_modbus_cwt_tm16pt_reading(void *ctx, uint8_t device_id, const temperature_bank_16ch_t *bank)
 {
-    ARG_UNUSED(device_id);
     app_container_t *self = (app_container_t *)ctx;
     if (self == NULL || bank == NULL)
     {
@@ -982,7 +857,8 @@ static void on_modbus_cwt_tm16pt_reading(void *ctx, uint8_t device_id, const tem
      * applies calibration, open-probe detection and semantic routing. */
     if (self->sensor.initialized && i_sensor_matrix_is_bound(&self->sensor.port))
     {
-        if (i_sensor_matrix_submit_cwt_bank(&self->sensor.port, 0U, bank) == 0)
+        uint8_t concentrator_idx = (device_id == MODBUS_ADDR_CWT_TM16PT_2) ? 1U : 0U;
+        if (i_sensor_matrix_submit_cwt_bank(&self->sensor.port, concentrator_idx, bank) == 0)
         {
             (void)ao_sensor_matrix_trigger(&self->sensor.ao);
             return;
@@ -1013,13 +889,6 @@ int composition_root_wire(app_container_t *self)
             LOG_WRN("failed to register storage provider for DEVICE: %d", reg_err);
         }
 
-        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_MODBUS,
-                                               storage_provider_modbus, self);
-        if (reg_err != 0)
-        {
-            LOG_WRN("failed to register storage provider for MODBUS: %d", reg_err);
-        }
-
         reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_NET_ETH,
                                                storage_provider_eth, self);
         if (reg_err != 0)
@@ -1039,20 +908,6 @@ int composition_root_wire(app_container_t *self)
         if (reg_err != 0)
         {
             LOG_WRN("failed to register storage provider for CALIBRATION: %d", reg_err);
-        }
-
-        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_SENSOR_CFG,
-                                               storage_provider_sensor_cfg, self);
-        if (reg_err != 0)
-        {
-            LOG_WRN("failed to register storage provider for SENSOR_CFG: %d", reg_err);
-        }
-
-        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_BASELINE,
-                                               storage_provider_baseline, self);
-        if (reg_err != 0)
-        {
-            LOG_WRN("failed to register storage provider for BASELINE: %d", reg_err);
         }
 
         if (self->hvac.initialized)
@@ -1243,6 +1098,22 @@ static void on_sensor_matrix_frame(void *ctx, const thermal_matrix_frame_t *fram
     {
         (void)ao_hvac_feed_temperatures(&self->hvac.ao, hvac_bank, hvac_valid,
                                         TEMPERATURE_BANK_MAX_CHANNELS);
+
+        /* Phase 4: In addition to sensor_matrix_pack_hvac_bank(), pack the flat snapshot
+         * from the sensor matrix adapter/raw bank and feed it to ao_hvac_feed_sensor_snapshot */
+        if (i_sensor_matrix_is_bound(&self->sensor.port))
+        {
+            raw_sensor_readings_t raw;
+            if (i_sensor_matrix_get_raw_readings(&self->sensor.port, &raw) == 0)
+            {
+                float flat_temps[64];
+                uint64_t flat_valid = 0ULL;
+                if (sensor_matrix_pack_flat_snapshot(&raw, flat_temps, &flat_valid) == 0)
+                {
+                    (void)ao_hvac_feed_sensor_snapshot(&self->hvac.ao, flat_temps, flat_valid, 64U);
+                }
+            }
+        }
     }
 
     /* The pilot profile routes on-board RTD 1..5 to room ambient probes 0..4. */

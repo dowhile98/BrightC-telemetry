@@ -21,7 +21,7 @@
 | **HVAC Active Object Coordinator** | `app/src/application/active_objects/ao_hvac.h`, `.c` | 100% | Canonical 5-phase lifecycle Active Object with dynamic runtime configuration update support (`ao_hvac_set_group_config`, `ao_hvac_apply_config`) |
 | **Composition Root Integration** | `app/src/infrastructure/di/composition_root.h`, `.c` | 100% | Subsystem 6 integrated in `app_container_t`: boot-time storage loading with default fallback (`k_default_hvac_cfg`), debounced dirty-marking via `ao_storage` |
 | **In-Memory Fakes** | `tests/fakes/include/fake_hvac_unit.h`, `.c`, `fake_relay.h`, `.c` | 100% | In-memory `i_hvac_unit_t` and `i_relay_t` implementations with call tracking and fault injection |
-| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **31/31 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
+| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **37/37 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
 
 ---
 
@@ -35,15 +35,29 @@
 - [x] Implement Zbus status channels `hvac_channels.c` & `.h`.
 - [x] Implement Active Object coordinator `ao_hvac.c` & `.h` adhering to 5-phase canonical lifecycle.
 - [x] Wire declarative hardware routing and operational modes in `composition_root.c` & `.h`.
-- [x] Create comprehensive unit test suite in `tests/unit/hvac/` (31/31 PASS on `native_sim` across 5 test suites).
+- [x] Create comprehensive unit test suite in `tests/unit/hvac/` (37/37 PASS on `native_sim` across 5 test suites).
 - [x] Boot-load persisted HVAC config from EEPROM with fallback defaults and debounced dirty marking.
 - [x] Support zero-reboot runtime configuration updates without disturbing running state machines.
 - [x] Implement multi-sensor group temperature aggregation (`hvac_compute_group_metrics` and `ao_hvac_feed_temperatures`).
-- [x] Centralize immutable default storage and DI configuration profiles (`default_config_profiles.h`).
+- [x] Centralize immutable default storage and DI configuration profiles (`default_config_profiles.h` and `app_defaults.h`).
+- [x] Phase 3: Implement Multi-Room Range Engine (`[sensor_start, sensor_end]` ranges and `sensor_metric_policy_t` MAX/AVG/MIN selection).
+- [x] Phase 5: Facade & Shell Alignment (`app_facade_hvac_configure_group_sensors`, `app_facade_hvac_configure_group_units`, shell `hvac sensors` and `hvac config` subcommands, sensor range and policy display in `hvac status`).
 
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Implemented Phase 5 (Facade & Shell Alignment for Multi-Room Range Engine):
+  - `app_facade.h/.c`: Added `sensor_start`, `sensor_end`, and `metric_policy` to `groups[]` in `app_facade_hvac_status_t` and populated them in `app_facade_hvac_get_status()`. Implemented `app_facade_hvac_configure_group_sensors()` to dynamically update group sensor range and metric policy, invoke `ao_hvac_set_group_config()`, and mark `CONFIG_DOMAIN_HVAC` dirty in persistent storage. Implemented `app_facade_hvac_configure_group_units()` to update `active_turn_count` (N+M) and `unit_mask`, invoke `ao_hvac_set_group_config()`, and mark storage dirty.
+  - `shell_brightc.c`: Added `hvac_metric_policy_str()` helper. Updated `cmd_hvac_status()` to display assigned sensor range and metric policy (`MAX`, `AVG`, `MIN`) per group. Added `cmd_hvac_sensors()` (`hvac sensors <grp> <start> <end> [max|avg|min]`) and `cmd_hvac_config()` (`hvac config <grp> <active_turn> [unit_mask_hex]`), and registered both in `sub_hvac` shell command set.
+  - `test_ao_hvac.c`: Added `test_dynamic_group_sensor_range_and_metric_policy` verifying live dynamic range reconfiguration (1..2 -> 3..4), metric policy transitions (MAX -> AVG -> MIN), and resulting HVAC FSM actuation and unit tri-state control.
+  - `test_composition_root.c`: Added `test_app_facade_hvac_configure_group_sensors_and_units` verifying facade parameter validation, group reconfiguration, and status reporting.
+  - Unit Tests: **38/38 tests passing on `native_sim` across 5 HVAC test suites** (100% PASS).
+- **2026-11-07**: Implemented Phase 3 (HVAC Multi-Room Range Engine):
+  - `hvac_types.h`: Defined `sensor_metric_policy_t` (`SENSOR_METRIC_MAX`, `SENSOR_METRIC_AVG`, `SENSOR_METRIC_MIN`) and validator `sensor_metric_policy_is_valid()`. Updated `config_hvac_group_t` to replace `reserved[2]` with `sensor_start`, `sensor_end`, `metric_policy`, `reserved[1]` while keeping size strictly at 40 bytes. Updated `config_hvac_group_is_valid()` to validate metric policy and non-inverted sensor range.
+  - `hvac_group_entity.h/.c`: Added `metric_policy`, `sensor_start`, and `sensor_end` fields to `hvac_group_entity_t`; initialized in `hvac_group_entity_init()` and copied in `hvac_group_entity_set_config()`. In `hvac_group_entity_evaluate()`, dynamically computed `ctrl_temp` (MAX, AVG, or MIN) to drive high-temperature bypass and thermal FSM transitions. Implemented pure domain function `hvac_compute_group_metrics_range()` for 64-bit valid masks and flat sensor IDs (1..59).
+  - `ao_hvac.h/.c`: Added `ao_hvac_feed_sensor_snapshot()` supporting 64-bit valid masks and range-based evaluation per active group with fallback to legacy `sensor_mask`. Updated `ao_hvac_feed_temperatures()` to forward into `ao_hvac_feed_sensor_snapshot()`.
+  - `app_defaults.h`: Updated default profiles `k_default_hvac_config_hybrid_4units` (`.sensor_start = 1U, .sensor_end = 5U`) and `k_default_hvac_config_control_only_8units` (`.sensor_start = 1U, .sensor_end = 8U`) with `SENSOR_METRIC_MAX`.
+  - Unit Tests: Added `test_config_hvac_group_size_and_validation`, `test_hvac_compute_group_metrics_range`, and `test_metric_policy_evaluation` in `test_hvac_group.c`, and `test_multi_room_disjoint_sensor_ranges` in `test_ao_hvac.c`. Test suite passes **37/37 tests across 5 test suites (100% PASS)**.
 - **2026-11-06**: Resolved audit findings P0-02 and P1-05:
   - P0-02 (Relay Change-Detection & Saturation Guard): Added state cache guard in `adapter_hvac_actuator_set_tri_state()` preventing redundant bus dispatches when commanded tri-state matches cached state. Initialized cache to `(hvac_tri_state_t)0xFF` on adapter init and invalidated on `adapter_hvac_actuator_set_hw_config()`. Handled uninitialized fallback in `adapter_hvac_actuator_get_tri_state()`.
   - P1-05 (HVAC Setpoint Validation & Modes): Enforced `heat_target_x10 < cool_target_x10` and preserved dynamic `temp_alarm` and `temp_bypass` deltas in `app_facade_hvac_set_setpoint()`. Implemented `HVAC_MODE_FAN_ONLY` in `app_facade_hvac_set_mode()` setting smart idle fan while disabling compressors. Added fan control handling to `app_facade_hvac_set_unit_manual()`.

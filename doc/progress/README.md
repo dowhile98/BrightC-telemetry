@@ -11,18 +11,18 @@
 
 | Subsystem / Layer | Progress File | Status | Codebase Coverage | Last Updated |
 | :--- | :--- | :---: | :--- | :---: |
-| **Core Architecture & Framework** | [`core_architecture_progress.md`](core_architecture_progress.md) | **100%** | Active Objects (5/5), DI Container, Hexagonal Ports & Adapters | 2026-11-06 |
+| **Core Architecture & Framework** | [`core_architecture_progress.md`](core_architecture_progress.md) | **100%** | Active Objects (5/5), DI Container, Hexagonal Ports & Adapters | 2026-11-07 |
 | **System Indicators** | [`system_indicators_progress.md`](system_indicators_progress.md) | **100%** | `ao_system_indicator`, LED GPIO & Buzzer PWM adapters, Zbus | 2026-11-05 |
-| **Industrial Modbus** | [`modbus_progress.md`](modbus_progress.md) | **90%** | Dual RS-485, 4 codecs, scheduler, registry, relay adapter, `ao_modbus` | 2026-11-06 |
+| **Industrial Modbus** | [`modbus_progress.md`](modbus_progress.md) | **90%** | Dual RS-485, 4 codecs, scheduler, registry, relay adapter, `ao_modbus` | 2026-11-07 |
 | **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **90%** | `ao_digital_input`, 2x MCP23S17 SPI (16-bit cached) + on-chip GPIOs, debouncing | 2026-11-06 |
 | **Network & Wi-Fi** | [`network_progress.md`](network_progress.md) | **75%** | `ao_network`, STM32 RMII Ethernet, ESP-Hosted SPI Wi-Fi, ISP ports | 2026-11-06 |
-| **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **95%** | `ao_storage`, Microconf I2C2 EEPROM adapter, 8 domains registered, degraded mode | 2026-11-06 |
-| **Sensors & Mathematical Model** | [`sensors_progress.md`](sensors_progress.md) | **85%** | Sensor matrix mapper, Modbus codecs, Rev F Thermodynamic Engine (31/31 unit tests). Pending ADC & adapters | 2026-11-06 |
+| **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **100%** | `ao_storage`, Microconf I2C2 EEPROM adapter, 5 pruned domains, degraded mode | 2026-11-07 |
+| **Sensors & Mathematical Model** | [`sensors_progress.md`](sensors_progress.md) | **90%** | Sensor matrix mapper, flat 64-ch snapshot, Modbus codecs, Rev F Thermodynamic Engine (20 mapper + 31 thermo tests). Pending ADC & adapters | 2026-11-07 |
 | **MicroSD Filesystem** | [`sd_card_filesystem_progress.md`](sd_card_filesystem_progress.md) | **10%** | Port `i_storage_fs.h` & types. Pending SDMMC1 FatFS & `ao_storage_sd` | 2026-11-05 |
 | **Telemetry Store & Forward** | [`telemetry_store_forward_progress.md`](telemetry_store_forward_progress.md) | **0%** | Spec approved. Pending dual-tier spooling & `ao_telemetry_spool` | 2026-11-05 |
 | **Self-Test & Diagnostics** | [`selftest_progress.md`](selftest_progress.md) | **0%** | Spec approved. Pending POST registry, rail/bus sanity checks | 2026-11-05 |
 | **OTA & MCUboot** | [`ota_mcuboot_progress.md`](ota_mcuboot_progress.md) | **0%** | Spec approved. Pending Sysbuild MCUboot, QSPI W25Q16, MCUmgr | 2026-11-05 |
-| **Industrial HVAC Control** | [`hvac_control_progress.md`](hvac_control_progress.md) | **100%** | Full domain FSMs, actuator adapter, ao_hvac (safe state & error handling), 33 unit tests | 2026-11-06 |
+| **Industrial HVAC Control** | [`hvac_control_progress.md`](hvac_control_progress.md) | **100%** | Full domain FSMs, Multi-Room Range Engine, Facade & Shell, ao_hvac, 38 unit tests | 2026-11-07 |
 
 ---
 

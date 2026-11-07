@@ -189,6 +189,26 @@ int ao_hvac_set_group_metrics(ao_hvac_t *self,
                               const group_temperature_metrics_t *metrics);
 
 /**
+ * @brief Feed a multi-sensor snapshot into the HVAC Active Object.
+ *
+ * Ingests a wide temperature array with 64-bit valid_mask (for flat sensor IDs 1..59).
+ * Evaluates each active group:
+ * - If sensor_start > 0 and sensor_end >= sensor_start, computes metrics using
+ *   hvac_compute_group_metrics_range().
+ * - Otherwise, falls back to legacy sensor_mask using hvac_compute_group_metrics().
+ *
+ * @param[in,out] self         Active Object instance.
+ * @param[in]     temperatures Array of temperature readings in °C.
+ * @param[in]     valid_mask   64-bit mask of healthy sensor channels (bit s = slot s valid).
+ * @param[in]     count        Number of entries in @p temperatures.
+ * @return 0 on success, negative errno on invalid arguments.
+ */
+int ao_hvac_feed_sensor_snapshot(ao_hvac_t *self,
+                                 const float *temperatures,
+                                 uint64_t valid_mask,
+                                 size_t count);
+
+/**
  * @brief Feed fresh temperature readings into the HVAC Active Object.
  *
  * Ingests temperature readings regardless of physical origin (on-board ADC RTD or

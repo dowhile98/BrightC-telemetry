@@ -34,6 +34,17 @@ static const char *hvac_group_state_str(hvac_group_state_t state)
     }
 }
 
+static const char *hvac_metric_policy_str(uint8_t policy)
+{
+    switch (policy) {
+    case SENSOR_METRIC_AVG: return "AVG";
+    case SENSOR_METRIC_MIN: return "MIN";
+    case SENSOR_METRIC_MAX:
+    default:
+        return "MAX";
+    }
+}
+
 static const char *hvac_unit_state_str(hvac_unit_state_t state)
 {
     switch (state) {
@@ -91,6 +102,10 @@ static int cmd_hvac_status(const struct shell *sh, size_t argc, char **argv)
         shell_print(sh, "--- Group %u ---", g);
         shell_print(sh, "  State:        %s", hvac_group_state_str(status.groups[g].state));
         shell_print(sh, "  Mode:         %s", status.groups[g].is_manual ? "MANUAL" : "AUTO");
+        shell_print(sh, "  Sensors:      IDs %u..%u (Policy: %s)",
+                    status.groups[g].sensor_start,
+                    status.groups[g].sensor_end,
+                    hvac_metric_policy_str(status.groups[g].metric_policy));
         shell_print(sh, "  Temp Highest: %.1f C", (double)status.groups[g].highest_temp);
         shell_print(sh, "  Setpoints:    Min=%.1f C, Max=%.1f C, Boost=%.1f C, Bypass=%.1f C",
                     (double)status.groups[g].temp_min, (double)status.groups[g].temp_max,
@@ -237,10 +252,74 @@ static int cmd_hvac_manual(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_hvac_sensors(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 4) {
+        shell_error(sh, "Usage: hvac sensors <grp> <start_id> <end_id> [max|avg|min]");
+        return -EINVAL;
+    }
+
+    uint8_t group_id = (uint8_t)strtoul(argv[1], NULL, 10);
+    uint8_t start_id = (uint8_t)strtoul(argv[2], NULL, 10);
+    uint8_t end_id = (uint8_t)strtoul(argv[3], NULL, 10);
+    sensor_metric_policy_t policy = SENSOR_METRIC_MAX;
+
+    if (argc >= 5) {
+        if (strcmp(argv[4], "max") == 0) {
+            policy = SENSOR_METRIC_MAX;
+        } else if (strcmp(argv[4], "avg") == 0) {
+            policy = SENSOR_METRIC_AVG;
+        } else if (strcmp(argv[4], "min") == 0) {
+            policy = SENSOR_METRIC_MIN;
+        } else {
+            shell_error(sh, "Invalid policy: %s (choose max, avg, or min)", argv[4]);
+            return -EINVAL;
+        }
+    }
+
+    int err = app_facade_hvac_configure_group_sensors(group_id, start_id, end_id, policy);
+    if (err != 0) {
+        shell_error(sh, "Failed to configure group sensors (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "Group %u sensors set to IDs %u..%u (Policy: %s)",
+                group_id, start_id, end_id, hvac_metric_policy_str((uint8_t)policy));
+    return 0;
+}
+
+static int cmd_hvac_config(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 3) {
+        shell_error(sh, "Usage: hvac config <grp> <active_turn> [unit_mask_hex]");
+        return -EINVAL;
+    }
+
+    uint8_t group_id = (uint8_t)strtoul(argv[1], NULL, 10);
+    uint8_t active_turn = (uint8_t)strtoul(argv[2], NULL, 10);
+    uint8_t unit_mask = 0U;
+
+    if (argc >= 4) {
+        unit_mask = (uint8_t)strtoul(argv[3], NULL, 16);
+    }
+
+    int err = app_facade_hvac_configure_group_units(group_id, active_turn, unit_mask);
+    if (err != 0) {
+        shell_error(sh, "Failed to configure group units (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "Group %u units configured: active_turn=%u, unit_mask=0x%02X",
+                group_id, active_turn, unit_mask);
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_hvac,
     SHELL_CMD(status, NULL, "Show group modes, temperatures, active units, relays, alarms", cmd_hvac_status),
     SHELL_CMD_ARG(mode, NULL, "Set operating mode: hvac mode <grp> <off|cool|heat|auto|fan_only|emergency>", cmd_hvac_mode, 3, 0),
     SHELL_CMD_ARG(setpoint, NULL, "Set target temperature: hvac setpoint <grp> <cool_x10> [heat_x10]", cmd_hvac_setpoint, 3, 1),
+    SHELL_CMD_ARG(sensors, NULL, "Set group sensor range: hvac sensors <grp> <start> <end> [max|avg|min]", cmd_hvac_sensors, 4, 1),
+    SHELL_CMD_ARG(config, NULL, "Configure group units: hvac config <grp> <active_turn> [unit_mask_hex]", cmd_hvac_config, 3, 1),
     SHELL_CMD_ARG(rotate, NULL, "Force unit rotation turn: hvac rotate <grp>", cmd_hvac_rotate, 2, 0),
     SHELL_CMD_ARG(manual, NULL, "Manual override: hvac manual <unit> <on|off> [comp_on|comp_off] [fan_on|fan_off]", cmd_hvac_manual, 3, 2),
     SHELL_SUBCMD_SET_END

@@ -1,6 +1,6 @@
 # Storage Subsystem Progress
 
-- **Status**: **IN_PROGRESS (90%)**
+- **Status**: **COMPLETED (100%)**
 - **Architecture Reference**: [`doc/architecture/storage_subsystem.md`](../architecture/storage_subsystem.md)
 
 ---
@@ -25,6 +25,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Phase 2 Storage Pruning & ADR-2 Implementation:
+  - Pruned configuration domains from 8 down to 5 active site-commissioning domains (`DEVICE`, `NET_ETH`, `NET_WIFI`, `HVAC`, `CALIBRATION`).
+  - Removed hardware topology (Modbus slave tables, digital input routing, sensor channel mapping) from EEPROM, eliminating flash corruption hazards for safety cutouts.
+  - Replaced `default_config_profiles.c/.h` with lightweight, compile-time immutable defaults in `app_defaults.h`.
+  - Updated `adapter_storage_microconf.c` domain keys and `config_domain_get_layout()`.
+  - Verified 100% pass on `tests/unit/storage` (11/11 tests passing on `native_sim`).
 - **2026-11-06**: Resolved audit findings P0-03 and P1-04:
   - P0-03 (Real RAM State & Persistence for 4 Config Domains): Added RAM storage instances in `app_container_t` for `device_cfg`, `calibration_cfg`, `sensor_cfg`, and `baseline_cfg`. Loaded valid envelopes from storage on startup with fallback to defaults. Storage providers now pack live runtime data from RAM instances. `app_facade_sensor_set_calibration()` updates offsets and marks calibration domain dirty.
   - P1-04 (Safe Storage Reload & Factory Reset): In `app_facade_storage_reload_all()`, zeroed temporary buffers with `memset`, strictly verified that unpacked size matches destination structure size, and reloaded all 8 configuration domains. In `app_facade_storage_reset_defaults()`, erased EEPROM ping-pong slots and restored default RAM states across all 8 domains.

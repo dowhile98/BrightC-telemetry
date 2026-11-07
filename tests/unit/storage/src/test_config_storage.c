@@ -21,23 +21,17 @@ ZTEST_SUITE(storage_suite, NULL, NULL, NULL, NULL, NULL);
 ZTEST(storage_suite, test_config_domain_enum_and_validation)
 {
     zassert_equal(CONFIG_DOMAIN_DEVICE, 0, "CONFIG_DOMAIN_DEVICE should be 0");
-    zassert_equal(CONFIG_DOMAIN_MODBUS, 1, "CONFIG_DOMAIN_MODBUS should be 1");
-    zassert_equal(CONFIG_DOMAIN_NET_ETH, 2, "CONFIG_DOMAIN_NET_ETH should be 2");
-    zassert_equal(CONFIG_DOMAIN_NET_WIFI, 3, "CONFIG_DOMAIN_NET_WIFI should be 3");
+    zassert_equal(CONFIG_DOMAIN_NET_ETH, 1, "CONFIG_DOMAIN_NET_ETH should be 1");
+    zassert_equal(CONFIG_DOMAIN_NET_WIFI, 2, "CONFIG_DOMAIN_NET_WIFI should be 2");
+    zassert_equal(CONFIG_DOMAIN_HVAC, 3, "CONFIG_DOMAIN_HVAC should be 3");
     zassert_equal(CONFIG_DOMAIN_CALIBRATION, 4, "CONFIG_DOMAIN_CALIBRATION should be 4");
-    zassert_equal(CONFIG_DOMAIN_SENSOR_CFG, 5, "CONFIG_DOMAIN_SENSOR_CFG should be 5");
-    zassert_equal(CONFIG_DOMAIN_BASELINE, 6, "CONFIG_DOMAIN_BASELINE should be 6");
-    zassert_equal(CONFIG_DOMAIN_HVAC, 7, "CONFIG_DOMAIN_HVAC should be 7");
-    zassert_equal(CONFIG_DOMAIN_MAX, 8, "CONFIG_DOMAIN_MAX should be 8");
+    zassert_equal(CONFIG_DOMAIN_MAX, 5, "CONFIG_DOMAIN_MAX should be 5");
 
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_DEVICE), "DEVICE must be valid");
-    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_MODBUS), "MODBUS must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_NET_ETH), "NET_ETH must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_NET_WIFI), "NET_WIFI must be valid");
-    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_CALIBRATION), "CALIBRATION must be valid");
-    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_SENSOR_CFG), "SENSOR_CFG must be valid");
-    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_BASELINE), "BASELINE must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_HVAC), "HVAC must be valid");
+    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_CALIBRATION), "CALIBRATION must be valid");
 
     zassert_false(config_domain_is_valid(CONFIG_DOMAIN_MAX), "MAX must be invalid");
     zassert_false(config_domain_is_valid((config_domain_t)-1), "-1 must be invalid");
@@ -69,47 +63,29 @@ ZTEST(storage_suite, test_config_domain_layout)
     zassert_equal(total, 1024, "DEVICE total");
     zassert_equal(slot, 512, "DEVICE slot");
 
-    /* MODBUS: 0x0400, 2048, 1024 */
-    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_MODBUS, &base, &total, &slot), 0, "MODBUS layout error");
-    zassert_equal(base, 0x0400, "MODBUS base");
-    zassert_equal(total, 2048, "MODBUS total");
-    zassert_equal(slot, 1024, "MODBUS slot");
-
-    /* NET_ETH: 0x0C00, 1024, 512 */
+    /* NET_ETH: 0x0400, 1024, 512 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_NET_ETH, &base, &total, &slot), 0, "NET_ETH layout error");
-    zassert_equal(base, 0x0C00, "NET_ETH base");
+    zassert_equal(base, 0x0400, "NET_ETH base");
     zassert_equal(total, 1024, "NET_ETH total");
     zassert_equal(slot, 512, "NET_ETH slot");
 
-    /* NET_WIFI: 0x1000, 1024, 512 */
+    /* NET_WIFI: 0x0800, 1024, 512 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_NET_WIFI, &base, &total, &slot), 0, "NET_WIFI layout error");
-    zassert_equal(base, 0x1000, "NET_WIFI base");
+    zassert_equal(base, 0x0800, "NET_WIFI base");
     zassert_equal(total, 1024, "NET_WIFI total");
     zassert_equal(slot, 512, "NET_WIFI slot");
+
+    /* HVAC: 0x0C00, 2048, 1024 */
+    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_HVAC, &base, &total, &slot), 0, "HVAC layout error");
+    zassert_equal(base, 0x0C00, "HVAC base");
+    zassert_equal(total, 2048, "HVAC total");
+    zassert_equal(slot, 1024, "HVAC slot");
 
     /* CALIBRATION: 0x1400, 1024, 512 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_CALIBRATION, &base, &total, &slot), 0, "CALIBRATION layout error");
     zassert_equal(base, 0x1400, "CALIBRATION base");
     zassert_equal(total, 1024, "CALIBRATION total");
     zassert_equal(slot, 512, "CALIBRATION slot");
-
-    /* SENSOR_CFG: 0x1800, 2048, 1024 */
-    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_SENSOR_CFG, &base, &total, &slot), 0, "SENSOR_CFG layout error");
-    zassert_equal(base, 0x1800, "SENSOR_CFG base");
-    zassert_equal(total, 2048, "SENSOR_CFG total");
-    zassert_equal(slot, 1024, "SENSOR_CFG slot");
-
-    /* BASELINE: 0x2000, 2048, 1024 */
-    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_BASELINE, &base, &total, &slot), 0, "BASELINE layout error");
-    zassert_equal(base, 0x2000, "BASELINE base");
-    zassert_equal(total, 2048, "BASELINE total");
-    zassert_equal(slot, 1024, "BASELINE slot");
-
-    /* HVAC: 0x2800, 2048, 1024 */
-    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_HVAC, &base, &total, &slot), 0, "HVAC layout error");
-    zassert_equal(base, 0x2800, "HVAC base");
-    zassert_equal(total, 2048, "HVAC total");
-    zassert_equal(slot, 1024, "HVAC slot");
 
     /* Invalid domain */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_MAX, &base, &total, &slot), -EINVAL, "MAX invalid");
@@ -188,9 +164,9 @@ ZTEST(storage_suite, test_fake_config_storage_error_simulation)
     size_t out_sz = 0;
 
     zassert_equal(i_config_storage_init(&port), -EIO, "Expected init error");
-    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_MODBUS, buf, sizeof(buf)), -ENOMEM, "Expected save error");
-    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_MODBUS, buf, sizeof(buf), &out_sz), -EBUSY, "Expected load error");
-    zassert_equal(i_config_storage_reset_defaults(&port, CONFIG_DOMAIN_MODBUS), -EFAULT, "Expected reset error");
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_DEVICE, buf, sizeof(buf)), -ENOMEM, "Expected save error");
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_DEVICE, buf, sizeof(buf), &out_sz), -EBUSY, "Expected load error");
+    zassert_equal(i_config_storage_reset_defaults(&port, CONFIG_DOMAIN_DEVICE), -EFAULT, "Expected reset error");
 
     /* Clear errors */
     fake_config_storage_set_errors(0, 0, 0, 0);

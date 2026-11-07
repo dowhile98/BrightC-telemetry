@@ -27,6 +27,24 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Conditional Modbus Slave Submenus (`menuconfig` + `if`):
+  - Structured Modbus slave options in `app/Kconfig` as conditional submenus using `menuconfig` and `if` blocks.
+  - Configured only the JSY-MK-339 3-Phase AC energy meter enabled by default (`default y`), with PT100 concentrators, MBSL32DI, and Waveshare relay disabled by default (`default n`).
+  - Hides slave address configuration options when slaves are disabled, with `app/include/common/modbus_device_table.h` fallback macros guaranteeing valid default slave addresses (`1U..5U`).
+- **2026-11-07**: Kconfig-driven Slave Enablement (`is_enabled`):
+  - Added hidden marker `CONFIG_BRIGHTC_MODBUS_KCONFIG_PRESENT` and individual boolean flags `CONFIG_BRIGHTC_MODBUS_ENABLE_*` for all standard field slaves (`JSY_MK339`, `CWT_TM16PT_1`, `CWT_TM16PT_2`, `MBSL32DI`, `WAVESHARE_RELAY`) in `app/Kconfig`.
+  - Defined fallback logic in `app/include/common/modbus_device_table.h` to ensure standalone C / unit test compatibility without Zephyr Kconfig.
+  - Replaced hardcoded `.is_enabled` literals in `k_brightc_modbus_slave_table` with `MODBUS_ENABLE_*` macros.
+- **2026-11-07**: Unified Modbus Slave Address & ID Configuration:
+  - Simplified `app/Kconfig` under `menu "BrightC Modbus Configuration"` to eliminate redundant `DEV_ID` vs `ADDR` duplicate symbols, retaining single `CONFIG_BRIGHTC_MODBUS_ADDR_*` configuration entries.
+  - Cleaned `app/include/common/modbus_device_table.h`: removed all `CONFIG_BRIGHTC_DEFAULT_MODBUS_DEV_ID_*` and `MODBUS_DEV_ID_*` symbols, configuring `k_brightc_modbus_slave_table` with `.device_id = MODBUS_ADDR_*` and `.slave_addr = MODBUS_ADDR_*`.
+  - Updated `composition_root.c` and `adapter_hvac_actuator.c` to reference `MODBUS_ADDR_CWT_TM16PT_2` and `MODBUS_ADDR_WAVESHARE_RELAY`.
+  - Verified 100% test pass (242/242 tests across 8 suites) and successful primary target build (`brightc-controllerv3`, 15.03% flash, 32.43% RAM).
+- **2026-11-07**: Kconfig-driven Modbus Device IDs and Slave Addresses:
+  - Added Kconfig symbols for both `device_id` and `slave_addr` across all 5 standard field slaves (`JSY_MK339`, `CWT_TM16PT_1`, `CWT_TM16PT_2`, `MBSL32DI`, `WAVESHARE_RELAY`) in `app/Kconfig`.
+  - Added standalone fallback macros and `MODBUS_DEV_ID_*` / `MODBUS_ADDR_*` aliases in `app/include/common/modbus_device_table.h`.
+  - Updated `k_brightc_modbus_slave_table` to use symbolic macros instead of magic numeric literals.
+  - Updated `on_modbus_cwt_tm16pt_reading()` in `composition_root.c` to route readings from `MODBUS_DEV_ID_CWT_TM16PT_2` to CWT concentrator index 1.
 - **2026-11-06**: Resolved audit finding P0-01 (Temperature Acquisition Chain):
   - Defined `ao_modbus_cwt_tm16pt_cb_t` callback in `ao_modbus.h` and integrated invocation in `ao_modbus.c` upon successful holding register reads for `MODBUS_DEV_TYPE_CWT_TM16PT`.
   - Wired callback in `composition_root.c` across all Modbus buses to forward parsed temperatures directly to `ao_hvac_feed_temperatures()` and `app_facade_update_modbus_temperatures()`.

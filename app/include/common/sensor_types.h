@@ -292,6 +292,9 @@ typedef struct {
     uint16_t analog_j9_valid_mask;    /**< Bit k = 1 if ADC reading is valid */
 } raw_sensor_readings_t;
 
+/** Alias for raw sensor readings bank in the sensor matrix domain. */
+typedef raw_sensor_readings_t sensor_matrix_raw_bank_t;
+
 /**
  * @brief Hardware-agnostic Semantic Ingestion Matrix delivered to the thermodynamic engine.
  */
