@@ -19,6 +19,7 @@
 #include <zephyr/kernel.h>
 
 #include "application/zbus/hvac_channels.h"
+#include "application/zbus/sensor_channels.h"
 #include "common/hvac_types.h"
 #include "domain/models/hvac_group_entity.h"
 #include "domain/models/hvac_unit_entity.h"
@@ -83,6 +84,8 @@ typedef struct {
     /* Runtime telemetry & inputs */
     group_temperature_metrics_t group_metrics[HVAC_MAX_GROUPS];
     bool                        is_fire_active;
+    sensor_snapshot_msg_t       last_sensor_snapshot;
+    uint8_t                     boot_stabilization_s;
 
     /* Synchronization and Thread Control */
     struct k_msgq    *queue;

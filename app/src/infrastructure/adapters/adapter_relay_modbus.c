@@ -48,17 +48,30 @@ static int relay_modbus_set_state(void *impl, relay_channel_t channel,
         .timeout_ms = self->timeout_ms,
     };
 
-    /* Update the local cache optimistically; the periodic FC01 poll will
-     * reconcile with the real device state. */
+    /* Attempt to post with up to 3 retries if the queue is full */
+    int post_err = -ENOMSG;
+    for (int retry = 0; retry < 3; retry++) {
+        post_err = ao_modbus_post(self->ao, &event);
+        if (post_err == 0) {
+            break;
+        }
+        if (!k_is_in_isr()) {
+            k_msleep(10);
+        }
+    }
+
+    if (post_err != 0) {
+        LOG_ERR("relay: command queue full after retries, write failed for channel %u",
+                (unsigned int)channel);
+        return -ENOMSG;
+    }
+
+    /* Update the local cache non-optimistically only upon successful enqueue;
+     * periodic FC01 poll will reconcile with the real physical device state. */
     self->cache[channel] = state;
     self->cache_valid = true;
     self->cycle_count[channel]++;
     self->last_toggle_ms[channel] = (uint32_t)k_uptime_get();
-
-    if (ao_modbus_post(self->ao, &event) != 0) {
-        LOG_WRN("relay: command queue full, write not submitted");
-        return -ENOMSG;
-    }
 
     return 0;
 }

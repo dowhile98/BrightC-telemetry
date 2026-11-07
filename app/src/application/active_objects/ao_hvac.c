@@ -91,6 +91,9 @@ int ao_hvac_init(ao_hvac_t *self,
     k_sem_init(&self->stopped_sem, 0, 1);
     k_mutex_init(&self->lock);
 
+    self->boot_stabilization_s = 5U;
+    memset(&self->last_sensor_snapshot, 0, sizeof(self->last_sensor_snapshot));
+
     /* Initialize entities */
     if (config != NULL) {
         self->config = *config;
@@ -211,10 +214,26 @@ int ao_hvac_step(ao_hvac_t *self)
 
     k_mutex_lock(&self->lock, K_FOREVER);
 
+    /* Boot stabilization guard for sensor acquisition on startup */
+    bool in_grace_period = false;
+    if (self->boot_stabilization_s > 0U) {
+        if (self->last_sensor_snapshot.valid_mask != 0ULL) {
+            self->boot_stabilization_s = 0U;
+        } else {
+            self->boot_stabilization_s--;
+            in_grace_period = true;
+        }
+    }
+
     /* 1. Evaluate and tick each active group */
     for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
         if (self->group_active[g]) {
-            hvac_group_entity_evaluate(&self->groups[g], &self->group_metrics[g]);
+            if (in_grace_period && (self->group_metrics[g].valid_sensors == 0U)) {
+                /* In boot grace window without valid sensor data: keep group in IDLE and do not trip SENSOR_FAULT */
+                self->groups[g].state = GROUP_STATE_IDLE;
+            } else {
+                hvac_group_entity_evaluate(&self->groups[g], &self->group_metrics[g]);
+            }
             hvac_group_entity_tick_1s(&self->groups[g]);
 
             hvac_group_state_t g_after = self->groups[g].state;
@@ -395,6 +414,9 @@ int ao_hvac_set_group_metrics(ao_hvac_t *self,
 
     k_mutex_lock(&self->lock, K_FOREVER);
     self->group_metrics[group_id] = *metrics;
+    if (metrics->valid_sensors > 0U) {
+        self->last_sensor_snapshot.valid_mask |= (1ULL << group_id);
+    }
     k_mutex_unlock(&self->lock);
 
     return 0;
@@ -410,6 +432,11 @@ int ao_hvac_feed_sensor_snapshot(ao_hvac_t *self,
     }
 
     k_mutex_lock(&self->lock, K_FOREVER);
+    self->last_sensor_snapshot.valid_mask = valid_mask;
+    if (count > 0U) {
+        size_t to_copy = (count <= 64U) ? count : 64U;
+        memcpy(self->last_sensor_snapshot.temperatures, temperatures, to_copy * sizeof(float));
+    }
     for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
         if (self->group_active[g]) {
             const config_hvac_group_t *grp = &self->config.groups[g];

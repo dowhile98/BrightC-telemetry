@@ -103,13 +103,16 @@ void hvac_group_entity_set_bypass_cause(hvac_group_entity_t *self, hvac_bypass_c
 
     if (active) {
         self->bypass_causes_mask |= (uint32_t)cause;
+        self->cooling_timer_s = 0U;
+        if (cause != BYPASS_CAUSE_COOLING_TIMEOUT) {
+            self->cooling_timeout_count = 0U;
+        }
         if (self->is_manual_active) {
             self->is_manual_active = false;
             self->manual_timer_s = 0U;
         }
         if (!self->is_fire_active) {
             self->state = GROUP_STATE_BYPASS;
-            self->cooling_timer_s = 0U;
             for (uint8_t i = 0U; i < self->unit_count; i++) {
                 if (self->units[i] != NULL) {
                     hvac_unit_entity_set_bypass(self->units[i]);
@@ -138,10 +141,10 @@ void hvac_group_entity_set_fire(hvac_group_entity_t *self, bool active)
     }
 
     self->is_fire_active = active;
+    self->cooling_timer_s = 0U;
+    self->cooling_timeout_count = 0U;
     if (active) {
         self->state = GROUP_STATE_FIRE;
-        self->cooling_timer_s = 0U;
-        self->cooling_timeout_count = 0U;
         for (uint8_t i = 0U; i < self->unit_count; i++) {
             if (self->units[i] != NULL) {
                 hvac_unit_entity_request_stop(self->units[i], false);
@@ -183,6 +186,8 @@ void hvac_group_entity_set_manual(hvac_group_entity_t *self, bool active)
         self->manual_timer_s = 0U;
         if (self->state == GROUP_STATE_MANUAL) {
             self->state = GROUP_STATE_IDLE;
+            self->cooling_timer_s = 0U;
+            self->cooling_timeout_count = 0U;
         }
         for (uint8_t i = 0U; i < self->unit_count; i++) {
             if (self->units[i] != NULL) {
@@ -271,6 +276,8 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
     /* 6. Manual mode evaluation */
     if (self->is_manual_active || self->state == GROUP_STATE_MANUAL) {
         self->state = GROUP_STATE_MANUAL;
+        self->cooling_timer_s = 0U;
+        self->cooling_timeout_count = 0U;
         return;
     }
 

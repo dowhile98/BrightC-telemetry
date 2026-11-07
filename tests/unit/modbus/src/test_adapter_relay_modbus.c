@@ -154,9 +154,15 @@ ZTEST(adapter_relay_modbus_suite, test_queue_full_returns_enomsg)
         zassert_equal(err, 0, "Queue fill %d failed", i);
     }
 
-    /* 5th call must return -ENOMSG */
+    /* 5th call must return -ENOMSG after retries */
     err = i_relay_set_state(&s_relay, (relay_channel_t) 4, RELAY_STATE_CLOSED);
     zassert_equal(err, -ENOMSG, "Full queue must yield -ENOMSG");
+
+    /* Verify non-optimistic cache: channel 4 state must remain OPEN */
+    relay_state_t cached_state = RELAY_STATE_CLOSED;
+    err = i_relay_get_state(&s_relay, (relay_channel_t) 4, &cached_state);
+    zassert_equal(err, 0, "Get state failed");
+    zassert_equal(cached_state, RELAY_STATE_OPEN, "Cache must not be updated on queue full failure");
 }
 
 ZTEST(adapter_relay_modbus_suite, test_update_coils_synchronizes_cache)

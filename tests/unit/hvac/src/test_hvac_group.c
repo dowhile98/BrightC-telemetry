@@ -762,4 +762,91 @@ ZTEST(hvac_group_suite, test_manual_expiry_releases_units_and_returns_to_idle)
     zassert_equal(s_group.state, GROUP_STATE_IDLE, "State must revert to GROUP_STATE_IDLE");
 }
 
+ZTEST(hvac_group_suite, test_cooling_timers_reset_on_manual_fire_and_bypass_transitions)
+{
+    /* 1. Enter COOLING */
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 25.0f,
+        .lowest_temp = 23.0f,
+        .average_temp = 24.0f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must be in COOLING");
+
+    /* Advance cooling timer by 30 seconds */
+    for (int i = 0; i < 30; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(s_group.cooling_timer_s, 30U, "Cooling timer should be 30s");
+
+    /* 2. Transition to MANUAL: cooling timers must be reset to 0 */
+    hvac_group_entity_set_manual(&s_group, true);
+    zassert_equal(s_group.state, GROUP_STATE_MANUAL, "Must be in MANUAL");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be reset on manual");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be reset on manual");
+
+    /* Clear manual, re-enter cooling and advance timer */
+    hvac_group_entity_set_manual(&s_group, false);
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Must be back in COOLING");
+    for (int i = 0; i < 40; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(s_group.cooling_timer_s, 40U, "Cooling timer should be 40s");
+
+    /* 3. Transition to FIRE: cooling timers must be reset to 0 */
+    hvac_group_entity_set_fire(&s_group, true);
+    zassert_equal(s_group.state, GROUP_STATE_FIRE, "Must be in FIRE");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be reset on fire");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be reset on fire");
+
+    /* Clear fire alarm: timers must remain reset */
+    hvac_group_entity_set_fire(&s_group, false);
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must remain 0 after fire clear");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must remain 0 after fire clear");
+
+    /* Re-enter cooling and advance timer */
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Must be back in COOLING");
+    for (int i = 0; i < 40; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(s_group.cooling_timer_s, 40U, "Cooling timer should be 40s");
+
+    /* 4. Transition to BYPASS: cooling timers must be reset to 0 */
+    hvac_group_entity_set_bypass_cause(&s_group, BYPASS_CAUSE_HIGH_TEMP, true);
+    zassert_equal(s_group.state, GROUP_STATE_BYPASS, "Must be in BYPASS");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be reset on bypass");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be reset on bypass");
+
+    /* Clear bypass */
+    hvac_group_entity_set_bypass_cause(&s_group, BYPASS_CAUSE_HIGH_TEMP, false);
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be 0 after bypass clear");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be 0 after bypass clear");
+
+    /* Re-enter cooling and advance timer */
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Must be back in COOLING");
+    for (int i = 0; i < 40; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(s_group.cooling_timer_s, 40U, "Cooling timer should be 40s");
+
+    /* 5. Drop temp to temp_min -> IDLE: cooling timers must be reset to 0 */
+    group_temperature_metrics_t cold_metrics = {
+        .highest_temp = 20.0f, /* <= temp_min (21.0f) */
+        .lowest_temp = 19.0f,
+        .average_temp = 19.5f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+    hvac_group_entity_evaluate(&s_group, &cold_metrics);
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Must transition to IDLE");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be reset on IDLE transition");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be reset on IDLE transition");
+}
+
+
 

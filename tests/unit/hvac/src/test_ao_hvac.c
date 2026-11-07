@@ -166,6 +166,7 @@ ZTEST(ao_hvac_suite, test_fire_emergency_priority)
     cfg.groups[0].temp_alarm = 28.0f;
     cfg.groups[0].temp_bypass = 32.0f;
     cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
     cfg.groups[0].unit_mask = 0x03U;
     cfg.groups[0].active_turn_count = 2U;
 
@@ -206,6 +207,7 @@ ZTEST(ao_hvac_suite, test_unit_alarm_and_zbus_publishing)
     cfg.groups[0].temp_alarm = 28.0f;
     cfg.groups[0].temp_bypass = 32.0f;
     cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
     cfg.groups[0].unit_mask = 0x03U;
     cfg.groups[0].active_turn_count = 2U;
 
@@ -249,6 +251,7 @@ ZTEST(ao_hvac_suite, test_ao_hvac_runtime_group_config_update)
     cfg.groups[0].temp_alarm = 28.0f;
     cfg.groups[0].temp_bypass = 32.0f;
     cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
     cfg.groups[0].unit_mask = 0x03U;
     cfg.groups[0].active_turn_count = 1U;
     cfg.groups[0].max_allowed_faults = 3U;
@@ -348,6 +351,7 @@ ZTEST(ao_hvac_suite, test_ao_hvac_feed_temperatures_multi_sensor)
     cfg.groups[0].temp_alarm = 28.0f;
     cfg.groups[0].temp_bypass = 32.0f;
     cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
     cfg.groups[0].unit_mask = 0x03U;
     cfg.groups[0].active_turn_count = 1U;
     cfg.groups[0].sensor_mask = 0x0007U; /* Probes 0, 1, 2 */
@@ -594,6 +598,7 @@ ZTEST(ao_hvac_suite, test_multi_room_disjoint_sensor_ranges)
     cfg.groups[0].temp_alarm = 28.0f;
     cfg.groups[0].temp_bypass = 32.0f;
     cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
     cfg.groups[0].unit_mask = 0x03U;       /* Units 0, 1 */
     cfg.groups[0].active_turn_count = 1U;  /* 1 active + 1 standby */
     cfg.groups[0].max_allowed_faults = 3U;
@@ -691,6 +696,7 @@ ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
     cfg.groups[0].temp_alarm = 28.0f;
     cfg.groups[0].temp_bypass = 32.0f;
     cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
     cfg.groups[0].unit_mask = 0x03U;       /* Units 0, 1 */
     cfg.groups[0].active_turn_count = 1U;  /* 1 active + 1 standby */
     cfg.groups[0].max_allowed_faults = 3U;
@@ -963,6 +969,68 @@ ZTEST(ao_hvac_suite, test_transition_events_published_to_chan_hvac_event)
     (void)ao_hvac_step(&s_ao);
     zassert_equal(s_last_event.type, HVAC_EVENT_IDLE_ENTERED, "Direct cooldown event must be IDLE_ENTERED");
 }
+
+ZTEST(ao_hvac_suite, test_ao_hvac_boot_stabilization_guard)
+{
+    config_hvac_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.total_groups = 1U;
+    cfg.total_units = 2U;
+    cfg.groups[0].temp_min = 20.0f;
+    cfg.groups[0].temp_max = 24.0f;
+    cfg.groups[0].temp_alarm = 28.0f;
+    cfg.groups[0].temp_bypass = 32.0f;
+    cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
+    cfg.groups[0].unit_mask = 0x03U;
+    cfg.groups[0].active_turn_count = 1U;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "init failed");
+    zassert_equal(s_ao.boot_stabilization_s, 5U, "Initial boot stabilization must be 5s");
+
+    /* Steps 1 to 5: no valid sensors arrived yet (grace window active) */
+    for (uint8_t step = 1U; step <= 5U; step++) {
+        ret = ao_hvac_step(&s_ao);
+        zassert_equal(ret, 0, "step %u failed", step);
+
+        hvac_status_msg_t status;
+        ret = ao_hvac_get_status(&s_ao, &status);
+        zassert_equal(ret, 0, "get_status failed");
+        zassert_equal(status.group_state[0], GROUP_STATE_IDLE,
+                      "Group must remain IDLE during boot stabilization (step %u)", step);
+        zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                      "SENSOR_FAULT must NOT trip during boot stabilization (step %u)", step);
+    }
+
+    zassert_equal(s_ao.boot_stabilization_s, 0U, "Grace period counter should reach 0 after 5 steps");
+
+    /* Step 6: grace period has expired, and still no valid sensors -> BYPASS_CAUSE_SENSOR_FAULT trips */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "step 6 failed");
+
+    hvac_status_msg_t status;
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_BYPASS,
+                  "Group must transition to BYPASS after grace window expires without sensors");
+    zassert_not_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                      "BYPASS_CAUSE_SENSOR_FAULT must be active after grace window expires");
+
+    /* Now feed valid sensor snapshot -> BYPASS_CAUSE_SENSOR_FAULT clears */
+    float temps[4] = { 22.0f, 22.0f, 22.0f, 22.0f };
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, 0x0FULL, 4U);
+    zassert_equal(ret, 0, "feed snapshot failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "step after sensor arrival failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                  "SENSOR_FAULT must clear once valid sensor data arrives");
+}
+
 
 
 
