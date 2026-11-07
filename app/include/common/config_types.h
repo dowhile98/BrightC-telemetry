@@ -109,12 +109,12 @@ static inline bool config_event_type_is_valid(config_event_type_t type)
  * @brief Retrieve memory layout for a given configuration domain.
  *
  * Partitioning of the 32 KB AT24C256C EEPROM (ADR-6):
- * - CONFIG_DOMAIN_DEVICE:      0x0000, 1024 B (2 ping-pong slots of 512 B)
- * - CONFIG_DOMAIN_NET_ETH:     0x0400, 1024 B (2 ping-pong slots of 512 B)
- * - CONFIG_DOMAIN_NET_WIFI:    0x0800, 1024 B (2 ping-pong slots of 512 B)
- * - CONFIG_DOMAIN_HVAC:        0x0C00, 2048 B (2 ping-pong slots of 1024 B)
- * - CONFIG_DOMAIN_CALIBRATION: 0x1400, 1024 B (2 ping-pong slots of 512 B)
- * - RESERVED / EVENT LOG:      0x1800 .. 0x7FFF (26 KB available)
+ * - CONFIG_DOMAIN_DEVICE:      0x0000, 256 B (2 ping-pong slots of 128 B, 2 pages)
+ * - CONFIG_DOMAIN_NET_ETH:     0x0100, 128 B (2 ping-pong slots of 64 B, 1 page)
+ * - CONFIG_DOMAIN_NET_WIFI:    0x0180, 640 B (2 ping-pong slots of 320 B, 5 pages)
+ * - CONFIG_DOMAIN_HVAC:        0x0400, 1152 B (2 ping-pong slots of 576 B, 9 pages)
+ * - CONFIG_DOMAIN_CALIBRATION: 0x0880, 384 B (2 ping-pong slots of 192 B, 3 pages)
+ * - RESERVED / EVENT LOG:      0x0A00 .. 0x7FFF (29.5 KB available)
  *
  * @param domain           Target domain.
  * @param out_base_offset  Output pointer for starting offset in bytes.
@@ -138,28 +138,28 @@ static inline int config_domain_get_layout(config_domain_t domain,
     switch (domain) {
     case CONFIG_DOMAIN_DEVICE:
         base = 0x0000;
-        total = 1024;
-        slot = 512;
+        total = 256;
+        slot = 128;
         break;
     case CONFIG_DOMAIN_NET_ETH:
-        base = 0x0400;
-        total = 1024;
-        slot = 512;
+        base = 0x0100;
+        total = 128;
+        slot = 64;
         break;
     case CONFIG_DOMAIN_NET_WIFI:
-        base = 0x0800;
-        total = 1024;
-        slot = 512;
+        base = 0x0180;
+        total = 640;
+        slot = 320;
         break;
     case CONFIG_DOMAIN_HVAC:
-        base = 0x0C00;
-        total = 2048;
-        slot = 1024;
+        base = 0x0400;
+        total = 1152;
+        slot = 576;
         break;
     case CONFIG_DOMAIN_CALIBRATION:
-        base = 0x1400;
-        total = 1024;
-        slot = 512;
+        base = 0x0880;
+        total = 384;
+        slot = 192;
         break;
     default:
         return -EINVAL;

@@ -26,27 +26,27 @@
 LOG_MODULE_REGISTER(composition_root, LOG_LEVEL_INF);
 
 /* Compile-time assertions for persistent storage layout (5 domains per ADR-6) */
-BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 1024 - 32,
-             "config_hvac_t envelope exceeds storage slot size (1024 - 32 bytes)");
-BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
-             "net_eth_config_t envelope exceeds storage slot size (512 - 32 bytes)");
-BUILD_ASSERT(sizeof(net_wifi_config_t) + sizeof(config_envelope_header_t) <= 512 - 32,
-             "net_wifi_config_t envelope exceeds storage slot size (512 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= 512 - 32,
-             "config_device_t envelope exceeds storage slot size (512 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= 512 - 32,
-             "config_calibration_t envelope exceeds storage slot size (512 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 576 - 32,
+             "config_hvac_t envelope exceeds storage slot size (576 - 32 bytes)");
+BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 64 - 32,
+             "net_eth_config_t envelope exceeds storage slot size (64 - 32 bytes)");
+BUILD_ASSERT(sizeof(net_wifi_config_t) + sizeof(config_envelope_header_t) <= 320 - 32,
+             "net_wifi_config_t envelope exceeds storage slot size (320 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= 128 - 32,
+             "config_device_t envelope exceeds storage slot size (128 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= 192 - 32,
+             "config_calibration_t envelope exceeds storage slot size (192 - 32 bytes)");
 
 /* EEPROM capacity check: 32 KB AT24C256C */
 #define EEPROM_AT24C256C_CAPACITY_BYTES 32768U
-BUILD_ASSERT(0x1400 + 1024 <= EEPROM_AT24C256C_CAPACITY_BYTES,
+BUILD_ASSERT(0x0880 + 384 <= EEPROM_AT24C256C_CAPACITY_BYTES,
              "Storage domains exceed physical EEPROM capacity (32KB)");
 
 /* Non-overlapping domain layout checks (ADR-6) */
-BUILD_ASSERT(0x0000 + 1024 <= 0x0400, "DEVICE domain overlaps NET_ETH");
-BUILD_ASSERT(0x0400 + 1024 <= 0x0800, "NET_ETH domain overlaps NET_WIFI");
-BUILD_ASSERT(0x0800 + 1024 <= 0x0C00, "NET_WIFI domain overlaps HVAC");
-BUILD_ASSERT(0x0C00 + 2048 <= 0x1400, "HVAC domain overlaps CALIBRATION");
+BUILD_ASSERT(0x0000 + 256 <= 0x0100, "DEVICE domain overlaps NET_ETH");
+BUILD_ASSERT(0x0100 + 128 <= 0x0180, "NET_ETH domain overlaps NET_WIFI");
+BUILD_ASSERT(0x0180 + 640 <= 0x0400, "NET_WIFI domain overlaps HVAC");
+BUILD_ASSERT(0x0400 + 1152 <= 0x0880, "HVAC domain overlaps CALIBRATION");
 
 #ifdef CONFIG_NANOMODBUS
 /**

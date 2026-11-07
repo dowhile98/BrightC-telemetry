@@ -7,6 +7,7 @@
  */
 
 #include "infrastructure/adapters/adapter_storage_microconf.h"
+#include "common/config_envelope.h"
 
 #include <errno.h>
 #include <string.h>
@@ -182,7 +183,36 @@ static int storage_api_load(void *impl, config_domain_t domain, void *out_data,
         return mconf_err_to_errno(merr);
     }
 
-    size_t copy_size = ctx->domain_payload_size[domain];
+    const config_envelope_header_t *hdr = (const config_envelope_header_t *)ctx->payload_buf[domain];
+    size_t copy_size = 0;
+    if (hdr->magic == CONFIG_ENVELOPE_MAGIC) {
+        copy_size = CONFIG_ENVELOPE_HEADER_SIZE + hdr->payload_len;
+        if (copy_size > ctx->domain_payload_size[domain]) {
+            copy_size = ctx->domain_payload_size[domain];
+        }
+    } else {
+        /* Check if memory is uninitialized (e.g. all 0xFF or 0x00) */
+        bool is_uninit = true;
+        uint8_t first_byte = ctx->payload_buf[domain][0];
+        if (first_byte != 0x00 && first_byte != 0xFF) {
+            is_uninit = false;
+        } else {
+            for (size_t i = 1; i < ctx->domain_payload_size[domain]; i++) {
+                if (ctx->payload_buf[domain][i] != first_byte) {
+                    is_uninit = false;
+                    break;
+                }
+            }
+        }
+        if (is_uninit) {
+            LOG_DBG("storage_api_load: domain %d memory is uninitialized, returning -ENOENT", domain);
+            return -ENOENT;
+        }
+
+        /* If not a packed envelope, fall back to payload capacity */
+        copy_size = ctx->domain_payload_size[domain];
+    }
+
     if (copy_size > max_size) {
         LOG_ERR("storage_api_load: domain %d payload size %zu exceeds buffer %zu",
                 domain, copy_size, max_size);

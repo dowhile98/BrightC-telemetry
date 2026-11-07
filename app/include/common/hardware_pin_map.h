@@ -231,7 +231,7 @@ static const di_channel_config_t k_brightc_local_di_table[HARDWARE_LOCAL_DI_COUN
         .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
         .pin_index     = 4U,
         .active_level  = DI_ACTIVE_LOW,
-        .contact_type  = DI_CONTACT_NORMALLY_CLOSED, /* Fail-safe NC loop */
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
         .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
         .enabled       = true,
     },
@@ -271,7 +271,7 @@ static const di_channel_config_t k_brightc_local_di_table[HARDWARE_LOCAL_DI_COUN
         .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
         .pin_index     = 8U,
         .active_level  = DI_ACTIVE_LOW,
-        .contact_type  = DI_CONTACT_NORMALLY_CLOSED, /* Fail-safe NC relay */
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
         .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
         .enabled       = true,
     },

@@ -46,6 +46,10 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Fixed HVAC Spurious Fire Shutdown & Storage Envelope Slot Sizing:
+  - Corrected `DI_ROLE_SMOKE_FIRE` contact type in `hardware_pin_map.h` to `DI_CONTACT_NORMALLY_OPEN`, resolving spurious `FIRE_SHUTDOWN` lockouts when bench testing with disconnected fire interlock terminals.
+  - Aligned HVAC storage slot layout to 576 bytes (9 EEPROM pages of 64 bytes) for 2x ping-pong slots (1152 bytes total) at offset `0x0400`.
+  - Verified 100% pass across all 5 HVAC unit test suites (40/40 tests) on `native_sim`.
 - **2026-11-07**: Implemented HVAC Duty Rotation Interval in Days (7, 15, 20, 30 days; default 7 days) & Automatic Rotation Ticking:
   - `hvac_types.h`: Replaced `rotation_interval_hours` with `rotation_interval_days` in `config_hvac_group_t`, maintaining strict 40-byte alignment via `_Static_assert(sizeof(config_hvac_group_t) == 40U, ...)`.
   - `app_defaults.h`: Updated default profiles `k_default_hvac_config_hybrid_4units` and `k_default_hvac_config_control_only_8units` to `.rotation_interval_days = 7U`.

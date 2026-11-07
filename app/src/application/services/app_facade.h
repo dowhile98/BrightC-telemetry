@@ -369,6 +369,14 @@ int app_facade_di_get_raw(uint64_t *out_raw_mask);
  */
 int app_facade_di_get_snapshot(di_snapshot_msg_t *out_snapshot);
 
+/**
+ * @brief Convert a digital input semantic role into human-readable signal name.
+ *
+ * @param[in] role Semantic role enum.
+ * @return String description or "Unknown Role".
+ */
+const char *app_facade_di_role_name(di_role_t role);
+
 /* =========================================================================
  * Modbus Master Service APIs
  * ========================================================================= */

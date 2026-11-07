@@ -597,8 +597,8 @@ static int cmd_di_status(const struct shell *sh, size_t argc, char **argv)
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
 
-    app_facade_di_view_t view;
-    int err = app_facade_di_get_status(&view);
+    di_snapshot_msg_t snap;
+    int err = app_facade_di_get_snapshot(&snap);
     if (err != 0) {
         shell_error(sh, "Failed to get DI status (%d)", err);
         return err;
@@ -606,18 +606,20 @@ static int cmd_di_status(const struct shell *sh, size_t argc, char **argv)
 
     shell_print(sh, "=== Digital Inputs & Contact Alarms Telemetry ===");
     shell_print(sh, "Total Channels: %u | Raw Mask: 0x%016llX | Active Mask: 0x%016llX\n",
-                view.channel_count, (unsigned long long)view.raw_mask,
-                (unsigned long long)view.active_mask);
+                snap.channel_count, (unsigned long long)snap.raw_mask,
+                (unsigned long long)snap.active_mask);
 
     shell_print(sh, "Idx | Raw | State    | Duration (s) | Semantic Role & Signal Name");
     shell_print(sh, "----+-----+----------+--------------+----------------------------------");
-    for (uint8_t i = 0U; i < view.channel_count; i++) {
+    for (uint8_t i = 0U; i < snap.channel_count && i < DI_CHANNEL_MAX; i++) {
+        bool raw_level = ((snap.raw_mask & (1ULL << i)) != 0ULL);
+        const char *name = app_facade_di_role_name(snap.roles[i]);
         shell_print(sh, "%3u |  %c  | %-8s | %12u | %s",
-                    view.channels[i].index,
-                    view.channels[i].raw_level ? '1' : '0',
-                    view.channels[i].is_active ? "ACTIVE" : "INACTIVE",
-                    view.channels[i].active_duration_s,
-                    view.channels[i].name);
+                    i,
+                    raw_level ? '1' : '0',
+                    snap.is_active[i] ? "ACTIVE" : "INACTIVE",
+                    snap.active_duration_s[i],
+                    name != NULL ? name : "Unknown");
     }
 
     return 0;

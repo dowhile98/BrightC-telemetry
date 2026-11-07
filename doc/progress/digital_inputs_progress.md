@@ -25,6 +25,10 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Fixed Shell Stack Overflow and Polarity Defaults for Bench Hardware:
+  - Fixed MPU fault / stack overflow during `di status` shell command: replaced monolithic 1.5 KB `app_facade_di_view_t` stack allocation with compact `di_snapshot_msg_t` and `app_facade_di_role_name()`.
+  - Added `CONFIG_SHELL_STACK_SIZE=4096` to provide safe stack headroom on Cortex-M7.
+  - Corrected `DI_ROLE_SMOKE_FIRE` and `DI_ROLE_PHASE_MONITOR` in `hardware_pin_map.h` to `DI_CONTACT_NORMALLY_OPEN` so open-circuit / floating optocoupler inputs are recognized as normal/quiescent.
 - **2026-11-07**: Complete Digital Input Pipeline Zbus Decoupling & HVAC Interlock Alignment (`doc/issues/2026-11-07-digital-input-pipeline-zbus-decoupling.md`):
   - Defined `di_snapshot_msg_t` in `digital_input_types.h` and created Zbus channel `chan_digital_input_snapshot` in `digital_input_channels.h/.c`.
   - Implemented `di_aggregator_pack_snapshot()` in domain service `digital_input_aggregator.c/.h` packing `active_mask`, `raw_mask`, `roles`, `is_active`, and `active_duration_s`.

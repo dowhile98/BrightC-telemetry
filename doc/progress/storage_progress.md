@@ -25,6 +25,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Optimized EEPROM Payload Sizing & Buffer Allocation:
+  - Recalculated 64-byte EEPROM page-aligned layout for all 5 active domains (`DEVICE`: 128B slot, `NET_ETH`: 64B slot, `NET_WIFI`: 320B slot, `HVAC`: 576B slot, `CALIBRATION`: 192B slot).
+  - Reduced `ADAPTER_STORAGE_MICROCONF_MAX_PAYLOAD` from 992B down to 544B (saving >2 KB static RAM).
+  - Fixed `storage_api_load()` buffer sizing check by inspecting `config_envelope_header_t` payload length instead of full slot capacity, eliminating `-ENOBUFS` (-105) errors on boot.
+  - Added `-ENOENT` detection for uninitialized EEPROM memory (0x00 / 0xFF).
+  - Updated `composition_root.c` compile-time `BUILD_ASSERT`s and unit tests in `test_config_storage.c`.
 - **2026-11-07**: Phase 2 Storage Pruning & ADR-2 Implementation:
   - Pruned configuration domains from 8 down to 5 active site-commissioning domains (`DEVICE`, `NET_ETH`, `NET_WIFI`, `HVAC`, `CALIBRATION`).
   - Removed hardware topology (Modbus slave tables, digital input routing, sensor channel mapping) from EEPROM, eliminating flash corruption hazards for safety cutouts.

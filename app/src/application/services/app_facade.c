@@ -561,6 +561,11 @@ int app_facade_di_get_snapshot(di_snapshot_msg_t *out_snapshot)
     return zbus_chan_read(&chan_digital_input_snapshot, out_snapshot, K_NO_WAIT);
 }
 
+const char *app_facade_di_role_name(di_role_t role)
+{
+    return role_to_name(role);
+}
+
 /* =========================================================================
  * Modbus Master Service APIs
  * ========================================================================= */

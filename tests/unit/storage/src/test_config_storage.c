@@ -57,35 +57,35 @@ ZTEST(storage_suite, test_config_domain_layout)
     size_t total = 0;
     size_t slot = 0;
 
-    /* DEVICE: 0x0000, 1024, 512 */
+    /* DEVICE: 0x0000, 256, 128 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_DEVICE, &base, &total, &slot), 0, "DEVICE layout error");
     zassert_equal(base, 0x0000, "DEVICE base");
-    zassert_equal(total, 1024, "DEVICE total");
-    zassert_equal(slot, 512, "DEVICE slot");
+    zassert_equal(total, 256, "DEVICE total");
+    zassert_equal(slot, 128, "DEVICE slot");
 
-    /* NET_ETH: 0x0400, 1024, 512 */
+    /* NET_ETH: 0x0100, 128, 64 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_NET_ETH, &base, &total, &slot), 0, "NET_ETH layout error");
-    zassert_equal(base, 0x0400, "NET_ETH base");
-    zassert_equal(total, 1024, "NET_ETH total");
-    zassert_equal(slot, 512, "NET_ETH slot");
+    zassert_equal(base, 0x0100, "NET_ETH base");
+    zassert_equal(total, 128, "NET_ETH total");
+    zassert_equal(slot, 64, "NET_ETH slot");
 
-    /* NET_WIFI: 0x0800, 1024, 512 */
+    /* NET_WIFI: 0x0180, 640, 320 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_NET_WIFI, &base, &total, &slot), 0, "NET_WIFI layout error");
-    zassert_equal(base, 0x0800, "NET_WIFI base");
-    zassert_equal(total, 1024, "NET_WIFI total");
-    zassert_equal(slot, 512, "NET_WIFI slot");
+    zassert_equal(base, 0x0180, "NET_WIFI base");
+    zassert_equal(total, 640, "NET_WIFI total");
+    zassert_equal(slot, 320, "NET_WIFI slot");
 
-    /* HVAC: 0x0C00, 2048, 1024 */
+    /* HVAC: 0x0400, 1152, 576 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_HVAC, &base, &total, &slot), 0, "HVAC layout error");
-    zassert_equal(base, 0x0C00, "HVAC base");
-    zassert_equal(total, 2048, "HVAC total");
-    zassert_equal(slot, 1024, "HVAC slot");
+    zassert_equal(base, 0x0400, "HVAC base");
+    zassert_equal(total, 1152, "HVAC total");
+    zassert_equal(slot, 576, "HVAC slot");
 
-    /* CALIBRATION: 0x1400, 1024, 512 */
+    /* CALIBRATION: 0x0880, 384, 192 */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_CALIBRATION, &base, &total, &slot), 0, "CALIBRATION layout error");
-    zassert_equal(base, 0x1400, "CALIBRATION base");
-    zassert_equal(total, 1024, "CALIBRATION total");
-    zassert_equal(slot, 512, "CALIBRATION slot");
+    zassert_equal(base, 0x0880, "CALIBRATION base");
+    zassert_equal(total, 384, "CALIBRATION total");
+    zassert_equal(slot, 192, "CALIBRATION slot");
 
     /* Invalid domain */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_MAX, &base, &total, &slot), -EINVAL, "MAX invalid");
