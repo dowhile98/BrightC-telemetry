@@ -302,6 +302,22 @@ typedef struct {
     uint64_t   timestamp_ms;         /**< Kernel uptime when confirmed */
 } di_transition_event_t;
 
+/**
+ * @brief Consolidated Digital Input telemetry snapshot.
+ *
+ * Carries the normalized state across all on-board and remote digital input channels.
+ */
+typedef struct {
+    uint64_t  active_mask;                        /**< 64-bit mask of normalized active channels */
+    uint64_t  raw_mask;                           /**< 64-bit mask of raw physical pin levels */
+    uint8_t   channel_count;                      /**< Number of configured channels in snapshot */
+    di_role_t roles[DI_CHANNEL_MAX];              /**< Semantic role assigned to each channel */
+    bool      is_active[DI_CHANNEL_MAX];          /**< True if channel is asserted/alarmed */
+    uint32_t  active_duration_s[DI_CHANNEL_MAX];  /**< Elapsed seconds in active state */
+    uint64_t  timestamp_ms;                       /**< Acquisition timestamp */
+    uint32_t  sequence;                           /**< Monotonically increasing sequence number */
+} di_snapshot_msg_t;
+
 /*============================================================================*
  * POLARITY NORMALIZATION & VALIDATION HELPERS
  *============================================================================*/

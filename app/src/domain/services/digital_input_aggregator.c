@@ -219,6 +219,40 @@ int di_aggregator_get_active_mask(const di_aggregator_t *self, uint64_t *out_mas
     return 0;
 }
 
+int di_aggregator_pack_snapshot(const di_aggregator_t *self, di_snapshot_msg_t *out_snapshot)
+{
+    if (self == NULL || out_snapshot == NULL) {
+        return -EINVAL;
+    }
+
+    memset(out_snapshot, 0, sizeof(*out_snapshot));
+    out_snapshot->channel_count = (uint8_t)self->channel_count;
+    out_snapshot->timestamp_ms = self->current_time_ms;
+
+    uint64_t active_mask = 0ULL;
+    uint64_t raw_mask = 0ULL;
+
+    for (size_t i = 0; i < self->channel_count && i < (size_t)DI_CHANNEL_MAX; i++) {
+        out_snapshot->roles[i] = self->configs[i].role;
+        out_snapshot->is_active[i] = self->statuses[i].is_active;
+        out_snapshot->active_duration_s[i] = self->statuses[i].active_duration_s;
+
+        if (self->raw_inputs[i] || self->statuses[i].raw_level) {
+            raw_mask |= (1ULL << i);
+        }
+
+        if (self->configs[i].enabled && self->statuses[i].is_active) {
+            active_mask |= (1ULL << i);
+        }
+    }
+
+    out_snapshot->active_mask = active_mask;
+    out_snapshot->raw_mask = raw_mask;
+
+    return 0;
+}
+
+
 int di_aggregator_set_raw_by_index(di_aggregator_t *self, size_t index, bool raw_level)
 {
     if (self == NULL || index >= self->channel_count) {

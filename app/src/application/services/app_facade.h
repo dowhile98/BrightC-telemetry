@@ -65,26 +65,36 @@ typedef modbus_bus_cfg_t modbus_bus_config_t;
 /**
  * @brief Comprehensive HVAC subsystem runtime status view.
  */
+/**
+ * @brief HVAC group status view structure.
+ */
+typedef struct {
+    uint8_t            group_id;
+    hvac_group_state_t state;
+    uint32_t           bypass_causes_mask;
+    float              highest_temp;
+    float              temp_min;
+    float              temp_max;
+    float              temp_alarm;
+    float              temp_bypass;
+    uint8_t            active_turn_count;
+    uint8_t            current_turn_offset;
+    uint8_t            unit_mask;
+    bool               is_manual;
+    uint8_t            sensor_start;
+    uint8_t            sensor_end;
+    uint8_t            metric_policy;
+    uint16_t           rotation_interval_days;
+    uint32_t           rotation_timer_s;
+} app_facade_hvac_group_view_t;
+
+/**
+ * @brief Comprehensive HVAC subsystem runtime status view.
+ */
 typedef struct {
     uint8_t total_groups;
     uint8_t total_units;
-    struct {
-        uint8_t            group_id;
-        hvac_group_state_t state;
-        uint32_t           bypass_causes_mask;
-        float              highest_temp;
-        float              temp_min;
-        float              temp_max;
-        float              temp_alarm;
-        float              temp_bypass;
-        uint8_t            active_turn_count;
-        uint8_t            current_turn_offset;
-        uint8_t            unit_mask;
-        bool               is_manual;
-        uint8_t            sensor_start;
-        uint8_t            sensor_end;
-        uint8_t            metric_policy;
-    } groups[HVAC_MAX_GROUPS];
+    app_facade_hvac_group_view_t groups[HVAC_MAX_GROUPS];
     struct {
         uint8_t           unit_id;
         hvac_unit_state_t state;
@@ -285,6 +295,15 @@ int app_facade_hvac_configure_group_units(uint8_t group_id,
                                           uint8_t active_turn_count,
                                           uint8_t unit_mask);
 
+/**
+ * @brief Configure duty rotation interval in days for an HVAC group.
+ *
+ * @param[in] group_id Zero-indexed HVAC group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in] days     Rotation interval in days (range 1..365; typical: 7, 15, 20, 30).
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days);
+
 /* =========================================================================
  * Sensor Matrix Service APIs
  * ========================================================================= */
@@ -341,6 +360,14 @@ int app_facade_di_get_status(app_facade_di_view_t *out_view);
  * @return 0 on success, negative errno on error.
  */
 int app_facade_di_get_raw(uint64_t *out_raw_mask);
+
+/**
+ * @brief Query current consolidated digital input telemetry snapshot from Zbus.
+ *
+ * @param[out] out_snapshot Destination snapshot message structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_di_get_snapshot(di_snapshot_msg_t *out_snapshot);
 
 /* =========================================================================
  * Modbus Master Service APIs

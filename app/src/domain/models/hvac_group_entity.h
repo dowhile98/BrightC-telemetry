@@ -64,8 +64,10 @@ typedef struct {
     uint8_t  cooling_timeout_count; /**< Number of consecutive cooling timeouts encountered */
 
     /* Generic N+M Rotation Parameters */
-    uint8_t active_turn_count;    /**< Number of units actively running in turn (N) */
-    uint8_t current_turn_offset;  /**< Circular head pointer for duty shift rotation */
+    uint8_t  active_turn_count;      /**< Number of units actively running in turn (N) */
+    uint8_t  current_turn_offset;    /**< Circular head pointer for duty shift rotation */
+    uint16_t rotation_interval_days; /**< Configured days between duty shift rotations */
+    uint32_t rotation_timer_s;       /**< Accumulated elapsed seconds in current rotation interval */
 
     /* Sensor Range & Metric Policy */
     uint8_t metric_policy; /**< Temperature selection policy (MAX, AVG, MIN) */
@@ -153,6 +155,30 @@ void hvac_group_entity_tick_1s(hvac_group_entity_t *self);
  * @param[in,out] self Group entity instance.
  */
 void hvac_group_entity_rotate_shift(hvac_group_entity_t *self);
+
+/**
+ * @brief Get the accumulated elapsed seconds of the current rotation interval.
+ *
+ * @param[in] self Group entity instance.
+ * @return Elapsed seconds since last rotation.
+ */
+uint32_t hvac_group_entity_get_rotation_timer(const hvac_group_entity_t *self);
+
+/**
+ * @brief Get configured rotation interval in days.
+ *
+ * @param[in] self Group entity instance.
+ * @return Rotation interval in days.
+ */
+uint16_t hvac_group_entity_get_rotation_interval_days(const hvac_group_entity_t *self);
+
+/**
+ * @brief Set rotation interval in days and reset rotation timer.
+ *
+ * @param[in,out] self Group entity instance.
+ * @param[in]     days Interval in days.
+ */
+void hvac_group_entity_set_rotation_interval_days(hvac_group_entity_t *self, uint16_t days);
 
 /**
  * @brief Compute aggregated group temperature metrics from a raw/calibrated sensor array.

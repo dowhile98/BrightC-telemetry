@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * @file digital_input_channels.c
- * @brief Zbus channel definitions for Digital Input state transitions.
+ * @brief Zbus channel definitions for Digital Input state transitions and snapshots.
  */
 
 #include "application/zbus/digital_input_channels.h"
@@ -20,4 +20,13 @@ ZBUS_CHAN_DEFINE(
         .prev_state = DI_STATE_INACTIVE,
         .timestamp_ms = 0ULL
     )
+);
+
+ZBUS_CHAN_DEFINE(
+    chan_digital_input_snapshot,
+    di_snapshot_msg_t,
+    NULL,
+    NULL,
+    ZBUS_OBSERVERS(lis_hvac_di_feed),
+    ZBUS_MSG_INIT(0)
 );

@@ -21,7 +21,7 @@
 | **HVAC Active Object Coordinator** | `app/src/application/active_objects/ao_hvac.h`, `.c` | 100% | Canonical 5-phase lifecycle Active Object with dynamic runtime configuration update support (`ao_hvac_set_group_config`, `ao_hvac_apply_config`) |
 | **Composition Root Integration** | `app/src/infrastructure/di/composition_root.h`, `.c` | 100% | Subsystem 6 integrated in `app_container_t`: boot-time storage loading with default fallback (`k_default_hvac_cfg`), debounced dirty-marking via `ao_storage` |
 | **In-Memory Fakes** | `tests/fakes/include/fake_hvac_unit.h`, `.c`, `fake_relay.h`, `.c` | 100% | In-memory `i_hvac_unit_t` and `i_relay_t` implementations with call tracking and fault injection |
-| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **37/37 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
+| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **40/40 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
 
 ---
 
@@ -46,6 +46,15 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Implemented HVAC Duty Rotation Interval in Days (7, 15, 20, 30 days; default 7 days) & Automatic Rotation Ticking:
+  - `hvac_types.h`: Replaced `rotation_interval_hours` with `rotation_interval_days` in `config_hvac_group_t`, maintaining strict 40-byte alignment via `_Static_assert(sizeof(config_hvac_group_t) == 40U, ...)`.
+  - `app_defaults.h`: Updated default profiles `k_default_hvac_config_hybrid_4units` and `k_default_hvac_config_control_only_8units` to `.rotation_interval_days = 7U`.
+  - `hvac_group_entity.h/.c`: Added `rotation_interval_days` and `rotation_timer_s` to `hvac_group_entity_t`. Initialized to 7 days in `hvac_group_entity_init()` and configured in `hvac_group_entity_set_config()`. In `hvac_group_entity_tick_1s()`, automatically accumulated seconds and triggered `hvac_group_entity_rotate_shift()` when elapsed time reached `rotation_interval_days * 86400U`, resetting the timer to 0. Reset timer on manual shift rotation. Added getters `hvac_group_entity_get_rotation_timer()`, `hvac_group_entity_get_rotation_interval_days()`, and setter `hvac_group_entity_set_rotation_interval_days()`.
+  - `ao_hvac.h/.c`: Implemented `ao_hvac_set_group_rotation()`.
+  - `app_facade.h/.c`: Introduced `app_facade_hvac_group_view_t` with `rotation_interval_days` and `rotation_timer_s`, populated in `app_facade_hvac_get_status()`. Implemented `app_facade_hvac_set_group_rotation()` with 1..365 day validation and atomic persistent dirty-marking.
+  - `shell_brightc.c`: Added rotation status display (`Rotation: Xd (Elapsed: Xd Xh Xm)`) to `cmd_hvac_status()`. Implemented `cmd_hvac_rotation()` (`hvac rotation <grp> <days>`) with friendly input validation and registered in `sub_hvac`.
+  - Unit Tests: Added `test_duty_rotation_timer_and_automatic_shift` in `test_hvac_group.c` and `test_ao_hvac_rotation_interval_and_stepping` in `test_ao_hvac.c`. **40/40 tests passing on `native_sim` across 5 test suites (100% PASS)**.
+  - Target Hardware Compilation: Built primary target for `brightc-controllerv3` (Flash: 15.23%, RAM: 32.61%). Verified zero Invariant violations.
 - **2026-11-07**: Implemented Phase 5 (Facade & Shell Alignment for Multi-Room Range Engine):
   - `app_facade.h/.c`: Added `sensor_start`, `sensor_end`, and `metric_policy` to `groups[]` in `app_facade_hvac_status_t` and populated them in `app_facade_hvac_get_status()`. Implemented `app_facade_hvac_configure_group_sensors()` to dynamically update group sensor range and metric policy, invoke `ao_hvac_set_group_config()`, and mark `CONFIG_DOMAIN_HVAC` dirty in persistent storage. Implemented `app_facade_hvac_configure_group_units()` to update `active_turn_count` (N+M) and `unit_mask`, invoke `ao_hvac_set_group_config()`, and mark storage dirty.
   - `shell_brightc.c`: Added `hvac_metric_policy_str()` helper. Updated `cmd_hvac_status()` to display assigned sensor range and metric policy (`MAX`, `AVG`, `MIN`) per group. Added `cmd_hvac_sensors()` (`hvac sensors <grp> <start> <end> [max|avg|min]`) and `cmd_hvac_config()` (`hvac config <grp> <active_turn> [unit_mask_hex]`), and registered both in `sub_hvac` shell command set.

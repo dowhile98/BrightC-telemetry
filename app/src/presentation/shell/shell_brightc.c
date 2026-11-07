@@ -113,6 +113,15 @@ static int cmd_hvac_status(const struct shell *sh, size_t argc, char **argv)
         shell_print(sh, "  Turn Count:   %u active | Offset: %u (mask=0x%02X)",
                     status.groups[g].active_turn_count, status.groups[g].current_turn_offset,
                     status.groups[g].unit_mask);
+        uint32_t rem_s = status.groups[g].rotation_timer_s;
+        uint32_t days = rem_s / 86400U;
+        rem_s %= 86400U;
+        uint32_t hours = rem_s / 3600U;
+        rem_s %= 3600U;
+        uint32_t mins = rem_s / 60U;
+        shell_print(sh, "  Rotation:     %ud (Elapsed: %ud %uh %um)",
+                    status.groups[g].rotation_interval_days,
+                    days, hours, mins);
         if (status.groups[g].bypass_causes_mask != 0) {
             shell_warn(sh, "  Bypass Mask:  0x%08X", status.groups[g].bypass_causes_mask);
         }
@@ -314,12 +323,44 @@ static int cmd_hvac_config(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_hvac_rotation(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 3) {
+        shell_error(sh, "Usage: hvac rotation <grp> <days>");
+        shell_info(sh, "Supported intervals: 7, 15, 20, 30 days (allowed range: 1..365)");
+        return -EINVAL;
+    }
+
+    uint8_t group_id = (uint8_t)strtoul(argv[1], NULL, 10);
+    uint16_t days = (uint16_t)strtoul(argv[2], NULL, 10);
+
+    if (group_id >= HVAC_MAX_GROUPS) {
+        shell_error(sh, "Invalid group ID: %u (max %u)", group_id, HVAC_MAX_GROUPS - 1U);
+        return -EINVAL;
+    }
+
+    if (days < 1U || days > 365U) {
+        shell_error(sh, "Invalid rotation interval: %u days. Supported: 7, 15, 20, 30 days (allowed range: 1..365)", days);
+        return -EINVAL;
+    }
+
+    int err = app_facade_hvac_set_group_rotation(group_id, days);
+    if (err != 0) {
+        shell_error(sh, "Failed to set rotation interval (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "Group %u rotation interval set to %u days (timer reset to 0)", group_id, days);
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_hvac,
     SHELL_CMD(status, NULL, "Show group modes, temperatures, active units, relays, alarms", cmd_hvac_status),
     SHELL_CMD_ARG(mode, NULL, "Set operating mode: hvac mode <grp> <off|cool|heat|auto|fan_only|emergency>", cmd_hvac_mode, 3, 0),
     SHELL_CMD_ARG(setpoint, NULL, "Set target temperature: hvac setpoint <grp> <cool_x10> [heat_x10]", cmd_hvac_setpoint, 3, 1),
     SHELL_CMD_ARG(sensors, NULL, "Set group sensor range: hvac sensors <grp> <start> <end> [max|avg|min]", cmd_hvac_sensors, 4, 1),
     SHELL_CMD_ARG(config, NULL, "Configure group units: hvac config <grp> <active_turn> [unit_mask_hex]", cmd_hvac_config, 3, 1),
+    SHELL_CMD_ARG(rotation, NULL, "Set group rotation interval: hvac rotation <grp> <days (e.g. 7, 15, 20, 30)>", cmd_hvac_rotation, 3, 0),
     SHELL_CMD_ARG(rotate, NULL, "Force unit rotation turn: hvac rotate <grp>", cmd_hvac_rotate, 2, 0),
     SHELL_CMD_ARG(manual, NULL, "Manual override: hvac manual <unit> <on|off> [comp_on|comp_off] [fan_on|fan_off]", cmd_hvac_manual, 3, 2),
     SHELL_SUBCMD_SET_END

@@ -149,6 +149,16 @@ int di_aggregator_get_status(const di_aggregator_t *self, di_role_t role, di_cha
 int di_aggregator_get_active_mask(const di_aggregator_t *self, uint64_t *out_mask);
 
 /**
+ * @brief Pack current aggregator states into a consolidated telemetry snapshot.
+ *
+ * @param[in]  self          Aggregator instance (must be non-NULL).
+ * @param[out] out_snapshot  Destination snapshot structure (must be non-NULL).
+ * @return 0 on success, -EINVAL on NULL arguments.
+ */
+int di_aggregator_pack_snapshot(const di_aggregator_t *self, di_snapshot_msg_t *out_snapshot);
+
+
+/**
  * @brief Manually inject a raw pin level for a specific channel index.
  *
  * Useful for unit testing or when raw inputs are updated directly by hardware interrupts.

@@ -71,6 +71,7 @@ typedef struct {
     volatile bool     terminate;      /**< Outer loop exit flag */
     bool              is_initialized; /**< Initialization guard */
     uint64_t          last_scan_ms;   /**< Uptime of preceding scan */
+    uint32_t          sequence;       /**< Monotonically increasing snapshot sequence */
 } ao_digital_input_t;
 
 /**

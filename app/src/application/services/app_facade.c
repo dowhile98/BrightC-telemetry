@@ -7,6 +7,8 @@
  */
 
 #include "application/services/app_facade.h"
+#include "application/zbus/sensor_channels.h"
+#include "application/zbus/digital_input_channels.h"
 
 #include <errno.h>
 #include <string.h>
@@ -152,6 +154,8 @@ int app_facade_hvac_get_status(app_facade_hvac_status_t *out_status)
         out_status->groups[g].sensor_start = s_app->hvac.config.groups[g].sensor_start;
         out_status->groups[g].sensor_end = s_app->hvac.config.groups[g].sensor_end;
         out_status->groups[g].metric_policy = s_app->hvac.config.groups[g].metric_policy;
+        out_status->groups[g].rotation_interval_days = ao->groups[g].rotation_interval_days;
+        out_status->groups[g].rotation_timer_s = ao->groups[g].rotation_timer_s;
     }
 
     for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
@@ -393,6 +397,24 @@ int app_facade_hvac_configure_group_units(uint8_t group_id,
     return 0;
 }
 
+int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days)
+{
+    if (s_app == NULL || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+    if (!s_app->hvac.initialized) {
+        return -EAGAIN;
+    }
+    if (days < 1U || days > 365U) {
+        return -EINVAL;
+    }
+
+    config_hvac_group_t group_cfg = s_app->hvac.config.groups[group_id];
+    group_cfg.rotation_interval_days = days;
+
+    return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
+}
+
 /* =========================================================================
  * Sensor Matrix Service APIs
  * ========================================================================= */
@@ -478,47 +500,65 @@ int app_facade_sensor_set_calibration(uint8_t sensor_idx, int16_t offset_x10)
 
 int app_facade_di_get_status(app_facade_di_view_t *out_view)
 {
-    if (s_app == NULL || out_view == NULL) {
+    if (out_view == NULL) {
         return -EINVAL;
     }
-
-    di_aggregator_t *agg = &s_app->di.aggregator;
-    memset(out_view, 0, sizeof(*out_view));
-
-    out_view->channel_count = (uint8_t)agg->channel_count;
-
-    for (size_t i = 0U; i < agg->channel_count && i < DI_CHANNEL_MAX; i++) {
-        out_view->channels[i].index = (uint8_t)i;
-        out_view->channels[i].role = agg->configs[i].role;
-        out_view->channels[i].name = role_to_name(agg->configs[i].role);
-        out_view->channels[i].raw_level = agg->statuses[i].raw_level;
-        out_view->channels[i].is_active = agg->statuses[i].is_active;
-        out_view->channels[i].active_duration_s = agg->statuses[i].active_duration_s;
+    if (s_app == NULL || !s_app->di.initialized) {
+        return -EAGAIN;
     }
 
-    (void)di_aggregator_get_active_mask(agg, &out_view->active_mask);
-    (void)app_facade_di_get_raw(&out_view->raw_mask);
+    di_snapshot_msg_t snap;
+    int err = zbus_chan_read(&chan_digital_input_snapshot, &snap, K_NO_WAIT);
+    if (err != 0) {
+        return err;
+    }
+
+    memset(out_view, 0, sizeof(*out_view));
+    out_view->channel_count = snap.channel_count;
+    out_view->active_mask = snap.active_mask;
+    out_view->raw_mask = snap.raw_mask;
+
+    for (size_t i = 0U; i < snap.channel_count && i < DI_CHANNEL_MAX; i++) {
+        out_view->channels[i].index = (uint8_t)i;
+        out_view->channels[i].role = snap.roles[i];
+        out_view->channels[i].name = role_to_name(snap.roles[i]);
+        out_view->channels[i].raw_level = ((snap.raw_mask & (1ULL << i)) != 0ULL);
+        out_view->channels[i].is_active = snap.is_active[i];
+        out_view->channels[i].active_duration_s = snap.active_duration_s[i];
+    }
 
     return 0;
 }
 
 int app_facade_di_get_raw(uint64_t *out_raw_mask)
 {
-    if (s_app == NULL || out_raw_mask == NULL) {
+    if (out_raw_mask == NULL) {
         return -EINVAL;
     }
-
-    di_aggregator_t *agg = &s_app->di.aggregator;
-    uint64_t mask = 0ULL;
-
-    for (size_t i = 0U; i < agg->channel_count && i < 64U; i++) {
-        if (agg->raw_inputs[i]) {
-            mask |= (1ULL << i);
-        }
+    if (s_app == NULL || !s_app->di.initialized) {
+        return -EAGAIN;
     }
 
-    *out_raw_mask = mask;
+    di_snapshot_msg_t snap;
+    int err = zbus_chan_read(&chan_digital_input_snapshot, &snap, K_NO_WAIT);
+    if (err != 0) {
+        return err;
+    }
+
+    *out_raw_mask = snap.raw_mask;
     return 0;
+}
+
+int app_facade_di_get_snapshot(di_snapshot_msg_t *out_snapshot)
+{
+    if (out_snapshot == NULL) {
+        return -EINVAL;
+    }
+    if (s_app == NULL || !s_app->di.initialized) {
+        return -EAGAIN;
+    }
+
+    return zbus_chan_read(&chan_digital_input_snapshot, out_snapshot, K_NO_WAIT);
 }
 
 /* =========================================================================

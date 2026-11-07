@@ -14,7 +14,7 @@
 | **Core Architecture & Framework** | [`core_architecture_progress.md`](core_architecture_progress.md) | **100%** | Active Objects (5/5), DI Container, Hexagonal Ports & Adapters | 2026-11-07 |
 | **System Indicators** | [`system_indicators_progress.md`](system_indicators_progress.md) | **100%** | `ao_system_indicator`, LED GPIO & Buzzer PWM adapters, Zbus | 2026-11-05 |
 | **Industrial Modbus** | [`modbus_progress.md`](modbus_progress.md) | **90%** | Dual RS-485, 4 codecs, scheduler, registry, relay adapter, `ao_modbus` | 2026-11-07 |
-| **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **90%** | `ao_digital_input`, 2x MCP23S17 SPI (16-bit cached) + on-chip GPIOs, debouncing | 2026-11-06 |
+| **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **95%** | `ao_digital_input`, Zbus snapshot & transitions, HVAC safety interlock listener, 2x MCP23S17 SPI + Modbus MBSL32DI | 2026-11-07 |
 | **Network & Wi-Fi** | [`network_progress.md`](network_progress.md) | **75%** | `ao_network`, STM32 RMII Ethernet, ESP-Hosted SPI Wi-Fi, ISP ports | 2026-11-06 |
 | **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **100%** | `ao_storage`, Microconf I2C2 EEPROM adapter, 5 pruned domains, degraded mode | 2026-11-07 |
 | **Sensors & Mathematical Model** | [`sensors_progress.md`](sensors_progress.md) | **95%** | Zbus decoupling channels, sensor matrix mapper, flat 64-ch snapshot, Modbus codecs, Rev F Thermodynamic Engine. Pending ADC & adapters | 2026-11-07 |

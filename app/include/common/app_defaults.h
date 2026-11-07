@@ -120,7 +120,7 @@ static const config_hvac_t k_default_hvac_config_hybrid_4units = {
             .fan_delay_s             = 30U,
             .pressure_retry_s        = 180U,
             .manual_timeout_s        = 3600U,
-            .rotation_interval_hours = 24U,
+            .rotation_interval_days  = 7U,
             .sensor_mask             = 0x001FU, /* Bits 0..4: 5 on-board internal RTDs */
             .unit_mask               = 0x0FU,   /* Units 0..3 */
             .active_turn_count       = 2U,      /* 2 active + 2 standby (2+2) */
@@ -192,7 +192,7 @@ static const config_hvac_t k_default_hvac_config_control_only_8units = {
         [0] = {
             .temp_min = 20.0f, .temp_max = 24.0f, .temp_alarm = 28.0f, .temp_bypass = 32.0f,
             .time_to_cool_s = 1800U, .delay_on_s = 10U, .fan_delay_s = 30U, .pressure_retry_s = 180U,
-            .manual_timeout_s = 3600U, .rotation_interval_hours = 24U, .sensor_mask = 0x00FFU,
+            .manual_timeout_s = 3600U, .rotation_interval_days = 7U, .sensor_mask = 0x00FFU,
             .unit_mask = 0xFFU, .active_turn_count = 4U, .max_allowed_faults = 3U, .enable_fan_delay = 1U,
             .hum_min = 40U, .hum_max = 70U,
             .sensor_start = 1U, .sensor_end = 8U, .metric_policy = (uint8_t)SENSOR_METRIC_MAX,

@@ -226,6 +226,17 @@ int ao_digital_input_step(ao_digital_input_t *self, uint32_t elapsed_ms)
             LOG_WRN("zbus pub failed on chan_digital_input_state: %d", pub_ret);
         }
     }
+
+    /* Pack and publish consolidated digital input snapshot */
+    di_snapshot_msg_t snapshot;
+    int pack_err = di_aggregator_pack_snapshot(self->aggregator, &snapshot);
+    if (pack_err == 0) {
+        snapshot.sequence = self->sequence++;
+        int snap_ret = zbus_chan_pub(&chan_digital_input_snapshot, &snapshot, K_MSEC(50));
+        if (snap_ret != 0) {
+            LOG_WRN("zbus pub failed on chan_digital_input_snapshot: %d", snap_ret);
+        }
+    }
 #endif
 
     return (int)event_count;

@@ -32,6 +32,8 @@ void hvac_group_entity_init(hvac_group_entity_t *self, uint8_t group_id)
 
     self->active_turn_count = 1U;
     self->current_turn_offset = 0U;
+    self->rotation_interval_days = 7U;
+    self->rotation_timer_s = 0U;
     self->enable_fan_delay = true;
 
     self->metric_policy = (uint8_t)SENSOR_METRIC_MAX;
@@ -54,6 +56,8 @@ void hvac_group_entity_set_config(hvac_group_entity_t *self, const config_hvac_g
     self->delay_on_s = cfg->delay_on_s;
     self->manual_timeout_s = cfg->manual_timeout_s;
     self->active_turn_count = cfg->active_turn_count;
+    self->rotation_interval_days = cfg->rotation_interval_days;
+    self->rotation_timer_s = 0U;
     self->enable_fan_delay = (cfg->enable_fan_delay != 0U);
 
     self->metric_policy = cfg->metric_policy;
@@ -339,6 +343,15 @@ void hvac_group_entity_tick_1s(hvac_group_entity_t *self)
             }
         }
     }
+
+    /* 4. Automatic duty rotation timer */
+    if (self->rotation_interval_days > 0U) {
+        self->rotation_timer_s++;
+        if (self->rotation_timer_s >= ((uint32_t)self->rotation_interval_days * 86400U)) {
+            self->rotation_timer_s = 0U;
+            hvac_group_entity_rotate_shift(self);
+        }
+    }
 }
 
 void hvac_group_entity_rotate_shift(hvac_group_entity_t *self)
@@ -347,6 +360,7 @@ void hvac_group_entity_rotate_shift(hvac_group_entity_t *self)
         return;
     }
 
+    self->rotation_timer_s = 0U;
     self->current_turn_offset = (uint8_t)((self->current_turn_offset + 1U) % self->unit_count);
 
     if (self->state == GROUP_STATE_COOLING) {
@@ -360,6 +374,24 @@ void hvac_group_entity_rotate_shift(hvac_group_entity_t *self)
                 }
             }
         }
+    }
+}
+
+uint32_t hvac_group_entity_get_rotation_timer(const hvac_group_entity_t *self)
+{
+    return (self != NULL) ? self->rotation_timer_s : 0U;
+}
+
+uint16_t hvac_group_entity_get_rotation_interval_days(const hvac_group_entity_t *self)
+{
+    return (self != NULL) ? self->rotation_interval_days : 0U;
+}
+
+void hvac_group_entity_set_rotation_interval_days(hvac_group_entity_t *self, uint16_t days)
+{
+    if (self != NULL) {
+        self->rotation_interval_days = days;
+        self->rotation_timer_s = 0U;
     }
 }
 

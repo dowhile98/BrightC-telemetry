@@ -381,7 +381,7 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     zassert_equal(g0->delay_on_s, 10U, "delay_on_s must be 10");
     zassert_equal(g0->fan_delay_s, 30U, "fan_delay_s must be 30");
     zassert_equal(g0->pressure_retry_s, 180U, "pressure_retry_s must be 180");
-    zassert_equal(g0->rotation_interval_hours, 24U, "rotation_interval_hours must be 24");
+    zassert_equal(g0->rotation_interval_days, 7U, "rotation_interval_days must be 7");
 
     /* 2. Verify relay actuator endpoints (Internal relays on mcp23s17_2, device_id = 2) */
     for (uint8_t u = 0; u < 4U; u++) {
@@ -745,6 +745,40 @@ ZTEST(ao_hvac_suite, test_dynamic_group_sensor_range_and_metric_policy)
     zassert_equal(ret, 0, "ao_hvac_step failed");
     zassert_equal(s_ao.groups[0].state, GROUP_STATE_COOLING, "Group 0 transitions to COOLING under MAX policy");
     zassert_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 must turn ON");
+}
+
+ZTEST(ao_hvac_suite, test_ao_hvac_rotation_interval_and_stepping)
+{
+    /* Initialize with default hybrid config */
+    const config_hvac_t *cfg = &k_default_hvac_config_hybrid_4units;
+    int ret = ao_hvac_init(&s_ao, cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* Default rotation interval is 7 days */
+    zassert_equal(s_ao.groups[0].rotation_interval_days, 7U, "Default rotation interval is 7 days");
+    zassert_equal(s_ao.groups[0].rotation_timer_s, 0U, "Initial rotation timer is 0");
+
+    /* Test ao_hvac_set_group_rotation */
+    ret = ao_hvac_set_group_rotation(&s_ao, 0, 15U);
+    zassert_equal(ret, 0, "ao_hvac_set_group_rotation failed");
+    zassert_equal(s_ao.groups[0].rotation_interval_days, 15U, "Group 0 rotation interval updated to 15");
+    zassert_equal(s_ao.config.groups[0].rotation_interval_days, 15U, "Group 0 config updated to 15");
+
+    /* Step ao_hvac: should increment rotation_timer_s */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+    zassert_equal(s_ao.groups[0].rotation_timer_s, 1U, "Rotation timer advanced by 1s");
+
+    /* Test ao_hvac_force_rotation resets rotation timer */
+    ret = ao_hvac_force_rotation(&s_ao, 0);
+    zassert_equal(ret, 0, "ao_hvac_force_rotation failed");
+    zassert_equal(s_ao.groups[0].rotation_timer_s, 0U, "Rotation timer reset to 0 by forced rotation");
+    zassert_equal(s_ao.groups[0].current_turn_offset, 1U, "Current turn offset advanced to 1");
+
+    /* Error handling */
+    zassert_equal(ao_hvac_set_group_rotation(NULL, 0, 7U), -EINVAL, "NULL ao should return -EINVAL");
+    zassert_equal(ao_hvac_set_group_rotation(&s_ao, HVAC_MAX_GROUPS, 7U), -EINVAL, "Invalid group should return -EINVAL");
+    zassert_equal(ao_hvac_set_group_rotation(&s_ao, 0, 0U), -EINVAL, "0 days should return -EINVAL");
 }
 
 

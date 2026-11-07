@@ -322,6 +322,16 @@ void ao_hvac_set_actuator_adapter(ao_hvac_t *self, struct adapter_hvac_actuator_
 int ao_hvac_force_rotation(ao_hvac_t *self, uint8_t group_id);
 
 /**
+ * @brief Update duty rotation interval in days for a specific HVAC group.
+ *
+ * @param[in,out] self     Active Object instance.
+ * @param[in]     group_id Group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in]     days     Rotation interval in days (e.g. 7, 15, 20, 30).
+ * @return 0 on success, negative errno on error.
+ */
+int ao_hvac_set_group_rotation(ao_hvac_t *self, uint8_t group_id, uint16_t days);
+
+/**
  * @brief Manually override compressor or fan state for an individual AC unit.
  *
  * @param[in,out] self           Active Object instance.

@@ -564,4 +564,106 @@ ZTEST(hvac_group_suite, test_metric_policy_evaluation)
                   "MIN policy: lowest 20.0 <= temp_min 21.0 should transition to IDLE");
 }
 
+/*============================================================================*
+ * 9. Automatic Duty Rotation Interval & Timer Tests
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_duty_rotation_timer_and_automatic_shift)
+{
+    /* Initialize group with 3 units total: 2 active, 1 standby */
+    hvac_group_entity_init(&s_group, 0U);
+    s_group.temp_min = 21.0f;
+    s_group.temp_max = 24.0f;
+    s_group.delay_on_s = 20U;
+    s_group.active_turn_count = 2U;
+    s_group.cooling_timeout_s = 0U; /* Disable cooling timeout for rotation timing test */
+
+    for (uint8_t i = 0U; i < 3U; i++) {
+        hvac_unit_entity_init(&s_units[i], i, 3U, 20U, 60U, 180U, true);
+        hvac_group_entity_add_unit(&s_group, &s_units[i]);
+    }
+
+    /* Verify default rotation configuration */
+    zassert_equal(hvac_group_entity_get_rotation_interval_days(&s_group), 7U,
+                  "Default rotation interval must be 7 days");
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
+                  "Initial rotation timer must be 0s");
+    zassert_equal(s_group.current_turn_offset, 0U, "Initial offset must be 0");
+
+    /* Put group into COOLING */
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 25.0f,
+        .valid_sensors = 1U,
+    };
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group in COOLING");
+
+    /* 7 days = 7 * 86400 = 604,800 seconds */
+    const uint32_t rotation_target_s = 7U * 86400U;
+
+    /* Advance 604,799 seconds */
+    for (uint32_t t = 0U; t < (rotation_target_s - 1U); t++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), rotation_target_s - 1U,
+                  "Timer must have accumulated 604,799 seconds");
+    zassert_equal(s_group.current_turn_offset, 0U,
+                  "Duty shift must not have occurred yet at 604,799s");
+
+    /* 604,800th tick: triggers automatic rotation of duty shift */
+    hvac_group_entity_tick_1s(&s_group);
+
+    zassert_equal(s_group.current_turn_offset, 1U,
+                  "Automatic duty shift must advance current_turn_offset to 1");
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
+                  "Rotation timer must reset to 0 after automatic shift");
+
+    /* Verify units 1, 2 active, unit 0 standby */
+    zassert_equal(s_units[2].state, UNIT_STATE_STARTING, "Unit 2 now active");
+    zassert_true(s_units[0].state == UNIT_STATE_OFF || s_units[0].state == UNIT_STATE_STOPPING,
+                 "Unit 0 now standby");
+
+    /* Test manual rotation resets timer */
+    /* Advance timer by 500 seconds */
+    for (int t = 0; t < 500; t++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 500U,
+                  "Rotation timer must be 500s");
+
+    /* Trigger manual shift */
+    hvac_group_entity_rotate_shift(&s_group);
+    zassert_equal(s_group.current_turn_offset, 2U, "Manual shift advances offset to 2");
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
+                  "Manual rotation must reset rotation timer to 0");
+
+    /* Test reconfiguring rotation interval (e.g. 15, 20, 30 days) */
+    hvac_group_entity_set_rotation_interval_days(&s_group, 15U);
+    zassert_equal(hvac_group_entity_get_rotation_interval_days(&s_group), 15U,
+                  "Rotation interval must be 15 days");
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
+                  "Setting rotation interval must reset timer to 0");
+
+    /* Advance 15 days = 15 * 86400 = 1,296,000 seconds */
+    const uint32_t rotation_15d_s = 15U * 86400U;
+    for (uint32_t t = 0U; t < rotation_15d_s; t++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(s_group.current_turn_offset, 0U,
+                  "15-day rotation must wrap offset back to 0");
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
+                  "Timer must reset to 0 after 15-day rotation");
+
+    /* Test disabled rotation (0 days) */
+    hvac_group_entity_set_rotation_interval_days(&s_group, 0U);
+    for (int t = 0; t < 1000; t++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+    zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
+                  "Rotation timer must remain 0 when interval is 0");
+    zassert_equal(s_group.current_turn_offset, 0U,
+                  "Offset must not rotate when interval is 0");
+}
+
 

@@ -7,6 +7,7 @@
 #include "application/services/app_facade.h"
 #include "application/active_objects/ao_sensor_matrix.h"
 #include "application/zbus/sensor_channels.h"
+#include "application/zbus/digital_input_channels.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -1079,6 +1080,73 @@ static void on_hvac_sensor_feed_cb(const struct zbus_channel *chan)
 }
 
 ZBUS_LISTENER_DEFINE(lis_hvac_sensor_feed, on_hvac_sensor_feed_cb);
+
+static void on_hvac_di_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_digital_input_snapshot || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const di_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (!s_active_container->hvac.initialized)
+    {
+        return;
+    }
+
+    /* 1. Fire alarm safety interlock */
+    bool fire_active = false;
+    for (uint8_t i = 0U; i < msg->channel_count; i++)
+    {
+        if (msg->roles[i] == DI_ROLE_SMOKE_FIRE)
+        {
+            fire_active = msg->is_active[i];
+            break;
+        }
+    }
+    (void)ao_hvac_set_fire(&s_active_container->hvac.ao, fire_active);
+
+    /* 2. HVAC Unit Mechanical Alarms (Units 0..7) */
+    for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
+    {
+        bool hp = false;
+        bool lp = false;
+        bool flow = false;
+        bool volt = false;
+
+        di_role_t base_role = (di_role_t)(DI_ROLE_UNIT_0_ALARM_HP + (u * 4U));
+
+        for (uint8_t i = 0U; i < msg->channel_count; i++)
+        {
+            if (msg->roles[i] == base_role)
+            {
+                hp = msg->is_active[i];
+            }
+            else if (msg->roles[i] == (di_role_t)(base_role + 1U))
+            {
+                lp = msg->is_active[i];
+            }
+            else if (msg->roles[i] == (di_role_t)(base_role + 2U))
+            {
+                flow = msg->is_active[i];
+            }
+            else if (msg->roles[i] == (di_role_t)(base_role + 3U))
+            {
+                volt = msg->is_active[i];
+            }
+        }
+
+        (void)ao_hvac_set_unit_alarms(&s_active_container->hvac.ao, u, hp, lp, flow, volt);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_hvac_di_feed, on_hvac_di_feed_cb);
+
 
 int composition_root_init(app_container_t *self)
 {

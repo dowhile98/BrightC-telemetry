@@ -525,6 +525,22 @@ int ao_hvac_force_rotation(ao_hvac_t *self, uint8_t group_id)
     return 0;
 }
 
+int ao_hvac_set_group_rotation(ao_hvac_t *self, uint8_t group_id, uint16_t days)
+{
+    if (self == NULL || !self->is_initialized || group_id >= HVAC_MAX_GROUPS || days == 0U) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    self->config.groups[group_id].rotation_interval_days = days;
+    if (self->group_active[group_id]) {
+        hvac_group_entity_set_rotation_interval_days(&self->groups[group_id], days);
+    }
+    k_mutex_unlock(&self->lock);
+
+    return 0;
+}
+
 int ao_hvac_set_unit_manual(ao_hvac_t *self, uint8_t unit_id, bool enable, bool run_compressor, bool run_fan)
 {
     ARG_UNUSED(run_fan);

@@ -167,7 +167,7 @@ typedef struct {
     uint16_t manual_timeout_s;  /**< Automatic reversion timer for manual overrides */
 
     /* Rotation & Generic N+M Parameters */
-    uint16_t rotation_interval_hours; /**< Hours between duty shift rotations */
+    uint16_t rotation_interval_days;  /**< Days between duty shift rotations (e.g. 7, 15, 20, 30) */
     uint16_t sensor_mask;             /**< Bitmask of assigned temperature probes (0..15) */
     uint8_t  unit_mask;               /**< Bitmask of assigned AC units (0..7) */
     uint8_t  active_turn_count;       /**< Number of units actively running in turn (N) */
@@ -182,6 +182,8 @@ typedef struct {
     uint8_t metric_policy;      /**< Metric policy (@see sensor_metric_policy_t) */
     uint8_t reserved[1];        /**< Reserved alignment padding */
 } config_hvac_group_t;
+
+_Static_assert(sizeof(config_hvac_group_t) == 40U, "config_hvac_group_t must be exactly 40 bytes");
 
 /**
  * @brief Root persistent HVAC storage configuration structure (~460-476 bytes).

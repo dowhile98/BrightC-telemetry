@@ -16,6 +16,7 @@
 #include "infrastructure/di/composition_root.h"
 #include "application/services/app_facade.h"
 #include "fake_config_storage.h"
+#include "application/zbus/digital_input_channels.h"
 
 #define FAKE_BUS 0U
 
@@ -582,3 +583,51 @@ ZTEST(composition_root_suite, test_app_facade_hvac_configure_group_sensors_and_u
     (void)composition_root_deinit(&s_app);
 }
 
+ZTEST(composition_root_suite, test_composition_root_di_feed_and_hvac_safety_interlock)
+{
+    (void)composition_root_deinit(&s_app);
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init failed");
+    zassert_equal(app_facade_init(&s_app), 0, "Facade init failed");
+
+    /* Initial state: no fire alarm */
+    zassert_false(s_app.hvac.ao.is_fire_active);
+
+    /* Publish DI snapshot with SMOKE_FIRE asserted and UNIT_0_ALARM_HP asserted */
+    di_snapshot_msg_t snap = {
+        .channel_count = 2U,
+        .roles = { DI_ROLE_SMOKE_FIRE, DI_ROLE_UNIT_0_ALARM_HP },
+        .is_active = { true, true },
+        .active_mask = 0x03ULL,
+        .raw_mask = 0x03ULL,
+        .sequence = 10U,
+        .timestamp_ms = 5000ULL,
+    };
+    zassert_equal(zbus_chan_pub(&chan_digital_input_snapshot, &snap, K_NO_WAIT), 0);
+
+    /* Verify listener updated HVAC fire safety state synchronously */
+    zassert_true(s_app.hvac.ao.is_fire_active, "Fire alarm must be asserted in HVAC AO");
+    zassert_true(s_app.hvac.ao.units[0].high_pressure_alarm, "Unit 0 HP alarm must be asserted");
+    zassert_false(s_app.hvac.ao.units[1].high_pressure_alarm, "Unit 1 HP alarm must remain clear");
+
+    /* Verify facade query retrieves snapshot accurately */
+    app_facade_di_view_t view;
+    zassert_equal(app_facade_di_get_status(&view), 0);
+    zassert_equal(view.channel_count, 2U);
+    zassert_true(view.channels[0].is_active);
+    zassert_equal(view.channels[0].role, DI_ROLE_SMOKE_FIRE);
+
+    di_snapshot_msg_t snap_rx;
+    zassert_equal(app_facade_di_get_snapshot(&snap_rx), 0);
+    zassert_equal(snap_rx.sequence, 10U);
+
+    /* Clear fire alarm */
+    snap.is_active[0] = false;
+    snap.active_mask = 0x02ULL;
+    zassert_equal(zbus_chan_pub(&chan_digital_input_snapshot, &snap, K_NO_WAIT), 0);
+    zassert_false(s_app.hvac.ao.is_fire_active, "Fire alarm must be cleared in HVAC AO");
+
+    (void)composition_root_deinit(&s_app);
+}

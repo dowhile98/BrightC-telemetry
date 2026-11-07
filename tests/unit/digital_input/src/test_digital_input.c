@@ -26,6 +26,22 @@ static struct k_msgq s_test_ao_di_msgq;
 static uint8_t s_test_ao_di_queue_buf[AO_DI_QUEUE_DEPTH * sizeof(ao_di_event_t)];
 static ao_digital_input_t s_test_ao_di;
 
+static uint32_t s_test_hvac_di_feed_calls;
+static di_snapshot_msg_t s_test_last_di_snapshot;
+
+static void test_hvac_di_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan == &chan_digital_input_snapshot) {
+        const di_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
+        if (msg != NULL) {
+            s_test_hvac_di_feed_calls++;
+            s_test_last_di_snapshot = *msg;
+        }
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_hvac_di_feed, test_hvac_di_feed_cb);
+
 static void *digital_input_suite_setup(void)
 {
     k_msgq_init(&s_test_ao_di_msgq, s_test_ao_di_queue_buf,
@@ -38,6 +54,8 @@ static void digital_input_suite_before(void *fixture)
     ARG_UNUSED(fixture);
     fake_digital_input_reset();
     k_msgq_purge(&s_test_ao_di_msgq);
+    s_test_hvac_di_feed_calls = 0U;
+    memset(&s_test_last_di_snapshot, 0, sizeof(s_test_last_di_snapshot));
 }
 
 ZTEST_SUITE(digital_input_suite, NULL, digital_input_suite_setup, digital_input_suite_before, NULL, NULL);
@@ -720,4 +738,89 @@ ZTEST(digital_input_suite, test_ao_digital_input_lifecycle_and_scan_now)
 
     /* Deinit */
     zassert_equal(ao_digital_input_deinit(&s_test_ao_di), 0, "ao_digital_input_deinit must succeed");
+}
+
+/*============================================================================*
+ * 7. ZBUS SNAPSHOT & HVAC FEED INTEGRATION TESTS
+ *============================================================================*/
+
+ZTEST(digital_input_suite, test_di_aggregator_pack_snapshot)
+{
+    di_aggregator_t agg;
+    di_snapshot_msg_t snap;
+
+    zassert_equal(di_aggregator_pack_snapshot(NULL, &snap), -EINVAL);
+    zassert_equal(di_aggregator_pack_snapshot(&agg, NULL), -EINVAL);
+
+    di_channel_config_t cfgs[2] = {
+        {
+            .role = DI_ROLE_SMOKE_FIRE,
+            .source_type = DI_SOURCE_INTERNAL_SPI,
+            .active_level = DI_ACTIVE_LOW,
+            .contact_type = DI_CONTACT_NORMALLY_CLOSED,
+            .debounce_ms = 0U,
+            .enabled = true,
+        },
+        {
+            .role = DI_ROLE_UNIT_0_ALARM_HP,
+            .source_type = DI_SOURCE_INTERNAL_SPI,
+            .active_level = DI_ACTIVE_LOW,
+            .contact_type = DI_CONTACT_NORMALLY_OPEN,
+            .debounce_ms = 0U,
+            .enabled = true,
+        }
+    };
+
+    zassert_ok(di_aggregator_init(&agg, cfgs, 2U, NULL, NULL));
+    /* Inject raw active levels */
+    di_aggregator_set_raw_by_index(&agg, 0U, true); /* NC + Active Low -> true = open/alarm */
+    di_aggregator_set_raw_by_index(&agg, 1U, false); /* NO + Active Low -> false = closed/alarm */
+
+    size_t evts = 0;
+    di_transition_event_t evt_buf[4];
+    zassert_ok(di_aggregator_scan(&agg, 100U, evt_buf, 4U, &evts));
+
+    zassert_ok(di_aggregator_pack_snapshot(&agg, &snap));
+    zassert_equal(snap.channel_count, 2U);
+    zassert_equal(snap.roles[0], DI_ROLE_SMOKE_FIRE);
+    zassert_equal(snap.roles[1], DI_ROLE_UNIT_0_ALARM_HP);
+    zassert_true(snap.is_active[0]);
+    zassert_true(snap.is_active[1]);
+    zassert_equal(snap.active_mask, 0x03ULL, "Bits 0 and 1 must be set in active_mask");
+    zassert_equal(snap.raw_mask & (1ULL << 0), (1ULL << 0), "Bit 0 raw level set");
+}
+
+ZTEST(digital_input_suite, test_ao_digital_input_publishes_snapshot_to_zbus)
+{
+    di_channel_config_t config = {
+        .role = DI_ROLE_SMOKE_FIRE,
+        .source_type = DI_SOURCE_ONCHIP_GPIO,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 0U,
+        .enabled = true,
+    };
+
+    di_aggregator_t agg;
+    zassert_ok(di_aggregator_init(&agg, &config, 1U, NULL, NULL));
+    zassert_ok(ao_digital_input_init(&s_test_ao_di, &agg, &s_test_ao_di_msgq, s_test_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE));
+
+    di_aggregator_set_raw_by_index(&agg, 0U, true);
+
+    int count = ao_digital_input_step(&s_test_ao_di, 20U);
+    zassert_equal(count, 1, "One transition expected");
+
+    /* Verify listener was notified via chan_digital_input_snapshot */
+    zassert_true(s_test_hvac_di_feed_calls >= 1U, "lis_hvac_di_feed must be called");
+    zassert_equal(s_test_last_di_snapshot.channel_count, 1U);
+    zassert_equal(s_test_last_di_snapshot.roles[0], DI_ROLE_SMOKE_FIRE);
+    zassert_true(s_test_last_di_snapshot.is_active[0]);
+    zassert_equal(s_test_last_di_snapshot.active_mask, 1ULL);
+
+    /* Verify chan_digital_input_snapshot readable via zbus_chan_read */
+    di_snapshot_msg_t read_snap;
+    zassert_ok(zbus_chan_read(&chan_digital_input_snapshot, &read_snap, K_NO_WAIT));
+    zassert_true(read_snap.is_active[0]);
+
+    zassert_ok(ao_digital_input_deinit(&s_test_ao_di));
 }
