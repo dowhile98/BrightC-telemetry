@@ -264,6 +264,27 @@ int ao_hvac_set_fire(ao_hvac_t *self, bool active);
 int ao_hvac_set_manual(ao_hvac_t *self, uint8_t group_id, bool active);
 
 /**
+ * @brief Set or clear manual override mode on an HVAC group (convenience alias).
+ *
+ * @param[in,out] self     Active object instance.
+ * @param[in]     group_id Target group identifier (0 .. HVAC_MAX_GROUPS-1).
+ * @param[in]     active   true to enable manual override, false to restore automatic control.
+ * @return 0 on success, negative errno on invalid arguments.
+ */
+int ao_hvac_set_group_manual(ao_hvac_t *self, uint8_t group_id, bool active);
+
+/**
+ * @brief Set or clear a bypass cause on an HVAC group.
+ *
+ * @param[in,out] self     Active object instance.
+ * @param[in]     group_id Target group identifier (0 .. HVAC_MAX_GROUPS-1).
+ * @param[in]     cause    Bypass cause to set or clear (@see hvac_bypass_cause_t).
+ * @param[in]     active   true to assert bypass cause, false to clear.
+ * @return 0 on success, negative errno on invalid arguments or uninitialized AO.
+ */
+int ao_hvac_set_bypass_cause(ao_hvac_t *self, uint8_t group_id, hvac_bypass_cause_t cause, bool active);
+
+/**
  * @brief Query the latest status snapshot from the Active Object.
  *
  * @param[in,out] self       Active Object instance.

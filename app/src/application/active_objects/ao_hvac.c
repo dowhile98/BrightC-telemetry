@@ -421,6 +421,26 @@ int ao_hvac_set_manual(ao_hvac_t *self, uint8_t group_id, bool active)
     return 0;
 }
 
+int ao_hvac_set_group_manual(ao_hvac_t *self, uint8_t group_id, bool active)
+{
+    return ao_hvac_set_manual(self, group_id, active);
+}
+
+int ao_hvac_set_bypass_cause(ao_hvac_t *self, uint8_t group_id, hvac_bypass_cause_t cause, bool active)
+{
+    if (self == NULL || !self->is_initialized || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    if (self->group_active[group_id]) {
+        hvac_group_entity_set_bypass_cause(&self->groups[group_id], cause, active);
+    }
+    k_mutex_unlock(&self->lock);
+
+    return 0;
+}
+
 int ao_hvac_get_status(ao_hvac_t *self, hvac_status_msg_t *out_status)
 {
     if (self == NULL || out_status == NULL || !self->is_initialized) {

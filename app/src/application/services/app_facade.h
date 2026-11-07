@@ -45,6 +45,14 @@ typedef enum {
     HVAC_MODE_EMERGENCY      /**< Emergency safety shutdown / fire interlock */
 } hvac_mode_t;
 
+#define HVAC_GROUP_MODE_OFF        HVAC_MODE_OFF
+#define HVAC_GROUP_MODE_COOL       HVAC_MODE_COOL
+#define HVAC_GROUP_MODE_HEAT       HVAC_MODE_HEAT
+#define HVAC_GROUP_MODE_AUTO       HVAC_MODE_AUTO
+#define HVAC_GROUP_MODE_FAN_ONLY   HVAC_MODE_FAN_ONLY
+#define HVAC_GROUP_MODE_EMERGENCY  HVAC_MODE_EMERGENCY
+typedef hvac_mode_t hvac_group_mode_t;
+
 /**
  * @brief Named operational profile configuration descriptor.
  */
@@ -227,6 +235,15 @@ int app_facade_hvac_get_status(app_facade_hvac_status_t *out_status);
  * @return 0 on success, negative errno on invalid arguments.
  */
 int app_facade_hvac_set_mode(uint8_t group_id, hvac_mode_t mode);
+
+/**
+ * @brief Convenience alias for setting operating mode for an HVAC group.
+ *
+ * @param[in] group_id Zero-indexed group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in] mode     Target operating mode (@see hvac_mode_t).
+ * @return 0 on success, negative errno on invalid arguments.
+ */
+int app_facade_hvac_set_group_mode(uint8_t group_id, hvac_mode_t mode);
 
 /**
  * @brief Set target temperature setpoints for an HVAC group.

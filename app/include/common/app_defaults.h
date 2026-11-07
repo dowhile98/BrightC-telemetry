@@ -278,7 +278,7 @@ static inline const di_channel_config_t *default_config_get_di_profile(hvac_oper
                                                                       size_t *out_count)
 {
     (void)mode;
-    return hardware_pin_map_get_local_di(out_count);
+    return hardware_pin_map_get_full_di(out_count);
 }
 
 static inline const modbus_slave_descriptor_t *default_config_get_modbus_slaves(size_t *out_count)

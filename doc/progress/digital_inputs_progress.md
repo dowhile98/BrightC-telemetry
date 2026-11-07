@@ -25,6 +25,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Implemented Phase 0 — Security (R-02 Physical Bypass Switch & R-14 Remote Units 4..7 Alarms):
+  - Added on-chip GPIO channels (`ONCHIP_DI_USER_BUTTON` and `ONCHIP_DI_SW_BYPASS`) and consolidated 58-channel system DI table (`k_brightc_system_di_table`) in `hardware_pin_map.h`.
+  - Added unique user roles (`DI_ROLE_USER_5`..`DI_ROLE_USER_10`) in `digital_input_types.h` and eliminated duplicate semantic roles across local and remote tables.
+  - Implemented `hardware_pin_map_get_full_di()` and updated `default_config_get_di_profile()` to provide the full 58-channel profile (24 local MCP23S17 + 2 on-chip GPIOs + 32 remote Modbus MBSL32DI channels).
+  - Enhanced `adapter_di_gpio_read()` to support both `pin_index` and `device_id` for `DI_SOURCE_ONCHIP_GPIO`.
+  - Added unit test `test_system_di_profile_58_channels` in `test_digital_input.c` validating 58-channel profile, on-chip bypass switch assertion, and remote unit 4..7 alarm ingestion. 17/17 tests passing (100% PASS).
 - **2026-11-07**: Fixed Shell Stack Overflow and Polarity Defaults for Bench Hardware:
   - Fixed MPU fault / stack overflow during `di status` shell command: replaced monolithic 1.5 KB `app_facade_di_view_t` stack allocation with compact `di_snapshot_msg_t` and `app_facade_di_role_name()`.
   - Added `CONFIG_SHELL_STACK_SIZE=4096` to provide safe stack headroom on Cortex-M7.

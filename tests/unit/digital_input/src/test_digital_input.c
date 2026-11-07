@@ -11,6 +11,8 @@
 #include <string.h>
 
 #include "common/digital_input_types.h"
+#include "common/hardware_pin_map.h"
+#include "common/app_defaults.h"
 #include "interfaces/i_digital_input.h"
 #include "domain/services/digital_input_aggregator.h"
 #include "application/zbus/digital_input_channels.h"
@@ -823,4 +825,65 @@ ZTEST(digital_input_suite, test_ao_digital_input_publishes_snapshot_to_zbus)
     zassert_true(read_snap.is_active[0]);
 
     zassert_ok(ao_digital_input_deinit(&s_test_ao_di));
+}
+
+ZTEST(digital_input_suite, test_system_di_profile_58_channels)
+{
+    size_t count = 0U;
+    const di_channel_config_t *profile = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &count);
+    zassert_not_null(profile, "Profile must not be NULL");
+    zassert_equal(count, HARDWARE_SYSTEM_DI_COUNT, "Total channels must be 58");
+
+    /* Verify On-Chip channels */
+    zassert_equal(profile[24].role, DI_ROLE_USER_BUTTON, "CH24 must be USER_BUTTON");
+    zassert_equal(profile[24].source_type, DI_SOURCE_ONCHIP_GPIO, "CH24 source must be ONCHIP");
+    zassert_equal(profile[24].pin_index, (uint8_t)ONCHIP_DI_USER_BUTTON, "CH24 pin must be ONCHIP_DI_USER_BUTTON");
+
+    zassert_equal(profile[25].role, DI_ROLE_BYPASS_SWITCH, "CH25 must be BYPASS_SWITCH");
+    zassert_equal(profile[25].source_type, DI_SOURCE_ONCHIP_GPIO, "CH25 source must be ONCHIP");
+    zassert_equal(profile[25].pin_index, (uint8_t)ONCHIP_DI_SW_BYPASS, "CH25 pin must be ONCHIP_DI_SW_BYPASS");
+
+    /* Verify Remote Unit 4..7 alarm channels */
+    zassert_equal(profile[26].role, DI_ROLE_UNIT_4_ALARM_HP, "CH26 must be Unit 4 HP");
+    zassert_equal(profile[26].source_type, DI_SOURCE_EXTERNAL_MODBUS, "CH26 source must be Modbus");
+    zassert_equal(profile[27].role, DI_ROLE_UNIT_4_ALARM_LP, "CH27 must be Unit 4 LP");
+    zassert_equal(profile[28].role, DI_ROLE_UNIT_4_ALARM_FLOW, "CH28 must be Unit 4 Flow");
+    zassert_equal(profile[29].role, DI_ROLE_UNIT_4_ALARM_VOLT, "CH29 must be Unit 4 Volt");
+
+    zassert_equal(profile[38].role, DI_ROLE_UNIT_7_ALARM_HP, "CH38 must be Unit 7 HP");
+    zassert_equal(profile[39].role, DI_ROLE_UNIT_7_ALARM_LP, "CH39 must be Unit 7 LP");
+    zassert_equal(profile[40].role, DI_ROLE_UNIT_7_ALARM_FLOW, "CH40 must be Unit 7 Flow");
+    zassert_equal(profile[41].role, DI_ROLE_UNIT_7_ALARM_VOLT, "CH41 must be Unit 7 Volt");
+
+    /* Initialize aggregator with the 58-channel profile */
+    di_aggregator_t agg;
+    int err = di_aggregator_init(&agg, profile, count, NULL, NULL);
+    zassert_equal(err, 0, "Aggregator init with 58 channels must succeed");
+    zassert_equal(agg.channel_count, 58U, "Aggregator channel count must be 58");
+
+    /* Check packing snapshot */
+    di_snapshot_msg_t snapshot;
+    err = di_aggregator_pack_snapshot(&agg, &snapshot);
+    zassert_equal(err, 0, "Snapshot pack must succeed");
+    zassert_equal(snapshot.channel_count, 58U, "Snapshot channel count must be 58");
+    zassert_equal(snapshot.roles[25], DI_ROLE_BYPASS_SWITCH, "Snapshot CH25 must be BYPASS_SWITCH");
+    zassert_equal(snapshot.roles[26], DI_ROLE_UNIT_4_ALARM_HP, "Snapshot CH26 must be Unit 4 HP");
+
+    /* Test raw level to active state for bypass switch and Unit 4 HP */
+    /* Bypass switch is ACTIVE_LOW: raw 0 => active true */
+    di_aggregator_set_raw_by_role(&agg, DI_ROLE_BYPASS_SWITCH, false);
+    /* Debounce is 60ms */
+    for (int t = 0; t < 4; t++) {
+        di_aggregator_scan(&agg, 20U, NULL, 0, NULL);
+    }
+    bool bypass_active = false;
+    zassert_ok(di_aggregator_get_state(&agg, DI_ROLE_BYPASS_SWITCH, &bypass_active));
+    zassert_true(bypass_active, "Bypass switch must be active when pin pulled low");
+
+    /* Unit 4 HP is ACTIVE_HIGH: raw 1 => active true (debounce 0ms) */
+    di_aggregator_set_raw_by_role(&agg, DI_ROLE_UNIT_4_ALARM_HP, true);
+    di_aggregator_scan(&agg, 20U, NULL, 0, NULL);
+    bool u4_hp_active = false;
+    zassert_ok(di_aggregator_get_state(&agg, DI_ROLE_UNIT_4_ALARM_HP, &u4_hp_active));
+    zassert_true(u4_hp_active, "Unit 4 HP must be active");
 }

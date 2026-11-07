@@ -118,10 +118,14 @@ int adapter_di_gpio_read(void *ctx,
     }
 
     if (source == DI_SOURCE_ONCHIP_GPIO) {
-        if (dev_id >= (uint8_t)ONCHIP_DI_COUNT) {
+        uint8_t idx = pin_idx;
+        if (idx >= (uint8_t)ONCHIP_DI_COUNT) {
+            idx = dev_id;
+        }
+        if (idx >= (uint8_t)ONCHIP_DI_COUNT) {
             return -EINVAL;
         }
-        const struct gpio_dt_spec *spec = &self->onchip_gpios[dev_id];
+        const struct gpio_dt_spec *spec = &self->onchip_gpios[idx];
         if (spec->port == NULL || !gpio_is_ready_dt(spec)) {
             return -ENODEV;
         }

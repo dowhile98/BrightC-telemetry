@@ -1111,7 +1111,20 @@ static void on_hvac_di_feed_cb(const struct zbus_channel *chan)
     }
     (void)ao_hvac_set_fire(&s_active_container->hvac.ao, fire_active);
 
-    /* 2. HVAC Unit Mechanical Alarms (Units 0..7) */
+    /* 2. Physical bypass switch interlock */
+    bool bypass_sw_active = false;
+    for (uint8_t i = 0U; i < msg->channel_count; i++)
+    {
+        if (msg->roles[i] == DI_ROLE_BYPASS_SWITCH)
+        {
+            bypass_sw_active = msg->is_active[i];
+            break;
+        }
+    }
+    (void)ao_hvac_set_bypass_cause(&s_active_container->hvac.ao, 0U,
+                                   BYPASS_CAUSE_PHYSICAL_SWITCH, bypass_sw_active);
+
+    /* 3. HVAC Unit Mechanical Alarms (Units 0..7) */
     for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
     {
         bool hp = false;

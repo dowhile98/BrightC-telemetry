@@ -93,6 +93,10 @@ void hvac_group_entity_set_bypass_cause(hvac_group_entity_t *self, hvac_bypass_c
 
     if (active) {
         self->bypass_causes_mask |= (uint32_t)cause;
+        if (self->is_manual_active) {
+            self->is_manual_active = false;
+            self->manual_timer_s = 0U;
+        }
         if (!self->is_fire_active) {
             self->state = GROUP_STATE_BYPASS;
             self->cooling_timer_s = 0U;
@@ -160,21 +164,20 @@ void hvac_group_entity_set_manual(hvac_group_entity_t *self, bool active)
 
     self->is_manual_active = active;
     if (active) {
+        self->state = GROUP_STATE_MANUAL;
         self->manual_timer_s = self->manual_timeout_s;
-        if (!self->is_fire_active && (self->bypass_causes_mask == 0U)) {
-            for (uint8_t i = 0U; i < self->unit_count; i++) {
-                if (self->units[i] != NULL) {
-                    hvac_unit_entity_set_manual(self->units[i], true);
-                }
-            }
-        }
+        self->cooling_timer_s = 0U;
+        self->cooling_timeout_count = 0U;
+        /* DO NOT turn on all units! Units should remain in their current state or only be controlled individually. */
     } else {
         self->manual_timer_s = 0U;
-        if (!self->is_fire_active && (self->bypass_causes_mask == 0U)) {
-            for (uint8_t i = 0U; i < self->unit_count; i++) {
-                if (self->units[i] != NULL) {
-                    hvac_unit_entity_set_manual(self->units[i], false);
-                }
+        if (self->state == GROUP_STATE_MANUAL) {
+            self->state = GROUP_STATE_IDLE;
+        }
+        for (uint8_t i = 0U; i < self->unit_count; i++) {
+            if (self->units[i] != NULL) {
+                hvac_unit_entity_set_manual(self->units[i], false);
+                hvac_unit_entity_request_stop(self->units[i], self->enable_fan_delay);
             }
         }
     }
@@ -247,7 +250,8 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
     }
 
     /* 6. Manual mode evaluation */
-    if (self->is_manual_active) {
+    if (self->is_manual_active || self->state == GROUP_STATE_MANUAL) {
+        self->state = GROUP_STATE_MANUAL;
         return;
     }
 
@@ -298,47 +302,47 @@ void hvac_group_entity_tick_1s(hvac_group_entity_t *self)
     }
 
     /* 2. Manual override timer */
-    if (self->is_manual_active) {
+    if (self->is_manual_active || self->state == GROUP_STATE_MANUAL) {
         if (self->manual_timer_s > 0U) {
             self->manual_timer_s--;
+            if (self->manual_timer_s == 0U) {
+                hvac_group_entity_set_manual(self, false);
+            }
         }
-        if (self->manual_timer_s == 0U) {
-            self->is_manual_active = false;
-        }
-    }
+    } else {
+        /* 3. Cooling timeout and rescue boost */
+        if (self->state == GROUP_STATE_COOLING || self->state == GROUP_STATE_COOL_BOOST) {
+            if (self->cooling_timeout_s > 0U) {
+                self->cooling_timer_s++;
+                if (self->cooling_timer_s >= self->cooling_timeout_s) {
+                    self->cooling_timeout_count++;
+                    self->cooling_timer_s = 0U;
 
-    /* 3. Cooling timeout and rescue boost */
-    if (self->state == GROUP_STATE_COOLING || self->state == GROUP_STATE_COOL_BOOST) {
-        if (self->cooling_timeout_s > 0U) {
-            self->cooling_timer_s++;
-            if (self->cooling_timer_s >= self->cooling_timeout_s) {
-                self->cooling_timeout_count++;
-                self->cooling_timer_s = 0U;
-
-                if (self->cooling_timeout_count == 1U) {
-                    /* First timeout:
-                     * Increment fault counter on currently active turn units
-                     */
-                    for (uint8_t k = 0U; (k < self->active_turn_count) && (k < self->unit_count); k++) {
-                        uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
-                        if (self->units[idx] != NULL) {
-                            hvac_unit_entity_increment_fault(self->units[idx]);
+                    if (self->cooling_timeout_count == 1U) {
+                        /* First timeout:
+                         * Increment fault counter on currently active turn units
+                         */
+                        for (uint8_t k = 0U; (k < self->active_turn_count) && (k < self->unit_count); k++) {
+                            uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
+                            if (self->units[idx] != NULL) {
+                                hvac_unit_entity_increment_fault(self->units[idx]);
+                            }
                         }
-                    }
 
-                    /* Rescue boost: force all N+M units ON with staggered delays */
-                    self->state = GROUP_STATE_COOL_BOOST;
-                    for (uint8_t k = 0U; k < self->unit_count; k++) {
-                        uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
-                        if (self->units[idx] != NULL) {
-                            hvac_unit_entity_request_start_staggered(self->units[idx], (uint16_t)(k * self->delay_on_s));
+                        /* Rescue boost: force all N+M units ON with staggered delays */
+                        self->state = GROUP_STATE_COOL_BOOST;
+                        for (uint8_t k = 0U; k < self->unit_count; k++) {
+                            uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
+                            if (self->units[idx] != NULL) {
+                                hvac_unit_entity_request_start_staggered(self->units[idx], (uint16_t)(k * self->delay_on_s));
+                            }
                         }
+                    } else if (self->cooling_timeout_count >= 2U) {
+                        /* Second timeout:
+                         * Two successive failed cooling attempts engage mechanical bypass
+                         */
+                        hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_COOLING_TIMEOUT, true);
                     }
-                } else if (self->cooling_timeout_count >= 2U) {
-                    /* Second timeout:
-                     * Two successive failed cooling attempts engage mechanical bypass
-                     */
-                    hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_COOLING_TIMEOUT, true);
                 }
             }
         }

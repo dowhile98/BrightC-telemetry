@@ -431,7 +431,7 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     size_t di_count = 0;
     const di_channel_config_t *di_prof = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
     zassert_not_null(di_prof, "Hybrid DI profile must not be NULL");
-    zassert_equal(di_count, HARDWARE_LOCAL_DI_COUNT, "Local DI profile must have 24 channels");
+    zassert_equal(di_count, HARDWARE_SYSTEM_DI_COUNT, "System DI profile must have 58 channels");
 
     /* Channels 0..11: on mcp23s17_0 (dev_id 0) */
     for (uint8_t i = 0; i < 12U; i++) {
@@ -779,6 +779,36 @@ ZTEST(ao_hvac_suite, test_ao_hvac_rotation_interval_and_stepping)
     zassert_equal(ao_hvac_set_group_rotation(NULL, 0, 7U), -EINVAL, "NULL ao should return -EINVAL");
     zassert_equal(ao_hvac_set_group_rotation(&s_ao, HVAC_MAX_GROUPS, 7U), -EINVAL, "Invalid group should return -EINVAL");
     zassert_equal(ao_hvac_set_group_rotation(&s_ao, 0, 0U), -EINVAL, "0 days should return -EINVAL");
+}
+
+ZTEST(ao_hvac_suite, test_ao_hvac_set_bypass_cause)
+{
+    const config_hvac_t *cfg = &k_default_hvac_config_hybrid_4units;
+    int ret = ao_hvac_init(&s_ao, cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* Initial state: no bypass */
+    zassert_equal(s_ao.groups[0].bypass_causes_mask, 0U, "Initial bypass causes must be 0");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Initial state IDLE");
+
+    /* Set physical bypass switch cause */
+    ret = ao_hvac_set_bypass_cause(&s_ao, 0U, BYPASS_CAUSE_PHYSICAL_SWITCH, true);
+    zassert_equal(ret, 0, "ao_hvac_set_bypass_cause must return 0");
+    zassert_equal(s_ao.groups[0].bypass_causes_mask, (uint32_t)BYPASS_CAUSE_PHYSICAL_SWITCH,
+                  "Bypass causes must include PHYSICAL_SWITCH");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_BYPASS, "Group must transition to GROUP_STATE_BYPASS");
+
+    /* Clear physical bypass switch cause */
+    ret = ao_hvac_set_bypass_cause(&s_ao, 0U, BYPASS_CAUSE_PHYSICAL_SWITCH, false);
+    zassert_equal(ret, 0, "ao_hvac_set_bypass_cause clear must return 0");
+    zassert_equal(s_ao.groups[0].bypass_causes_mask, 0U, "Bypass causes must be 0 after clear");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Group must return to GROUP_STATE_IDLE");
+
+    /* Error handling */
+    zassert_equal(ao_hvac_set_bypass_cause(NULL, 0U, BYPASS_CAUSE_PHYSICAL_SWITCH, true), -EINVAL,
+                  "NULL ao must return -EINVAL");
+    zassert_equal(ao_hvac_set_bypass_cause(&s_ao, HVAC_MAX_GROUPS, BYPASS_CAUSE_PHYSICAL_SWITCH, true), -EINVAL,
+                  "Invalid group_id must return -EINVAL");
 }
 
 

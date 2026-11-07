@@ -46,6 +46,11 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-07**: Implemented Phase 0 — Security (Fase 0 — Seguridad, R-13, R-08, R-02, R-14):
+  - **R-13 & R-08 (Manual FSM & Anti-Inrush)**: Added `GROUP_STATE_MANUAL` to `hvac_group_state_t` in `hvac_types.h`. In `hvac_group_entity_set_manual()`, transitioning to manual sets `state = GROUP_STATE_MANUAL`, arms `manual_timer_s = manual_timeout_s`, resets `cooling_timer_s = 0` and `cooling_timeout_count = 0`, and no longer starts any AC units (preventing simultaneous electrical inrush). Exiting manual releases all units via `hvac_unit_entity_set_manual(..., false)` and `hvac_unit_entity_request_stop()` and transitions state back to `GROUP_STATE_IDLE`. In `hvac_group_entity_tick_1s()`, manual mode countdown automatically calls `hvac_group_entity_set_manual(self, false)` on expiry, and cooling timeout evaluation is explicitly suppressed during manual mode. Entering bypass clears manual mode. In `app_facade.c`, `app_facade_hvac_set_mode()` with `HVAC_MODE_OFF` safely stops units under mutex before entering manual mode. Added convenience alias `app_facade_hvac_set_group_mode()`.
+  - **R-02 (Physical Bypass Switch Interlock)**: Implemented `ao_hvac_set_bypass_cause()` in `ao_hvac.h/.c`. Wired `lis_hvac_di_feed` in `composition_root.c` to detect `DI_ROLE_BYPASS_SWITCH` and assert/clear `BYPASS_CAUSE_PHYSICAL_SWITCH` on group 0.
+  - **R-14 (Units 4..7 Remote Digital Input Alarms)**: Handled consolidated 58-channel snapshot in `composition_root.c` feeding mechanical alarms (HP, LP, FLOW, VOLT) across all 8 units (units 0..7).
+  - **Unit Tests**: Added `test_manual_off_does_not_timeout_or_energize`, `test_manual_set_does_not_energize_all_units`, `test_manual_expiry_releases_units_and_returns_to_idle` in `test_hvac_group.c`, and `test_ao_hvac_set_bypass_cause` in `test_ao_hvac.c`. All 44 HVAC tests pass (100% PASS).
 - **2026-11-07**: Fixed HVAC Spurious Fire Shutdown & Storage Envelope Slot Sizing:
   - Corrected `DI_ROLE_SMOKE_FIRE` contact type in `hardware_pin_map.h` to `DI_CONTACT_NORMALLY_OPEN`, resolving spurious `FIRE_SHUTDOWN` lockouts when bench testing with disconnected fire interlock terminals.
   - Aligned HVAC storage slot layout to 576 bytes (9 EEPROM pages of 64 bytes) for 2x ping-pong slots (1152 bytes total) at offset `0x0400`.

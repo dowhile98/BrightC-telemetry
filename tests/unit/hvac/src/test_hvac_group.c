@@ -666,4 +666,82 @@ ZTEST(hvac_group_suite, test_duty_rotation_timer_and_automatic_shift)
                   "Offset must not rotate when interval is 0");
 }
 
+/*============================================================================*
+ * 7. Manual Override FSM and Safety Tests (R-13 & R-08)
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_manual_off_does_not_timeout_or_energize)
+{
+    /* 1. Put group in active cooling */
+    s_group.cooling_timeout_s = 50U;
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 26.0f, /* >= temp_max (24.0) */
+        .lowest_temp = 24.0f,
+        .average_temp = 25.0f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must be in COOLING");
+
+    /* 2. Switch to manual mode ("mode off") */
+    hvac_group_entity_set_manual(&s_group, true);
+    zassert_equal(s_group.state, GROUP_STATE_MANUAL, "Group state must transition to GROUP_STATE_MANUAL");
+    zassert_true(s_group.is_manual_active, "is_manual_active must be true");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be reset on entering manual");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Cooling timeout count must be reset");
+
+    /* 3. Advance tick past cooling_timeout_s (e.g. 60 seconds) */
+    for (int i = 0; i < 60; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+
+    /* Verify cooling timeout did NOT advance and rescue boost was NOT triggered */
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must remain 0 in manual mode");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must remain 0");
+    zassert_equal(s_group.state, GROUP_STATE_MANUAL, "Group must remain in GROUP_STATE_MANUAL");
+
+    /* Units must NOT have been energized by rescue boost */
+    for (uint8_t i = 1U; i < s_group.unit_count; i++) {
+        zassert_not_equal(s_units[i].state, UNIT_STATE_RUNNING, "Standby unit must not be RUNNING");
+    }
+}
+
+ZTEST(hvac_group_suite, test_manual_set_does_not_energize_all_units)
+{
+    /* Initial state: idle, all units off */
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Initial state IDLE");
+    for (uint8_t i = 0U; i < s_group.unit_count; i++) {
+        zassert_equal(s_units[i].state, UNIT_STATE_OFF, "Unit must be OFF initially");
+    }
+
+    /* Calling set_manual(true) must NOT turn on all units (preventing simultaneous inrush) */
+    hvac_group_entity_set_manual(&s_group, true);
+    zassert_equal(s_group.state, GROUP_STATE_MANUAL, "Group state must be GROUP_STATE_MANUAL");
+
+    for (uint8_t i = 0U; i < s_group.unit_count; i++) {
+        zassert_not_equal(s_units[i].state, UNIT_STATE_RUNNING,
+                          "Unit %u must NOT be forced to RUNNING by group set_manual", i);
+        zassert_not_equal(s_units[i].state, UNIT_STATE_STARTING,
+                          "Unit %u must NOT be STARTING", i);
+    }
+}
+
+ZTEST(hvac_group_suite, test_manual_expiry_releases_units_and_returns_to_idle)
+{
+    s_group.manual_timeout_s = 5U;
+    hvac_group_entity_set_manual(&s_group, true);
+    zassert_equal(s_group.state, GROUP_STATE_MANUAL, "Group state must be GROUP_STATE_MANUAL");
+    zassert_true(s_group.is_manual_active, "is_manual_active must be true");
+
+    /* Tick for 5 seconds to expire manual timer */
+    for (int i = 0; i < 5; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+
+    /* After expiry: is_manual_active is false and state transitions to IDLE */
+    zassert_false(s_group.is_manual_active, "Manual mode must expire");
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "State must revert to GROUP_STATE_IDLE");
+}
+
 

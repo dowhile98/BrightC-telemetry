@@ -91,6 +91,7 @@ typedef enum {
     GROUP_STATE_COOL_BOOST,  /**< Temperature >= temp_alarm; all N+M units energized */
     GROUP_STATE_BYPASS,      /**< Mechanical bypass active (relay_sm = 0) */
     GROUP_STATE_FIRE,        /**< Fire alarm active; all units and fans shut down */
+    GROUP_STATE_MANUAL,      /**< Manual override mode active */
 } hvac_group_state_t;
 
 /**
