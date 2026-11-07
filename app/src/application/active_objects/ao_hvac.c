@@ -92,6 +92,7 @@ int ao_hvac_init(ao_hvac_t *self,
     k_mutex_init(&self->lock);
 
     self->boot_stabilization_s = 5U;
+    self->sensor_snapshot_age_s = 0U;
     memset(&self->last_sensor_snapshot, 0, sizeof(self->last_sensor_snapshot));
 
     /* Initialize entities */
@@ -222,6 +223,19 @@ int ao_hvac_step(ao_hvac_t *self)
         } else {
             self->boot_stabilization_s--;
             in_grace_period = true;
+        }
+    }
+
+    /* Sensor data freshness watchdog (staleness check) */
+    self->sensor_snapshot_age_s++;
+    if (!in_grace_period && (self->boot_stabilization_s == 0U)) {
+        if (self->sensor_snapshot_age_s >= HVAC_SENSOR_STALENESS_TIMEOUT_S) {
+            self->last_sensor_snapshot.valid_mask = 0ULL;
+            for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+                self->group_metrics[g].valid_sensors = 0U;
+            }
+            LOG_WRN("Sensor snapshot stale (%u s >= %u s), invalidating readings",
+                    self->sensor_snapshot_age_s, HVAC_SENSOR_STALENESS_TIMEOUT_S);
         }
     }
 
@@ -416,6 +430,7 @@ int ao_hvac_set_group_metrics(ao_hvac_t *self,
     self->group_metrics[group_id] = *metrics;
     if (metrics->valid_sensors > 0U) {
         self->last_sensor_snapshot.valid_mask |= (1ULL << group_id);
+        self->sensor_snapshot_age_s = 0U;
     }
     k_mutex_unlock(&self->lock);
 
@@ -433,6 +448,9 @@ int ao_hvac_feed_sensor_snapshot(ao_hvac_t *self,
 
     k_mutex_lock(&self->lock, K_FOREVER);
     self->last_sensor_snapshot.valid_mask = valid_mask;
+    if (valid_mask != 0ULL) {
+        self->sensor_snapshot_age_s = 0U;
+    }
     if (count > 0U) {
         size_t to_copy = (count <= 64U) ? count : 64U;
         memcpy(self->last_sensor_snapshot.temperatures, temperatures, to_copy * sizeof(float));
@@ -523,6 +541,21 @@ int ao_hvac_set_manual(ao_hvac_t *self, uint8_t group_id, bool active)
 int ao_hvac_set_group_manual(ao_hvac_t *self, uint8_t group_id, bool active)
 {
     return ao_hvac_set_manual(self, group_id, active);
+}
+
+int ao_hvac_set_group_mode_off(ao_hvac_t *self, uint8_t group_id, bool off)
+{
+    if (self == NULL || !self->is_initialized || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    if (self->group_active[group_id]) {
+        hvac_group_entity_set_mode_off(&self->groups[group_id], off);
+    }
+    k_mutex_unlock(&self->lock);
+
+    return 0;
 }
 
 int ao_hvac_set_bypass_cause(ao_hvac_t *self, uint8_t group_id, hvac_bypass_cause_t cause, bool active)

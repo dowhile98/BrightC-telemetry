@@ -848,5 +848,121 @@ ZTEST(hvac_group_suite, test_cooling_timers_reset_on_manual_fire_and_bypass_tran
     zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be reset on IDLE transition");
 }
 
+/*============================================================================*
+ * Fault-Aware Standby Substitution in N+M Redundancy (Observation 1)
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_standby_substitution_on_active_unit_fault)
+{
+    /* Configure a 2+2 redundancy group (4 units total, 2 active turn, 2 standby) */
+    hvac_group_entity_clear_units(&s_group);
+    for (uint8_t i = 0U; i < 4U; i++) {
+        hvac_unit_entity_init(&s_units[i], i, 3U, 20U, 60U, 180U, true);
+        hvac_group_entity_add_unit(&s_group, &s_units[i]);
+    }
+    s_group.active_turn_count = 2U;
+    s_group.current_turn_offset = 0U;
+    s_group.delay_on_s = 20U;
+
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 25.0f, /* >= temp_max (24.0) -> GROUP_STATE_COOLING */
+        .lowest_temp = 23.0f,
+        .average_temp = 24.0f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+
+    /* 1. Normal cooling evaluation: Units 0 and 1 start; Units 2 and 3 remain standby (OFF) */
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must be in COOLING");
+    zassert_equal(s_units[0].state, UNIT_STATE_RUNNING, "Unit 0 (delay 0) must be RUNNING");
+    zassert_equal(s_units[1].state, UNIT_STATE_STARTING, "Unit 1 (delay 20) must be STARTING");
+    zassert_equal(s_units[2].state, UNIT_STATE_OFF, "Unit 2 must be standby (OFF)");
+    zassert_equal(s_units[3].state, UNIT_STATE_OFF, "Unit 3 must be standby (OFF)");
+
+    /* 2. Unit 0 trips on high-pressure alarm -> transitions to BLOCKED_ALARM */
+    hvac_unit_entity_update_alarms(&s_units[0], true, false, false, false);
+    zassert_equal(s_units[0].state, UNIT_STATE_BLOCKED_ALARM, "Unit 0 must be in BLOCKED_ALARM");
+
+    /* 3. Re-evaluate group: Unit 0 is unavailable, so Unit 1 and Unit 2 (standby) must be commanded */
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must remain in COOLING");
+    zassert_equal(s_units[0].state, UNIT_STATE_BLOCKED_ALARM, "Unit 0 stays in BLOCKED_ALARM");
+    zassert_true(s_units[1].state == UNIT_STATE_RUNNING || s_units[1].state == UNIT_STATE_STARTING,
+                 "Unit 1 must be active");
+    zassert_true(s_units[2].state == UNIT_STATE_RUNNING || s_units[2].state == UNIT_STATE_STARTING,
+                 "Unit 2 (standby substitute) must be commanded to START");
+    zassert_equal(s_units[3].state, UNIT_STATE_OFF, "Unit 3 must remain standby (OFF)");
+}
+
+/*============================================================================*
+ * Permanent Mode OFF Behavior (Observation 2)
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_permanent_mode_off_does_not_timeout_or_revert)
+{
+    hvac_group_entity_clear_units(&s_group);
+    for (uint8_t i = 0U; i < 4U; i++) {
+        hvac_unit_entity_init(&s_units[i], i, 3U, 20U, 60U, 180U, false);
+        hvac_group_entity_add_unit(&s_group, &s_units[i]);
+    }
+    s_group.active_turn_count = 2U;
+    s_group.cooling_timeout_s = 50U;
+    s_group.manual_timeout_s = 60U;
+
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 26.0f,
+        .lowest_temp = 24.0f,
+        .average_temp = 25.0f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+
+    /* 1. Enter active cooling */
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must be in COOLING");
+    zassert_true(s_units[0].state == UNIT_STATE_RUNNING || s_units[0].state == UNIT_STATE_STARTING, "Unit 0 active");
+    zassert_true(s_units[1].state == UNIT_STATE_RUNNING || s_units[1].state == UNIT_STATE_STARTING, "Unit 1 active");
+
+    /* 2. Set permanent Mode OFF */
+    hvac_group_entity_set_mode_off(&s_group, true);
+    zassert_equal(s_group.state, GROUP_STATE_OFF, "Group must be in GROUP_STATE_OFF");
+    zassert_true(s_group.is_mode_off, "is_mode_off must be true");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must be 0");
+    zassert_equal(s_group.cooling_timeout_count, 0U, "Timeout count must be 0");
+    zassert_equal(s_group.manual_timer_s, 0U, "Manual timer must be 0");
+
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_true(s_units[u].state == UNIT_STATE_OFF || s_units[u].state == UNIT_STATE_STOPPING,
+                     "Unit %u must be stopped", u);
+    }
+
+    /* 3. Advance tick by 5000 seconds (far beyond manual_timeout_s and cooling_timeout_s) */
+    for (int i = 0; i < 5000; i++) {
+        hvac_group_entity_tick_1s(&s_group);
+    }
+
+    /* Re-evaluate with hot metrics */
+    hvac_group_entity_evaluate(&s_group, &metrics);
+
+    /* 4. Verify group strictly remains in GROUP_STATE_OFF and does NOT turn on units */
+    zassert_equal(s_group.state, GROUP_STATE_OFF, "Group must strictly remain in GROUP_STATE_OFF after 5000s");
+    zassert_true(s_group.is_mode_off, "is_mode_off must remain true");
+    zassert_equal(s_group.cooling_timer_s, 0U, "Cooling timer must remain 0");
+    zassert_equal(s_group.manual_timer_s, 0U, "Manual timer must remain 0");
+
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_units[u].state, UNIT_STATE_OFF, "Unit %u must remain OFF", u);
+    }
+
+    /* 5. Clear mode OFF -> transitions to GROUP_STATE_IDLE and can resume cooling */
+    hvac_group_entity_set_mode_off(&s_group, false);
+    zassert_false(s_group.is_mode_off, "is_mode_off must be false");
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Group must transition to IDLE");
+
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must resume COOLING on hot metrics");
+}
+
 
 

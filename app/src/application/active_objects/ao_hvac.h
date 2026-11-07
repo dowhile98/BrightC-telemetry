@@ -86,6 +86,7 @@ typedef struct {
     bool                        is_fire_active;
     sensor_snapshot_msg_t       last_sensor_snapshot;
     uint8_t                     boot_stabilization_s;
+    uint32_t                    sensor_snapshot_age_s; /**< Elapsed seconds since last valid sensor snapshot */
 
     /* Synchronization and Thread Control */
     struct k_msgq    *queue;
@@ -281,6 +282,19 @@ int ao_hvac_set_manual(ao_hvac_t *self, uint8_t group_id, bool active);
  * @return 0 on success, negative errno on invalid arguments.
  */
 int ao_hvac_set_group_manual(ao_hvac_t *self, uint8_t group_id, bool active);
+
+/**
+ * @brief Set or clear permanent mode OFF on an HVAC group.
+ *
+ * When @p off is true, commands group into permanent GROUP_STATE_OFF, de-energizes
+ * all group units, and halts timers indefinitely until explicitly restored with off=false.
+ *
+ * @param[in,out] self     Active object instance.
+ * @param[in]     group_id Target group identifier (0 .. HVAC_MAX_GROUPS-1).
+ * @param[in]     off      true to force permanent OFF, false to restore normal operation.
+ * @return 0 on success, negative errno on invalid arguments.
+ */
+int ao_hvac_set_group_mode_off(ao_hvac_t *self, uint8_t group_id, bool off);
 
 /**
  * @brief Set or clear a bypass cause on an HVAC group.

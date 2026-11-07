@@ -25,11 +25,13 @@
 static const char *hvac_group_state_str(hvac_group_state_t state)
 {
     switch (state) {
+    case GROUP_STATE_OFF:        return "OFF";
     case GROUP_STATE_IDLE:       return "IDLE";
     case GROUP_STATE_COOLING:    return "COOLING";
     case GROUP_STATE_COOL_BOOST: return "COOL_BOOST";
     case GROUP_STATE_BYPASS:     return "BYPASS";
     case GROUP_STATE_FIRE:       return "FIRE_SHUTDOWN";
+    case GROUP_STATE_MANUAL:     return "MANUAL";
     default:                     return "UNKNOWN";
     }
 }

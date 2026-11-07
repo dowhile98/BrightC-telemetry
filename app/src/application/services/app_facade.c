@@ -190,23 +190,13 @@ int app_facade_hvac_set_mode(uint8_t group_id, hvac_mode_t mode)
 
     switch (mode) {
     case HVAC_MODE_OFF:
-        /* Force manual idle: stop units first, then engage manual mode */
-        k_mutex_lock(&ao->lock, K_FOREVER);
-        for (uint8_t u = 0U; u < ao->groups[group_id].unit_count; u++) {
-            if (ao->groups[group_id].units[u] != NULL) {
-                hvac_unit_entity_set_manual(ao->groups[group_id].units[u], false);
-                hvac_unit_entity_request_stop(ao->groups[group_id].units[u], ao->groups[group_id].enable_fan_delay);
-            }
-        }
-        if (ao->group_active[group_id]) {
-            hvac_group_entity_set_manual(&ao->groups[group_id], true);
-        }
-        k_mutex_unlock(&ao->lock);
+        (void)ao_hvac_set_group_mode_off(ao, group_id, true);
         break;
 
     case HVAC_MODE_COOL:
     case HVAC_MODE_AUTO:
         /* Restore normal automatic thermal evaluation */
+        (void)ao_hvac_set_group_mode_off(ao, group_id, false);
         (void)ao_hvac_set_manual(ao, group_id, false);
         (void)ao_hvac_set_fire(ao, false);
         break;

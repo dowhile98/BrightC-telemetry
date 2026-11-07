@@ -78,6 +78,7 @@ typedef struct {
     bool     enable_fan_delay;  /**< Fan purge sub-FSM enabled */
     bool     is_fire_active;    /**< Emergency fire interlock active */
     bool     is_manual_active;  /**< Manual override mode active */
+    bool     is_mode_off;       /**< Group commanded to permanent mode OFF */
     uint16_t manual_timer_s;    /**< Manual override remaining countdown (seconds) */
     uint16_t manual_timeout_s;  /**< Automatic reversion timeout for manual mode (seconds) */
 } hvac_group_entity_t;
@@ -138,6 +139,17 @@ void hvac_group_entity_set_fire(hvac_group_entity_t *self, bool active);
  * @param[in]     active true to force manual mode ON, false to cancel manual mode.
  */
 void hvac_group_entity_set_manual(hvac_group_entity_t *self, bool active);
+
+/**
+ * @brief Set or clear permanent group mode OFF.
+ *
+ * When @p off is true, forces group state to GROUP_STATE_OFF, de-energizes all units,
+ * and halts cooling/manual timers indefinitely until explicitly cleared with off=false.
+ *
+ * @param[in,out] self Group entity instance.
+ * @param[in]     off  true to force permanent OFF, false to restore normal operation.
+ */
+void hvac_group_entity_set_mode_off(hvac_group_entity_t *self, bool off);
 
 /**
  * @brief Evaluate thermal metrics and update group and unit state transitions.

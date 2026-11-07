@@ -1031,6 +1031,80 @@ ZTEST(ao_hvac_suite, test_ao_hvac_boot_stabilization_guard)
                   "SENSOR_FAULT must clear once valid sensor data arrives");
 }
 
+ZTEST(ao_hvac_suite, test_sensor_snapshot_staleness_watchdog)
+{
+    config_hvac_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.operation_mode = HVAC_MODE_HYBRID_FULL;
+    cfg.total_groups = 1U;
+    cfg.total_units = 2U;
+    cfg.groups[0].temp_min = 21.0f;
+    cfg.groups[0].temp_max = 24.0f;
+    cfg.groups[0].temp_alarm = 28.0f;
+    cfg.groups[0].temp_bypass = 32.0f;
+    cfg.groups[0].delay_on_s = 0U;
+    cfg.groups[0].sensor_mask = 0x0FU;
+    cfg.groups[0].unit_mask = 0x03U;
+    cfg.groups[0].active_turn_count = 1U;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "init failed");
+
+    /* 1. Feed valid sensor snapshot (25.0°C >= temp_max 24.0°C) */
+    float temps[4] = { 25.0f, 25.0f, 25.0f, 25.0f };
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, 0x0FULL, 4U);
+    zassert_equal(ret, 0, "feed snapshot failed");
+
+    /* Step 1: Group evaluates and cools normally */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "step 1 failed");
+
+    hvac_status_msg_t status;
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group must be in COOLING");
+    zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                  "No SENSOR_FAULT initially");
+
+    /* Step 2, 3, 4: No new snapshots fed; snapshot age increases (2, 3, 4s < 5s) */
+    for (uint8_t s = 2U; s <= 4U; s++) {
+        ret = ao_hvac_step(&s_ao);
+        zassert_equal(ret, 0, "step %u failed", s);
+
+        ret = ao_hvac_get_status(&s_ao, &status);
+        zassert_equal(ret, 0, "get_status failed");
+        zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group still in COOLING at step %u", s);
+        zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                      "No SENSOR_FAULT at step %u", s);
+    }
+
+    /* Step 5: 5th second without fresh snapshot -> staleness watchdog triggers */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "step 5 failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_BYPASS,
+                  "On 5th second without fresh data, group must enter BYPASS");
+    zassert_not_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                      "BYPASS_CAUSE_SENSOR_FAULT must be set on staleness timeout");
+
+    /* 2. Fresh sensor data resumes */
+    ret = ao_hvac_feed_sensor_snapshot(&s_ao, temps, 0x0FULL, 4U);
+    zassert_equal(ret, 0, "feed fresh snapshot failed");
+
+    /* Step ao_hvac again: clears SENSOR_FAULT and resumes normal cooling */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "step after fresh sensor data failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                  "SENSOR_FAULT must clear once fresh data arrives");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING,
+                  "Group must resume normal COOLING");
+}
+
 
 
 

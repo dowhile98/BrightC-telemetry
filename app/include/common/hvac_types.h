@@ -32,6 +32,9 @@ extern "C" {
 /** Maximum number of temperature sensor probes assignable per group. */
 #define HVAC_MAX_SENSORS_PER_GROUP  16U
 
+/** Staleness threshold for sensor snapshot ingestion in ao_hvac (seconds). */
+#define HVAC_SENSOR_STALENESS_TIMEOUT_S 5U
+
 /* ========================================================================= */
 /* Enumerations                                                              */
 /* ========================================================================= */
@@ -143,12 +146,44 @@ typedef enum {
  */
 typedef enum {
     GROUP_STATE_IDLE = 0,    /**< Room temperature at or below temp_min */
+    GROUP_STATE_OFF,         /**< Permanently shut down by operator command */
     GROUP_STATE_COOLING,     /**< Normal cooling with N active units */
     GROUP_STATE_COOL_BOOST,  /**< Temperature >= temp_alarm; all N+M units energized */
     GROUP_STATE_BYPASS,      /**< Mechanical bypass active (relay_sm = 0) */
     GROUP_STATE_FIRE,        /**< Fire alarm active; all units and fans shut down */
     GROUP_STATE_MANUAL,      /**< Manual override mode active */
 } hvac_group_state_t;
+
+/**
+ * @brief Convert group state enumerator to human-readable string.
+ *
+ * @param state Group state to convert.
+ * @return String representation ("IDLE", "OFF", "COOLING", "COOL_BOOST", "BYPASS", "FIRE", "MANUAL", or "UNKNOWN").
+ */
+static inline const char *hvac_group_state_to_str(hvac_group_state_t state)
+{
+    switch (state) {
+    case GROUP_STATE_IDLE:       return "IDLE";
+    case GROUP_STATE_OFF:        return "OFF";
+    case GROUP_STATE_COOLING:    return "COOLING";
+    case GROUP_STATE_COOL_BOOST: return "COOL_BOOST";
+    case GROUP_STATE_BYPASS:     return "BYPASS";
+    case GROUP_STATE_FIRE:       return "FIRE";
+    case GROUP_STATE_MANUAL:     return "MANUAL";
+    default:                     return "UNKNOWN";
+    }
+}
+
+/**
+ * @brief Validate group state enumerator.
+ *
+ * @param state Group state to validate.
+ * @return true if valid, false otherwise.
+ */
+static inline bool hvac_group_state_is_valid(hvac_group_state_t state)
+{
+    return (state <= GROUP_STATE_MANUAL);
+}
 
 /**
  * @brief Multi-cause bypass flags bitmask.
