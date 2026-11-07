@@ -75,12 +75,32 @@ static int fake_update(void *impl)
     return 0;
 }
 
+static int fake_submit_cwt_bank(void *impl, uint8_t concentrator,
+                                const temperature_bank_16ch_t *bank)
+{
+    fake_sensor_matrix_state_t *s = (fake_sensor_matrix_state_t *)impl;
+    s->submit_cwt_calls++;
+    if (s->submit_cwt_ret != 0) {
+        return s->submit_cwt_ret;
+    }
+    if (bank == NULL || concentrator >= SENSOR_MAX_CWT_CONCENTRATORS) {
+        return -EINVAL;
+    }
+    memcpy(s->raw.cwt_temperatures_c[concentrator], bank->temperatures_c,
+           sizeof(s->raw.cwt_temperatures_c[concentrator]));
+    s->raw.cwt_valid_mask[concentrator] = bank->valid_channels_mask;
+    s->raw.cwt_open_probe_mask[concentrator] = bank->open_probe_mask;
+    s->raw.cwt_comm_ok[concentrator] = bank->is_communication_valid;
+    return 0;
+}
+
 static const i_sensor_matrix_api_t s_fake_api = {
     .get_frame = fake_get_frame,
     .get_raw_readings = fake_get_raw_readings,
     .set_channel_config = fake_set_channel_config,
     .get_channel_config = fake_get_channel_config,
     .update = fake_update,
+    .submit_cwt_bank = fake_submit_cwt_bank,
 };
 
 void fake_sensor_matrix_reset(void)
@@ -118,6 +138,11 @@ void fake_sensor_matrix_set_raw_readings(const raw_sensor_readings_t *raw)
 void fake_sensor_matrix_set_auto_map(bool enable)
 {
     s_fake_state.auto_map_on_update = enable;
+}
+
+void fake_sensor_matrix_set_update_ret(int ret)
+{
+    s_fake_state.update_ret = ret;
 }
 
 const fake_sensor_matrix_state_t *fake_sensor_matrix_get_state(void)

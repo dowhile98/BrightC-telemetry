@@ -12,6 +12,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -289,7 +290,103 @@ static int cmd_sensor_status(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_sensor_matrix(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    thermal_matrix_frame_t frame;
+    int err = app_facade_sensor_get_matrix(&frame);
+    if (err != 0) {
+        shell_error(sh, "Failed to get sensor matrix frame (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Semantic Thermal Sensor Matrix ===");
+    shell_print(sh, "Configured Pairs: %u | Room Probes: %u | Outdoor Probes: %u",
+                frame.configured_pairs, frame.configured_room_probes, frame.configured_outdoor_probes);
+
+    shell_print(sh, "\n--- Evaporator Paired Channels (Injection / Return) ---");
+    shell_print(sh, "Pair | Unit | T_inj [C] | T_ret [C] | Delta T [C] | Status");
+    shell_print(sh, "-----+------+-----------+-----------+-------------+------------");
+    for (uint8_t k = 0U; k < frame.configured_pairs; k++) {
+        bool inj_valid = (frame.inj_valid_mask & (1U << k)) != 0U;
+        bool ret_valid = (frame.ret_valid_mask & (1U << k)) != 0U;
+
+        const char *status;
+        if (inj_valid && ret_valid) {
+            status = "HEALTHY";
+        } else if (!inj_valid && !ret_valid) {
+            status = "BOTH OPEN";
+        } else if (!inj_valid) {
+            status = "INJ OPEN";
+        } else {
+            status = "RET OPEN";
+        }
+
+        char inj_str[12];
+        char ret_str[12];
+        char dt_str[12];
+
+        if (inj_valid) {
+            snprintf(inj_str, sizeof(inj_str), "%6.1f", (double)frame.t_inj[k]);
+        } else {
+            snprintf(inj_str, sizeof(inj_str), "  --.-");
+        }
+
+        if (ret_valid) {
+            snprintf(ret_str, sizeof(ret_str), "%6.1f", (double)frame.t_ret[k]);
+        } else {
+            snprintf(ret_str, sizeof(ret_str), "  --.-");
+        }
+
+        if (inj_valid && ret_valid) {
+            float dt = frame.t_ret[k] - frame.t_inj[k];
+            snprintf(dt_str, sizeof(dt_str), "%6.1f", (double)dt);
+        } else {
+            snprintf(dt_str, sizeof(dt_str), "  --.-");
+        }
+
+        shell_print(sh, "  %2u |  %2u  |  %s   |  %s   |   %s    | %s",
+                    k, frame.pair_hvac_unit_map[k], inj_str, ret_str, dt_str, status);
+    }
+
+    shell_print(sh, "\n--- Room Ambient Probes ---");
+    shell_print(sh, "Probe | Temperature | Status");
+    shell_print(sh, "------+-------------+--------");
+    for (uint8_t m = 0U; m < frame.configured_room_probes; m++) {
+        bool valid = (frame.room_valid_mask & (1U << m)) != 0U;
+        if (valid) {
+            shell_print(sh, "  %2u  |   %6.1f C   | HEALTHY", m, (double)frame.t_room[m]);
+        } else {
+            shell_print(sh, "  %2u  |      --.- C | OPEN / INVALID", m);
+        }
+    }
+
+    shell_print(sh, "\n--- Outdoor Ambient Probes ---");
+    shell_print(sh, "Probe | Temperature | Status");
+    shell_print(sh, "------+-------------+--------");
+    for (uint8_t l = 0U; l < frame.configured_outdoor_probes; l++) {
+        bool valid = (frame.outdoor_valid_mask & (1U << l)) != 0U;
+        if (valid) {
+            shell_print(sh, "  %2u  |   %6.1f C   | HEALTHY", l, (double)frame.t_outdoor[l]);
+        } else {
+            shell_print(sh, "  %2u  |      --.- C | OPEN / INVALID", l);
+        }
+    }
+
+    shell_print(sh, "\n--- Psychrometric Channels ---");
+    if (frame.humidity_return_valid) {
+        shell_print(sh, "Return Relative Humidity: %6.1f %% (HEALTHY)", (double)frame.humidity_return_pct);
+    } else {
+        shell_print(sh, "Return Relative Humidity:   --.- %% (OPEN / INVALID)");
+    }
+
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor,
+    SHELL_CMD(matrix, NULL, "Display semantic sensor matrix (evaporator pairs, ambient, RH)", cmd_sensor_matrix),
     SHELL_CMD(status, NULL, "Display all RTD channels (internal 0..4, external Modbus)", cmd_sensor_status),
     SHELL_SUBCMD_SET_END
 );

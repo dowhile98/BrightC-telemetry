@@ -25,7 +25,13 @@
 
 ---
 
-## 3. Changelog & Refactoring History
+- **2026-11-06**: Integrated Sensor Matrix and Modbus Expander presentation & validity handling:
+  - Added independent `inj_valid_mask` and `ret_valid_mask` to `thermal_matrix_frame_t` in `sensor_types.h`.
+  - Updated `sensor_matrix_map()` to evaluate independent probe validity and `sensor_matrix_pack_hvac_bank()` to populate HVAC bank valid channels per-probe instead of requiring both paired probes to be healthy.
+  - Fixed `on_modbus_cwt_tm16pt_reading()` to always update the facade with physical Modbus CWT channels, and removed overwriting in `on_sensor_matrix_frame()`.
+  - Added `app_facade_sensor_get_matrix()` to `app_facade.h` / `app_facade.c`.
+  - Added `sensor matrix` CLI command (`cmd_sensor_matrix`) in `shell_brightc.c` displaying configured evaporator pairs with status (`HEALTHY`, `INJ OPEN`, `RET OPEN`, `BOTH OPEN`), room ambient probes, outdoor probes, and psychrometric RH.
+  - Verified 100% passing tests in `tests/unit/sensor`, `tests/unit/modbus`, and `tests/unit/hvac`, plus successful primary firmware build.
 - **2026-11-06**: Resolved audit findings P0-01 & P0-03 (Sensor Cache Thread Safety & Calibration Persistence):
   - Added thread-safe `app_facade_update_modbus_temperatures()` and `app_facade_update_internal_temperatures()` protected with `k_spinlock` for concurrent Modbus AO and local ADC sampling threads.
   - Linked calibration temperature offsets (`temp_offsets_x10[21]`) in `config_calibration_t` to `app_facade_sensor_get_readings()` and persisted changes through `app_facade_sensor_set_calibration()`.

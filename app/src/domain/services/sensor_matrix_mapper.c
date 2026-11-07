@@ -12,7 +12,6 @@
 
 #include <errno.h>
 #include <string.h>
-
 int sensor_matrix_init_default_pilot_config(sensor_channel_cfg_t *configs, size_t max_entries)
 {
     if (configs == NULL || max_entries < SENSOR_PHYS_CH_MAX) {
@@ -376,7 +375,16 @@ int sensor_matrix_map(const raw_sensor_readings_t *raw,
     }
 
     /* Compute atomic pair health and consensus masks (§6.2) */
+    out_frame->inj_valid_mask = 0U;
+    out_frame->ret_valid_mask = 0U;
     for (uint8_t k = 0; k < out_frame->configured_pairs; k++) {
+        if (pair_inj_configured[k] && pair_inj_valid[k] && !pair_inj_open[k]) {
+            out_frame->inj_valid_mask |= (uint16_t)(1U << k);
+        }
+        if (pair_ret_configured[k] && pair_ret_valid[k] && !pair_ret_open[k]) {
+            out_frame->ret_valid_mask |= (uint16_t)(1U << k);
+        }
+
         bool configured = pair_inj_configured[k] || pair_ret_configured[k];
         if (!configured) {
             continue;
@@ -393,6 +401,52 @@ int sensor_matrix_map(const raw_sensor_readings_t *raw,
             pair_inj_valid[k] && pair_ret_valid[k] &&
             !pair_inj_open[k] && !pair_ret_open[k]) {
             out_frame->pair_valid_mask |= (uint16_t)(1U << k);
+        }
+    }
+
+    return 0;
+}
+
+int sensor_matrix_pack_hvac_bank(const thermal_matrix_frame_t *frame,
+                                 float out_temps[TEMPERATURE_BANK_MAX_CHANNELS],
+                                 uint16_t *out_valid_mask)
+{
+    if (frame == NULL || out_temps == NULL || out_valid_mask == NULL) {
+        return -EINVAL;
+    }
+
+    memset(out_temps, 0, sizeof(float) * TEMPERATURE_BANK_MAX_CHANNELS);
+    *out_valid_mask = 0U;
+
+    const uint8_t pairs = frame->configured_pairs < 6U ? frame->configured_pairs : 6U;
+
+    for (uint8_t k = 0U; k < pairs; k++) {
+        out_temps[k] = frame->t_inj[k];
+        out_temps[6U + k] = frame->t_ret[k];
+
+        if ((frame->inj_valid_mask & (1U << k)) != 0U) {
+            *out_valid_mask |= (uint16_t)(1U << k);
+        }
+        if ((frame->ret_valid_mask & (1U << k)) != 0U) {
+            *out_valid_mask |= (uint16_t)(1U << (6U + k));
+        }
+    }
+
+    /* Room ambient probes 5 and 6 occupy slots 12 and 13 (pilot layout). */
+    for (uint8_t m = 5U; m <= 6U; m++) {
+        const uint8_t slot = (uint8_t)(7U + m); /* 5 -> 12, 6 -> 13 */
+        out_temps[slot] = frame->t_room[m];
+        if ((frame->room_valid_mask & (uint16_t)(1U << m)) != 0U) {
+            *out_valid_mask |= (uint16_t)(1U << slot);
+        }
+    }
+
+    /* Outdoor ambient probes 0 and 1 occupy slots 14 and 15. */
+    for (uint8_t l = 0U; l < 2U; l++) {
+        const uint8_t slot = (uint8_t)(14U + l);
+        out_temps[slot] = frame->t_outdoor[l];
+        if ((frame->outdoor_valid_mask & (uint8_t)(1U << l)) != 0U) {
+            *out_valid_mask |= (uint16_t)(1U << slot);
         }
     }
 

@@ -379,6 +379,37 @@
 			block-cycles = <512>;
 		};
 	};
+
+	/*
+	 * Multi-ADC DMA parallel acquisition engine.
+	 *
+	 * Logical index order (dense; mirrors adc_idx_to_phys_ch() in
+	 * app/src/infrastructure/adapters/adapter_sensor_zephyr.c):
+	 *   0..4   RTD probes 1..5    (PC0, PF9, PF7, PF5, PF3)
+	 *   5..14  J9 4-20 mA CH1..10 (PF14, PF12, PB1, PA6, PA4,
+	 *                              PA3, PA0, PB0, PF11, PF13)
+	 */
+	adc_dma_engine: adc-dma-engine {
+		compatible = "daecge,adc-dma-engine";
+		status = "okay";
+		resolution = <16>;
+
+		io-channels = <&adc1 10>,	/* RTD1   PC0  */
+			      <&adc3 2>,	/* RTD2   PF9  */
+			      <&adc3 3>,	/* RTD3   PF7  */
+			      <&adc3 4>,	/* RTD4   PF5  */
+			      <&adc3 5>,	/* RTD5   PF3  */
+			      <&adc2 6>,	/* J9 1   PF14 */
+			      <&adc1 6>,	/* J9 2   PF12 */
+			      <&adc1 5>,	/* J9 3   PB1  */
+			      <&adc1 3>,	/* J9 4   PA6  */
+			      <&adc1 18>,	/* J9 5   PA4  */
+			      <&adc1 15>,	/* J9 6   PA3  */
+			      <&adc1 16>,	/* J9 7   PA0  */
+			      <&adc1 9>,	/* J9 8   PB0  */
+			      <&adc1 2>,	/* J9 9   PF11 */
+			      <&adc2 2>;	/* J9 10  PF13 */
+	};
 };
 
 /* ---- Clocks ---- */

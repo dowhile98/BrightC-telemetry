@@ -19,6 +19,7 @@
 #include <stddef.h>
 
 #include "common/sensor_types.h"
+#include "interfaces/i_temperature_bank.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +32,7 @@ typedef struct {
     int (*set_channel_config)(void *impl, physical_channel_id_t ch, const sensor_channel_cfg_t *cfg);
     int (*get_channel_config)(void *impl, physical_channel_id_t ch, sensor_channel_cfg_t *out_cfg);
     int (*update)(void *impl);
+    int (*submit_cwt_bank)(void *impl, uint8_t concentrator, const temperature_bank_16ch_t *bank);
 } i_sensor_matrix_api_t;
 
 /* 2. Handle injected into the port consumer */
@@ -144,6 +146,34 @@ static inline int i_sensor_matrix_update(const i_sensor_matrix_t *matrix)
         return -ENOSYS;
     }
     return matrix->api->update(matrix->impl);
+}
+
+/**
+ * @brief Ingest a 16-channel temperature bank from an external Modbus concentrator.
+ *
+ * The bank is stored in the raw readings bank; the next mapping cycle routes it
+ * through the configured semantic channel table. Keeping external readings in
+ * the same bank as the on-board ADC samples guarantees that calibration, open
+ * probe detection and validity bounds are applied identically to every source.
+ *
+ * @param[in] matrix       Bound port handle.
+ * @param[in] concentrator Concentrator index (0 .. SENSOR_MAX_CWT_CONCENTRATORS - 1).
+ * @param[in] bank         Decoded 16-channel bank.
+ * @return 0 on success, -EINVAL if unbound, out of range or null pointers,
+ *         -ENOSYS if the adapter does not accept external banks.
+ */
+static inline int i_sensor_matrix_submit_cwt_bank(const i_sensor_matrix_t *matrix,
+                                                  uint8_t concentrator,
+                                                  const temperature_bank_16ch_t *bank)
+{
+    if (!i_sensor_matrix_is_bound(matrix) ||
+        concentrator >= SENSOR_MAX_CWT_CONCENTRATORS || bank == NULL) {
+        return -EINVAL;
+    }
+    if (matrix->api->submit_cwt_bank == NULL) {
+        return -ENOSYS;
+    }
+    return matrix->api->submit_cwt_bank(matrix->impl, concentrator, bank);
 }
 
 #ifdef __cplusplus

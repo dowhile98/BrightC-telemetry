@@ -27,6 +27,7 @@ typedef struct {
     uint32_t set_cfg_calls;
     uint32_t get_cfg_calls;
     uint32_t update_calls;
+    uint32_t submit_cwt_calls;
 
     /* Override return codes */
     int get_frame_ret;
@@ -34,6 +35,7 @@ typedef struct {
     int set_cfg_ret;
     int get_cfg_ret;
     int update_ret;
+    int submit_cwt_ret;
 
     /* Options */
     bool auto_map_on_update;
@@ -63,6 +65,11 @@ void fake_sensor_matrix_set_raw_readings(const raw_sensor_readings_t *raw);
  * @brief Configure whether update() automatically executes domain sensor_matrix_map.
  */
 void fake_sensor_matrix_set_auto_map(bool enable);
+
+/**
+ * @brief Force the return code of update() (-EIO, 0, ...).
+ */
+void fake_sensor_matrix_set_update_ret(int ret);
 
 /**
  * @brief Inspect the internal state of the fake.

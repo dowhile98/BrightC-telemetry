@@ -14,6 +14,7 @@
 #include <stdbool.h>
 
 #include "common/sensor_types.h"
+#include "interfaces/i_temperature_bank.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +52,33 @@ int sensor_matrix_map(const raw_sensor_readings_t *raw,
                       const sensor_channel_cfg_t *configs,
                       size_t cfg_count,
                       thermal_matrix_frame_t *out_frame);
+
+/**
+ * @brief Pack a semantic frame into the flat 16-slot HVAC temperature bank.
+ *
+ * HVAC group entities consume temperatures through a flat 16-entry array
+ * addressed by `config_hvac_group_t::sensor_mask`. This helper preserves the
+ * pilot CWT wiring layout (the same layout produced by
+ * sensor_matrix_init_default_pilot_config()) so the semantic layer can feed
+ * HVAC without changing the group configuration semantics:
+ *
+ *   slot 0..5   supply air of pairs 0..5
+ *   slot 6..11  return air of pairs 0..5
+ *   slot 12     room ambient probe 5
+ *   slot 13     room ambient probe 6
+ *   slot 14     outdoor ambient probe 0
+ *   slot 15     outdoor ambient probe 1
+ *
+ * Disabled or out-of-range slots are reported as invalid.
+ *
+ * @param[in]  frame          Semantic frame to flatten.
+ * @param[out] out_temps      Destination 16-entry temperature array in degC.
+ * @param[out] out_valid_mask Destination validity bitmask (bit s = slot s valid).
+ * @return 0 on success, -EINVAL on null pointers.
+ */
+int sensor_matrix_pack_hvac_bank(const thermal_matrix_frame_t *frame,
+                                 float out_temps[TEMPERATURE_BANK_MAX_CHANNELS],
+                                 uint16_t *out_valid_mask);
 
 #ifdef __cplusplus
 }

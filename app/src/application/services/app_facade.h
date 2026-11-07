@@ -22,6 +22,7 @@
 #include "common/digital_input_types.h"
 #include "common/hvac_types.h"
 #include "common/modbus_types.h"
+#include "common/sensor_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -265,6 +266,14 @@ int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compr
  * @return 0 on success, negative errno on error.
  */
 int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view);
+
+/**
+ * @brief Query current semantic thermal matrix frame from the sensor subsystem.
+ *
+ * @param[out] out_frame Destination thermal matrix frame structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_sensor_get_matrix(thermal_matrix_frame_t *out_frame);
 
 /**
  * @brief Update cached Modbus RTD temperature sensor readings.

@@ -16,3 +16,9 @@ CONFIG_UART_CONSOLE=y
 # STM32H7 Ethernet DMA uses non-cacheable buffers.
 # NOCACHE_MEMORY is auto-selected by ETH_STM32_HAL when
 # ARCH_HAS_NOCACHE_MEMORY_SUPPORT is available (Cortex-M7).
+
+# Multi-ADC DMA parallel acquisition engine (sensor matrix ingestion).
+# CONFIG_ADC_ASYNC is required by adc_read_async().
+CONFIG_ADC=y
+CONFIG_ADC_ASYNC=y
+CONFIG_ADC_DMA_ENGINE=y

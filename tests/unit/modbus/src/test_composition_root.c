@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "infrastructure/di/composition_root.h"
+#include "application/services/app_facade.h"
 #include "fake_config_storage.h"
 
 #define FAKE_BUS 0U
@@ -539,6 +540,37 @@ ZTEST(composition_root_suite, test_all_config_domains_registered_and_persistable
     {
         zassert_true(st->slots[d].has_data, "Domain %d must be persisted", d);
     }
+
+    (void)composition_root_deinit(&s_app);
+}
+
+ZTEST(composition_root_suite, test_app_facade_sensor_get_matrix_and_modbus_facade_update)
+{
+    (void)composition_root_deinit(&s_app);
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    /* Before facade init or when uninitialized, app_facade_sensor_get_matrix returns -ENODEV */
+    thermal_matrix_frame_t frame;
+    zassert_equal(app_facade_sensor_get_matrix(&frame), -ENODEV, "Uninitialized facade returns -ENODEV");
+    zassert_equal(app_facade_sensor_get_matrix(NULL), -EINVAL, "NULL frame returns -EINVAL");
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init failed");
+    zassert_equal(app_facade_init(&s_app), 0, "Facade init failed");
+
+    /* When sensor matrix is initialized, app_facade_sensor_get_matrix retrieves latest frame */
+    zassert_equal(app_facade_sensor_get_matrix(&frame), 0, "Get matrix succeeded");
+
+    /* Test physical Modbus CWT temperature update directly into facade */
+    float test_temps[16] = {25.5f, 26.0f, 24.8f};
+    uint16_t test_mask = 0x0007U;
+    zassert_equal(app_facade_update_modbus_temperatures(test_temps, test_mask, 16), 0);
+
+    app_facade_sensor_view_t view;
+    zassert_equal(app_facade_sensor_get_readings(&view), 0);
+    zassert_within(view.modbus_rtd_temps[0], 25.5f, 0.01f);
+    zassert_true(view.modbus_rtd_valid[0]);
+    zassert_false(view.modbus_rtd_valid[3]);
 
     (void)composition_root_deinit(&s_app);
 }

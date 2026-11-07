@@ -19,6 +19,7 @@
 #include "application/active_objects/ao_hvac.h"
 #include "application/active_objects/ao_modbus.h"
 #include "application/active_objects/ao_network.h"
+#include "application/active_objects/ao_sensor_matrix.h"
 #include "application/active_objects/ao_storage.h"
 #include "application/active_objects/ao_system_indicator.h"
 #include "application/modbus/modbus_registry.h"
@@ -37,14 +38,16 @@
 #include "interfaces/i_led.h"
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_network.h"
-#include "interfaces/i_wifi_control.h"
 #include "interfaces/i_relay.h"
+#include "interfaces/i_sensor_matrix.h"
 #include "interfaces/i_slave_registry.h"
+#include "interfaces/i_wifi_control.h"
 
 #ifdef CONFIG_NANOMODBUS
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
 #endif
 #include "infrastructure/adapters/adapter_relay_modbus.h"
+#include "infrastructure/adapters/adapter_sensor_zephyr.h"
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
 #include "infrastructure/adapters/adapter_relay_gpio.h"
 #ifndef CONFIG_ZTEST
@@ -169,6 +172,16 @@ struct app_container {
         bool initialized;                              /**< Subsystem initialization status */
     } hvac;
 
+    /* Subsystem 8: Sensor Matrix Ingestion (ADC DMA -> transducers -> domain map) */
+    struct {
+        i_sensor_matrix_t port;                        /**< Sensor matrix port */
+        adapter_sensor_zephyr_t adapter;               /**< Zephyr ADC DMA adapter */
+        ao_sensor_matrix_t ao;                         /**< Sensor matrix acquisition thread */
+        struct k_msgq queue;                           /**< Sensor matrix AO command queue */
+        uint8_t queue_buf[AO_SENSOR_MATRIX_QUEUE_DEPTH * sizeof(ao_sensor_matrix_event_t)];
+        bool initialized;                              /**< Subsystem initialization status */
+    } sensor;
+
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
     config_calibration_t calibration_cfg;
@@ -244,6 +257,17 @@ int composition_root_init_indicators(app_container_t *self);
  * @return 0 on success, negative errno on failure.
  */
 int composition_root_init_hvac(app_container_t *self);
+
+/**
+ * @brief Initialize the Sensor Matrix Ingestion subsystem.
+ *
+ * Configures the ADC DMA adapter, binds the sensor matrix port, applies the
+ * default pilot channel configuration table, and creates the acquisition AO.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_sensor_matrix(app_container_t *self);
 
 /**
  * @brief Establish cross-subsystem wiring and provider registrations.
@@ -324,6 +348,14 @@ const i_config_storage_t *app_container_get_storage(const app_container_t *self)
  * @return Pointer to digital input port, or NULL if uninitialized / invalid.
  */
 const i_digital_input_t *app_container_get_digital_inputs(const app_container_t *self);
+
+/**
+ * @brief Get the abstract sensor matrix port.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to sensor matrix port, or NULL if uninitialized / invalid.
+ */
+const i_sensor_matrix_t *app_container_get_sensor_matrix(const app_container_t *self);
 
 /**
  * @brief Get the abstract status LED port.

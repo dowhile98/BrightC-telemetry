@@ -5,9 +5,11 @@
 
 #include "composition_root.h"
 #include "application/services/app_facade.h"
+#include "application/active_objects/ao_sensor_matrix.h"
 #include "common/config_envelope.h"
 #include "common/default_config_profiles.h"
 #include "domain/services/cwt_tm16pt_codec.h"
+#include "domain/services/sensor_matrix_mapper.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
 
 #include <errno.h>
@@ -70,6 +72,7 @@ static K_THREAD_STACK_DEFINE(s_ao_store_stack, AO_STORAGE_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_indicator_stack, AO_INDICATOR_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_hvac_stack, AO_HVAC_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_sensor_stack, AO_SENSOR_MATRIX_STACK_SIZE);
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
@@ -182,6 +185,7 @@ static int storage_provider_baseline(void *ctx, config_domain_t domain,
 #include "fake_config_storage.h"
 #include "fake_led.h"
 #include "fake_buzzer.h"
+#include "fake_sensor_matrix.h"
 #endif
 
 /* =========================================================================
@@ -968,13 +972,29 @@ static void on_modbus_cwt_tm16pt_reading(void *ctx, uint8_t device_id, const tem
     {
         return;
     }
+
+    /* 1. Always update presentation cache with the physical Modbus CWT channels */
+    (void)app_facade_update_modbus_temperatures(bank->temperatures_c,
+                                                bank->valid_channels_mask,
+                                                CWT_TM16PT_CHANNEL_COUNT);
+
+    /* 2. Ingest into the sensor matrix raw bank so the domain
+     * applies calibration, open-probe detection and semantic routing. */
+    if (self->sensor.initialized && i_sensor_matrix_is_bound(&self->sensor.port))
+    {
+        if (i_sensor_matrix_submit_cwt_bank(&self->sensor.port, 0U, bank) == 0)
+        {
+            (void)ao_sensor_matrix_trigger(&self->sensor.ao);
+            return;
+        }
+    }
+
+    /* 3. Fallback when the sensor matrix subsystem is unavailable */
     if (self->hvac.initialized)
     {
         (void)ao_hvac_feed_temperatures(&self->hvac.ao, bank->temperatures_c,
                                         bank->valid_channels_mask, CWT_TM16PT_CHANNEL_COUNT);
     }
-    (void)app_facade_update_modbus_temperatures(bank->temperatures_c,
-                                                bank->valid_channels_mask, CWT_TM16PT_CHANNEL_COUNT);
 }
 
 int composition_root_wire(app_container_t *self)
@@ -1074,6 +1094,166 @@ int composition_root_wire(app_container_t *self)
  * Full Lifecycle Management
  * ========================================================================= */
 
+/* Forward declaration: the frame sink is emitted from the acquisition AO thread. */
+static void on_sensor_matrix_frame(void *ctx, const thermal_matrix_frame_t *frame);
+
+/**
+ * @brief Initialize the Sensor Matrix Ingestion subsystem.
+ *
+ * Binds the ADC DMA adapter to the sensor matrix port, applies the default
+ * pilot channel configuration table, and creates the acquisition Active Object.
+ */
+int composition_root_init_sensor_matrix(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->sensor.initialized)
+    {
+        return 0;
+    }
+
+    /* Obtain the ADC DMA engine device from devicetree when the board provides it. */
+    int err;
+
+#if defined(CONFIG_ZTEST)
+    /*
+     * Host test builds carry no ADC DMA engine node, so bind the in-memory fake.
+     * The Active Object and the Modbus CWT ingestion path stay exercisable.
+     */
+    self->sensor.port = fake_sensor_matrix_get_port();
+#else
+#if DT_NODE_EXISTS(DT_NODELABEL(adc_dma_engine))
+    const struct device *adc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(adc_dma_engine));
+#else
+    const struct device *adc_dma_dev = NULL;
+#endif
+
+    if (adc_dma_dev == NULL || !device_is_ready(adc_dma_dev))
+    {
+        LOG_WRN("ADC DMA engine unavailable; sensor matrix runs on external banks only");
+        self->sensor.port.api = NULL;
+        self->sensor.port.impl = NULL;
+        self->sensor.initialized = true;
+        return 0;
+    }
+
+    /* Initialise the Zephyr ADC DMA adapter. */
+    err = adapter_sensor_zephyr_init(&self->sensor.adapter,
+                                     adc_dma_dev,
+                                     AO_SENSOR_MATRIX_PERIOD_MS);
+    if (err != 0)
+    {
+        LOG_ERR("sensor adapter init failed (%d)", err);
+        return err;
+    }
+
+    /* Bind the port handle. */
+    err = adapter_sensor_zephyr_port(&self->sensor.adapter, &self->sensor.port);
+    if (err != 0)
+    {
+        LOG_ERR("sensor matrix port binding failed (%d)", err);
+        return err;
+    }
+#endif /* CONFIG_ZTEST */
+
+    /* Apply the default pilot channel configuration table. */
+    sensor_channel_cfg_t configs[SENSOR_PHYS_CH_MAX];
+    err = sensor_matrix_init_default_pilot_config(configs, SENSOR_PHYS_CH_MAX);
+    if (err != 0)
+    {
+        LOG_ERR("default pilot config failed (%d)", err);
+        return err;
+    }
+
+    for (size_t i = 0U; i < SENSOR_PHYS_CH_MAX; i++)
+    {
+        if (configs[i].role == (uint8_t)SENSOR_ROLE_DISABLED)
+        {
+            continue;
+        }
+        err = i_sensor_matrix_set_channel_config(&self->sensor.port,
+                                                 (physical_channel_id_t)i,
+                                                 &configs[i]);
+        if (err != 0)
+        {
+            LOG_WRN("channel %u config failed (%d)", (unsigned int)i, err);
+        }
+    }
+
+    /* Initialise the command queue. */
+    k_msgq_init(&self->sensor.queue,
+                self->sensor.queue_buf,
+                sizeof(ao_sensor_matrix_event_t),
+                AO_SENSOR_MATRIX_QUEUE_DEPTH);
+
+    /* Initialise the acquisition Active Object (thread spawned once, gated). */
+    const ao_sensor_matrix_config_t ao_cfg = {
+        .matrix = &self->sensor.port,
+        .frame_sink = on_sensor_matrix_frame,
+        .frame_sink_ctx = self,
+        .poll_period_ms = AO_SENSOR_MATRIX_PERIOD_MS,
+        .stack = s_ao_sensor_stack,
+        .stack_size = K_THREAD_STACK_SIZEOF(s_ao_sensor_stack),
+    };
+
+    err = ao_sensor_matrix_init(&self->sensor.ao, &ao_cfg, &self->sensor.queue);
+    if (err != 0)
+    {
+        LOG_ERR("sensor matrix AO init failed (%d)", err);
+        return err;
+    }
+
+    self->sensor.initialized = true;
+    LOG_INF("sensor matrix subsystem initialised");
+
+    return 0;
+}
+
+/**
+ * @brief Route a freshly mapped semantic frame to its consumers.
+ *
+ * The frame is packed into the flat 16-slot bank addressed by the HVAC group
+ * sensor masks (pilot layout) and published to the presentation cache.
+ */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
+static void on_sensor_matrix_frame(void *ctx, const thermal_matrix_frame_t *frame)
+{
+    app_container_t *self = (app_container_t *)ctx;
+
+    if (self == NULL || frame == NULL)
+    {
+        return;
+    }
+
+    uint16_t hvac_valid = 0U;
+    float hvac_bank[TEMPERATURE_BANK_MAX_CHANNELS];
+
+    if (sensor_matrix_pack_hvac_bank(frame, hvac_bank, &hvac_valid) != 0)
+    {
+        return;
+    }
+
+    if (self->hvac.initialized)
+    {
+        (void)ao_hvac_feed_temperatures(&self->hvac.ao, hvac_bank, hvac_valid,
+                                        TEMPERATURE_BANK_MAX_CHANNELS);
+    }
+
+    /* The pilot profile routes on-board RTD 1..5 to room ambient probes 0..4. */
+    (void)app_facade_update_internal_temperatures(frame->t_room,
+                                                  (uint16_t)(frame->room_valid_mask & 0x1FU),
+                                                  5U);
+}
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)
@@ -1113,6 +1293,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_hvac(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_sensor_matrix(self);
     if (err != 0)
     {
         return err;
@@ -1213,6 +1399,16 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+    if (self->sensor.initialized)
+    {
+        int err = ao_sensor_matrix_start(&self->sensor.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("sensor matrix active object start failed (%d)", err);
+            return err;
+        }
+    }
+
     self->is_running = true;
     return 0;
 }
@@ -1241,7 +1437,22 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
-    /* 2. Stop HVAC coordinator (wait up to 1000 ms) */
+    /* 2. Stop sensor matrix acquisition (wait up to 1000 ms) */
+    if (self->sensor.initialized)
+    {
+        rc = ao_sensor_matrix_stop(&self->sensor.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_sensor_matrix_stop returned %d", rc);
+        }
+        rc = ao_sensor_matrix_wait_stopped(&self->sensor.ao, K_MSEC(1000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_sensor_matrix_wait_stopped returned %d", rc);
+        }
+    }
+
+    /* 3. Stop HVAC coordinator (wait up to 1000 ms) */
     if (self->hvac.initialized)
     {
         rc = ao_hvac_stop(&self->hvac.ao);
@@ -1256,7 +1467,7 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
-    /* 3. Stop digital inputs (wait up to 200 ms) */
+    /* 4. Stop digital inputs (wait up to 200 ms) */
     if (self->di.initialized)
     {
         rc = ao_digital_input_stop(&self->di.ao);
@@ -1271,7 +1482,7 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
-    /* 4. Stop Modbus polling threads (wait up to 1000 ms) */
+    /* 5. Stop Modbus polling threads (wait up to 1000 ms) */
     if (self->modbus.initialized)
     {
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
@@ -1289,7 +1500,7 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
-    /* 5. Stop system indicators (wait up to 200 ms) */
+    /* 6. Stop system indicators (wait up to 200 ms) */
     if (self->indicators.initialized)
     {
         rc = ao_system_indicator_stop(&self->indicators.ao);
@@ -1304,7 +1515,7 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
-    /* 6. Stop storage coordinator (wait up to 2000 ms - flushes pending changes) */
+    /* 7. Stop storage coordinator (wait up to 2000 ms - flushes pending changes) */
     if (self->storage.initialized)
     {
         rc = ao_storage_stop(&self->storage.ao);
@@ -1361,6 +1572,19 @@ int composition_root_deinit(app_container_t *self)
             LOG_WRN("ao_hvac_deinit returned %d", rc);
         }
         self->hvac.initialized = false;
+    }
+
+    if (self->sensor.initialized)
+    {
+        if (self->sensor.ao.is_initialized)
+        {
+            rc = ao_sensor_matrix_deinit(&self->sensor.ao);
+            if (rc != 0)
+            {
+                LOG_WRN("ao_sensor_matrix_deinit returned %d", rc);
+            }
+        }
+        self->sensor.initialized = false;
     }
 
     if (self->di.initialized)
@@ -1485,6 +1709,15 @@ const i_digital_input_t *app_container_get_digital_inputs(const app_container_t 
         return NULL;
     }
     return &self->di.port;
+}
+
+const i_sensor_matrix_t *app_container_get_sensor_matrix(const app_container_t *self)
+{
+    if (self == NULL || !self->sensor.initialized)
+    {
+        return NULL;
+    }
+    return &self->sensor.port;
 }
 
 const i_led_t *app_container_get_led(const app_container_t *self)

@@ -3,27 +3,44 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Multi-ADC DMA Parallel Engine Driver for STM32H7.
+ *
+ * One driver instance owns up to three ADC controllers. The channels listed in
+ * the `io-channels` devicetree property define a dense logical index space:
+ * logical index i is the i-th entry of that property. Logical indices are
+ * grouped per controller and each group is started with a single
+ * adc_read_async() call, so every controller samples its channels in parallel.
  */
 
 #define DT_DRV_COMPAT daecge_adc_dma_engine
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/logging/log.h>
-#include <app/drivers/adc_dma_engine.h>
+#include <drivers/adc_dma_engine.h>
+
+#include <string.h>
 
 LOG_MODULE_REGISTER(adc_dma_engine, CONFIG_ADC_LOG_LEVEL);
 
-#define MAX_ADC_CONTROLLERS 3
-#define MAX_CHANNELS_PER_ADC 16
-#define MAX_TOTAL_CHANNELS (MAX_ADC_CONTROLLERS * MAX_CHANNELS_PER_ADC)
+BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) <= 1,
+             "Only one adc-dma-engine instance is supported");
 
+#define MAX_ADC_CONTROLLERS   3
+#define MAX_CHANNELS_PER_ADC  16
+#define MAX_TOTAL_CHANNELS    (MAX_ADC_CONTROLLERS * MAX_CHANNELS_PER_ADC)
+
+/** Channels physically supported by an STM32H7 ADC sequence mask. */
+#define MAX_ADC_HW_CHANNEL_ID 31U
+
+/** State of one ADC controller participating in the parallel scan. */
 struct adc_ctrl_group {
     const struct device *adc_dev;
     uint32_t channel_mask;
-    uint8_t channel_ids[MAX_CHANNELS_PER_ADC];
+    uint8_t channel_ids[MAX_CHANNELS_PER_ADC]; /**< Ascending: equals DMA buffer order */
     uint8_t num_channels;
+    int16_t *dma_buf;                          /**< Points into s_adc_dma_arena */
     struct k_poll_signal done_signal;
 };
 
@@ -33,16 +50,51 @@ struct adc_dma_data {
     size_t total_channels;
     uint8_t channel_to_group[MAX_TOTAL_CHANNELS];
     uint8_t channel_to_buf_idx[MAX_TOTAL_CHANNELS];
-    
-    /* DMA sample buffers placed in non-cacheable RAM for STM32H7 */
-    int16_t dma_buf_group0[MAX_CHANNELS_PER_ADC] __aligned(32) __nocache;
-    int16_t dma_buf_group1[MAX_CHANNELS_PER_ADC] __aligned(32) __nocache;
-    int16_t dma_buf_group2[MAX_CHANNELS_PER_ADC] __aligned(32) __nocache;
+    uint8_t channel_input[MAX_TOTAL_CHANNELS];
 };
+
+/*
+ * DMA destinations must stay out of the data cache: on the STM32H7 the DMA
+ * writes them behind the CPU's back, so a cached buffer would return stale
+ * counts. Section attributes cannot be applied to struct members, hence the
+ * arena lives at file scope; a single engine instance is enforced above.
+ */
+static int16_t s_adc_dma_arena[MAX_ADC_CONTROLLERS][MAX_CHANNELS_PER_ADC]
+    __aligned(32) __nocache;
 
 struct adc_dma_config {
     uint8_t resolution;
 };
+
+/**
+ * @brief Locate the group that owns a controller, creating it when needed.
+ *
+ * @return Group index, or -ENOMEM when all controller slots are taken.
+ */
+static int adc_dma_engine_group_for(struct adc_dma_data *data,
+                                    const struct device *adc_dev)
+{
+    for (size_t g = 0U; g < data->active_groups; g++) {
+        if (data->groups[g].adc_dev == adc_dev) {
+            return (int)g;
+        }
+    }
+
+    if (data->active_groups >= MAX_ADC_CONTROLLERS) {
+        return -ENOMEM;
+    }
+
+    struct adc_ctrl_group *grp = &data->groups[data->active_groups];
+    grp->adc_dev = adc_dev;
+    grp->channel_mask = 0U;
+    grp->num_channels = 0U;
+    grp->dma_buf = s_adc_dma_arena[data->active_groups];
+
+    (void)memset(grp->channel_ids, 0, sizeof(grp->channel_ids));
+    k_poll_signal_init(&grp->done_signal);
+
+    return (int)data->active_groups++;
+}
 
 static int adc_dma_engine_trigger_scan(const struct device *dev)
 {
@@ -53,12 +105,9 @@ static int adc_dma_engine_trigger_scan(const struct device *dev)
         struct adc_ctrl_group *grp = &data->groups[i];
         k_poll_signal_reset(&grp->done_signal);
 
-        int16_t *buf = (i == 0) ? data->dma_buf_group0 : 
-                       (i == 1) ? data->dma_buf_group1 : data->dma_buf_group2;
-
         struct adc_sequence seq = {
             .channels = grp->channel_mask,
-            .buffer = buf,
+            .buffer = grp->dma_buf,
             .buffer_size = grp->num_channels * sizeof(int16_t),
             .resolution = cfg->resolution,
         };
@@ -98,7 +147,8 @@ static int adc_dma_engine_wait_scan(const struct device *dev, k_timeout_t timeou
     return 0;
 }
 
-static int adc_dma_engine_get_raw_sample(const struct device *dev, uint8_t channel_idx, int16_t *out_counts)
+static int adc_dma_engine_get_raw_sample(const struct device *dev, uint8_t channel_idx,
+                                         int16_t *out_counts)
 {
     struct adc_dma_data *data = dev->data;
     if (out_counts == NULL || channel_idx >= data->total_channels) {
@@ -108,10 +158,7 @@ static int adc_dma_engine_get_raw_sample(const struct device *dev, uint8_t chann
     uint8_t grp_idx = data->channel_to_group[channel_idx];
     uint8_t buf_idx = data->channel_to_buf_idx[channel_idx];
 
-    int16_t *buf = (grp_idx == 0) ? data->dma_buf_group0 : 
-                   (grp_idx == 1) ? data->dma_buf_group1 : data->dma_buf_group2;
-
-    *out_counts = buf[buf_idx];
+    *out_counts = data->groups[grp_idx].dma_buf[buf_idx];
     return 0;
 }
 
@@ -128,6 +175,113 @@ static const struct adc_dma_driver_api adc_dma_engine_api = {
     .get_channel_count = adc_dma_engine_get_channel_count,
 };
 
+/**
+ * @brief Describe one `io-channels` entry at compile time.
+ *
+ * DT_FOREACH_PROP_ELEM() supplies a node identifier, so the node-based
+ * phandle-array accessors are used here (the DT_INST_* variants take an
+ * instance number instead). The resulting table order is the logical channel
+ * index space used by the runtime API.
+ */
+struct adc_channel_desc {
+    const struct device *adc_dev;
+    uint8_t channel;
+};
+
+#define ADC_DMA_CHANNEL_DESC(node_id, prop, idx)                                  \
+    {                                                                             \
+        .adc_dev = DEVICE_DT_GET(DT_IO_CHANNELS_CTLR_BY_IDX(node_id, idx)),        \
+        .channel = (uint8_t)DT_IO_CHANNELS_INPUT_BY_IDX(node_id, idx),             \
+    },
+
+BUILD_ASSERT(DT_INST_PROP_LEN(0, io_channels) > 0,
+             "adc-dma-engine requires at least one io-channels entry");
+BUILD_ASSERT(DT_INST_PROP_LEN(0, io_channels) <= MAX_TOTAL_CHANNELS,
+             "io-channels exceeds the engine capacity");
+
+static const struct adc_channel_desc s_adc_channels[] = {
+    DT_FOREACH_PROP_ELEM(DT_DRV_INST(0), io_channels, ADC_DMA_CHANNEL_DESC)
+};
+
+/**
+ * @brief Build the logical channel map from the `io-channels` property.
+ *
+ * Logical index i corresponds to the i-th `io-channels` entry. Each entry is
+ * appended to its controller group in ascending channel order, which is the
+ * order the STM32 ADC writes into the DMA buffer.
+ */
+static int adc_dma_engine_build_map(const struct device *dev)
+{
+    struct adc_dma_data *data = dev->data;
+    const size_t n = ARRAY_SIZE(s_adc_channels);
+
+    for (size_t i = 0U; i < n; i++) {
+        const struct device *adc_dev = s_adc_channels[i].adc_dev;
+        const uint32_t channel = s_adc_channels[i].channel;
+
+        if (channel > MAX_ADC_HW_CHANNEL_ID) {
+            LOG_ERR("io-channels[%u]: channel %u out of range",
+                    (unsigned int)i, (unsigned int)channel);
+            return -EINVAL;
+        }
+
+        if (!device_is_ready(adc_dev)) {
+            LOG_ERR("io-channels[%u]: controller %s not ready",
+                    (unsigned int)i, adc_dev->name);
+            return -ENODEV;
+        }
+
+        const int g = adc_dma_engine_group_for(data, adc_dev);
+        if (g < 0) {
+            return g;
+        }
+
+        struct adc_ctrl_group *grp = &data->groups[g];
+
+        if ((grp->channel_mask & (uint32_t)BIT(channel)) != 0U) {
+            LOG_ERR("io-channels[%u]: channel %u listed twice on %s",
+                    (unsigned int)i, (unsigned int)channel, adc_dev->name);
+            return -EINVAL;
+        }
+
+        if (grp->num_channels >= MAX_CHANNELS_PER_ADC) {
+            LOG_ERR("controller %s exceeds %u channels",
+                    adc_dev->name, MAX_CHANNELS_PER_ADC);
+            return -ENOMEM;
+        }
+
+        grp->channel_mask |= (uint32_t)BIT(channel);
+
+        /* Insert in ascending order to mirror the DMA buffer layout. */
+        size_t pos = grp->num_channels;
+        while (pos > 0U && grp->channel_ids[pos - 1U] > (uint8_t)channel) {
+            grp->channel_ids[pos] = grp->channel_ids[pos - 1U];
+            pos--;
+        }
+        grp->channel_ids[pos] = (uint8_t)channel;
+        grp->num_channels++;
+
+        data->channel_to_group[i] = (uint8_t)g;
+        data->channel_input[i] = (uint8_t)channel;
+    }
+
+    data->total_channels = n;
+
+    /* Resolve the DMA buffer slot of every logical index. */
+    for (size_t i = 0U; i < n; i++) {
+        const struct adc_ctrl_group *grp = &data->groups[data->channel_to_group[i]];
+
+        for (size_t p = 0U; p < grp->num_channels; p++) {
+            if (grp->channel_ids[p] == data->channel_input[i]) {
+                data->channel_to_buf_idx[i] = (uint8_t)p;
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int adc_dma_engine_init(const struct device *dev)
 {
     struct adc_dma_data *data = dev->data;
@@ -135,43 +289,32 @@ static int adc_dma_engine_init(const struct device *dev)
 
     LOG_INF("Initializing Multi-ADC DMA Engine (Resolution: %u bits)", cfg->resolution);
 
-    data->active_groups = 0;
-    data->total_channels = 0;
+    data->active_groups = 0U;
+    data->total_channels = 0U;
 
-    /* Check for ADC1, ADC2, ADC3 device readiness if enabled */
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(adc1))
-    const struct device *adc1_dev = DEVICE_DT_GET(DT_NODELABEL(adc1));
-    if (device_is_ready(adc1_dev)) {
-        size_t g = data->active_groups++;
-        data->groups[g].adc_dev = adc1_dev;
-        k_poll_signal_init(&data->groups[g].done_signal);
-        LOG_INF("Registered ADC1 into DMA engine (Group %u)", (unsigned int)g);
+    int err = adc_dma_engine_build_map(dev);
+    if (err != 0) {
+        return err;
     }
-#endif
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(adc2))
-    const struct device *adc2_dev = DEVICE_DT_GET(DT_NODELABEL(adc2));
-    if (device_is_ready(adc2_dev)) {
-        size_t g = data->active_groups++;
-        data->groups[g].adc_dev = adc2_dev;
-        k_poll_signal_init(&data->groups[g].done_signal);
-        LOG_INF("Registered ADC2 into DMA engine (Group %u)", (unsigned int)g);
-    }
-#endif
-
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(adc3))
-    const struct device *adc3_dev = DEVICE_DT_GET(DT_NODELABEL(adc3));
-    if (device_is_ready(adc3_dev)) {
-        size_t g = data->active_groups++;
-        data->groups[g].adc_dev = adc3_dev;
-        k_poll_signal_init(&data->groups[g].done_signal);
-        LOG_INF("Registered ADC3 into DMA engine (Group %u)", (unsigned int)g);
-    }
-#endif
+    LOG_INF("ADC DMA engine ready: %u controllers, %u logical channels",
+            (unsigned int)data->active_groups, (unsigned int)data->total_channels);
 
     return 0;
 }
 
-#define ADC_DMA_ENGINE_INIT(inst)                                                  static struct adc_dma_data adc_dma_data_##inst;                               static const struct adc_dma_config adc_dma_config_##inst = {                      .resolution = DT_INST_PROP_OR(inst, resolution, 16),                       };                                                                             DEVICE_DT_INST_DEFINE(inst,                                                                          adc_dma_engine_init,                                                           NULL,                                                                          &adc_dma_data_##inst,                                                          &adc_dma_config_##inst,                                                        POST_KERNEL,                                                                   CONFIG_APPLICATION_INIT_PRIORITY,                                              &adc_dma_engine_api);
+#define ADC_DMA_ENGINE_INIT(inst)                                                  \
+    static struct adc_dma_data adc_dma_data_##inst;                                \
+    static const struct adc_dma_config adc_dma_config_##inst = {                   \
+        .resolution = DT_INST_PROP_OR(inst, resolution, 16),                       \
+    };                                                                             \
+    DEVICE_DT_INST_DEFINE(inst,                                                    \
+                          adc_dma_engine_init,                                     \
+                          NULL,                                                    \
+                          &adc_dma_data_##inst,                                    \
+                          &adc_dma_config_##inst,                                  \
+                          POST_KERNEL,                                             \
+                          CONFIG_APPLICATION_INIT_PRIORITY,                        \
+                          &adc_dma_engine_api);
 
 DT_INST_FOREACH_STATUS_OKAY(ADC_DMA_ENGINE_INIT)

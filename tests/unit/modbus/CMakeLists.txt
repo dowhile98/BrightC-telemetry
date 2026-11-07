@@ -26,6 +26,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/domain/services/jsy_mk339_codec.c
     ${APP_DIR}/app/src/domain/services/mbsl32di_codec.c
     ${APP_DIR}/app/src/domain/services/waveshare_relay_codec.c
+    ${APP_DIR}/app/src/domain/services/sensor_matrix_mapper.c
     ${APP_DIR}/app/src/domain/services/slave_scheduler.c
     ${APP_DIR}/app/src/domain/services/digital_input_aggregator.c
     ${APP_DIR}/app/src/application/modbus/modbus_registry.c
@@ -34,6 +35,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/application/active_objects/ao_storage.c
     ${APP_DIR}/app/src/application/active_objects/ao_system_indicator.c
     ${APP_DIR}/app/src/application/active_objects/ao_digital_input.c
+    ${APP_DIR}/app/src/application/active_objects/ao_sensor_matrix.c
     ${APP_DIR}/app/src/application/zbus/network_channels.c
     ${APP_DIR}/app/src/application/zbus/config_channels.c
     ${APP_DIR}/app/src/application/zbus/indicator_channels.c
@@ -48,6 +50,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c
     ${APP_DIR}/app/src/application/config/default_config_profiles.c
     ${APP_DIR}/app/src/application/services/app_facade.c
+    ${APP_DIR}/tests/fakes/src/fake_sensor_matrix.c
 )
 
 target_include_directories(app PRIVATE
@@ -57,5 +60,6 @@ target_include_directories(app PRIVATE
     ${APP_DIR}/app/src/application/modbus
     ${APP_DIR}/lib
     ${APP_DIR}/lib/codec_modbus
+    ${APP_DIR}/lib/transducers
     ${APP_DIR}/tests/fakes/include
 )

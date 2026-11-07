@@ -305,6 +305,8 @@ typedef struct {
     uint8_t  pair_hvac_unit_map[SENSOR_MATRIX_MAX_PAIRS]; /**< HVAC Unit ID owning this pair */
     uint16_t pair_valid_mask;         /**< Bit k = 1 if BOTH t_inj and t_ret are valid and healthy */
     uint16_t pair_open_probe_mask;    /**< Bit k = 1 if either probe is disconnected */
+    uint16_t inj_valid_mask;          /**< Bit k = 1 if t_inj[k] is valid and not open */
+    uint16_t ret_valid_mask;          /**< Bit k = 1 if t_ret[k] is valid and not open */
 
     /* Room Ambient Probes */
     uint8_t  configured_room_probes;  /**< M (e.g., 2 in pilot, up to 16) */

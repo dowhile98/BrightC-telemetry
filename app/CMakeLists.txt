@@ -13,6 +13,7 @@ target_sources(app PRIVATE
     src/main.c
     src/application/active_objects/ao_modbus.c
     src/application/active_objects/ao_network.c
+    src/application/active_objects/ao_sensor_matrix.c
     src/application/zbus/network_channels.c
     src/application/modbus/modbus_registry.c
     src/domain/services/cwt_tm16pt_codec.c
@@ -33,6 +34,7 @@ target_sources(app PRIVATE
     src/infrastructure/adapters/adapter_buzzer_pwm.c
     src/infrastructure/adapters/adapter_di_gpio.c
     src/infrastructure/adapters/adapter_relay_gpio.c
+    src/infrastructure/adapters/adapter_sensor_zephyr.c
     src/infrastructure/di/composition_root.c
     src/domain/models/hvac_unit_entity.c
     src/domain/models/hvac_group_entity.c
@@ -65,6 +67,11 @@ endif()
 target_include_directories(app PRIVATE
     include
     src
+    lib
+    # Public API of the out-of-tree ADC DMA engine. The header is always on the
+    # include path so the composition root can reference the port-agnostic
+    # adapter type even on platforms where the driver is not built.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../drivers/adc_dma/include
 )
 
 # The nanoMODBUS transport adapter is the only part that depends on the stack,

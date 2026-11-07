@@ -400,6 +400,19 @@ int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view)
     return 0;
 }
 
+int app_facade_sensor_get_matrix(thermal_matrix_frame_t *out_frame)
+{
+    if (out_frame == NULL) {
+        return -EINVAL;
+    }
+
+    if (s_app == NULL || !s_app->sensor.initialized) {
+        return -ENODEV;
+    }
+
+    return i_sensor_matrix_get_frame(&s_app->sensor.port, out_frame);
+}
+
 int app_facade_sensor_set_calibration(uint8_t sensor_idx, int16_t offset_x10)
 {
     if (sensor_idx >= 21U) {
