@@ -6,6 +6,7 @@
 #include "composition_root.h"
 #include "application/services/app_facade.h"
 #include "application/active_objects/ao_sensor_matrix.h"
+#include "application/zbus/sensor_channels.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -848,28 +849,15 @@ static void on_modbus_cwt_tm16pt_reading(void *ctx, uint8_t device_id, const tem
         return;
     }
 
-    /* 1. Always update presentation cache with the physical Modbus CWT channels */
-    (void)app_facade_update_modbus_temperatures(bank->temperatures_c,
-                                                bank->valid_channels_mask,
-                                                CWT_TM16PT_CHANNEL_COUNT);
-
-    /* 2. Ingest into the sensor matrix raw bank so the domain
-     * applies calibration, open-probe detection and semantic routing. */
+    /* Ingest into the sensor matrix raw bank so the domain
+     * applies calibration, open-probe detection, semantic routing, and Zbus publishing. */
     if (self->sensor.initialized && i_sensor_matrix_is_bound(&self->sensor.port))
     {
         uint8_t concentrator_idx = (device_id == MODBUS_ADDR_CWT_TM16PT_2) ? 1U : 0U;
         if (i_sensor_matrix_submit_cwt_bank(&self->sensor.port, concentrator_idx, bank) == 0)
         {
             (void)ao_sensor_matrix_trigger(&self->sensor.ao);
-            return;
         }
-    }
-
-    /* 3. Fallback when the sensor matrix subsystem is unavailable */
-    if (self->hvac.initialized)
-    {
-        (void)ao_hvac_feed_temperatures(&self->hvac.ao, bank->temperatures_c,
-                                        bank->valid_channels_mask, CWT_TM16PT_CHANNEL_COUNT);
     }
 }
 
@@ -948,9 +936,6 @@ int composition_root_wire(app_container_t *self)
 /* =========================================================================
  * Full Lifecycle Management
  * ========================================================================= */
-
-/* Forward declaration: the frame sink is emitted from the acquisition AO thread. */
-static void on_sensor_matrix_frame(void *ctx, const thermal_matrix_frame_t *frame);
 
 /**
  * @brief Initialize the Sensor Matrix Ingestion subsystem.
@@ -1047,8 +1032,6 @@ int composition_root_init_sensor_matrix(app_container_t *self)
     /* Initialise the acquisition Active Object (thread spawned once, gated). */
     const ao_sensor_matrix_config_t ao_cfg = {
         .matrix = &self->sensor.port,
-        .frame_sink = on_sensor_matrix_frame,
-        .frame_sink_ctx = self,
         .poll_period_ms = AO_SENSOR_MATRIX_PERIOD_MS,
         .stack = s_ao_sensor_stack,
         .stack_size = K_THREAD_STACK_SIZEOF(s_ao_sensor_stack),
@@ -1067,63 +1050,35 @@ int composition_root_init_sensor_matrix(app_container_t *self)
     return 0;
 }
 
-/**
- * @brief Route a freshly mapped semantic frame to its consumers.
- *
- * The frame is packed into the flat 16-slot bank addressed by the HVAC group
- * sensor masks (pilot layout) and published to the presentation cache.
- */
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdangling-pointer"
-#endif
-static void on_sensor_matrix_frame(void *ctx, const thermal_matrix_frame_t *frame)
+/* =========================================================================
+ * Zbus Observers & Listeners
+ * ========================================================================= */
+
+static app_container_t *s_active_container = NULL;
+
+static void on_hvac_sensor_feed_cb(const struct zbus_channel *chan)
 {
-    app_container_t *self = (app_container_t *)ctx;
-
-    if (self == NULL || frame == NULL)
+    if (chan != &chan_sensor_snapshot || s_active_container == NULL)
     {
         return;
     }
 
-    uint16_t hvac_valid = 0U;
-    float hvac_bank[TEMPERATURE_BANK_MAX_CHANNELS];
-
-    if (sensor_matrix_pack_hvac_bank(frame, hvac_bank, &hvac_valid) != 0)
+    const sensor_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
     {
         return;
     }
 
-    if (self->hvac.initialized)
+    if (s_active_container->hvac.initialized)
     {
-        (void)ao_hvac_feed_temperatures(&self->hvac.ao, hvac_bank, hvac_valid,
-                                        TEMPERATURE_BANK_MAX_CHANNELS);
-
-        /* Phase 4: In addition to sensor_matrix_pack_hvac_bank(), pack the flat snapshot
-         * from the sensor matrix adapter/raw bank and feed it to ao_hvac_feed_sensor_snapshot */
-        if (i_sensor_matrix_is_bound(&self->sensor.port))
-        {
-            raw_sensor_readings_t raw;
-            if (i_sensor_matrix_get_raw_readings(&self->sensor.port, &raw) == 0)
-            {
-                float flat_temps[64];
-                uint64_t flat_valid = 0ULL;
-                if (sensor_matrix_pack_flat_snapshot(&raw, flat_temps, &flat_valid) == 0)
-                {
-                    (void)ao_hvac_feed_sensor_snapshot(&self->hvac.ao, flat_temps, flat_valid, 64U);
-                }
-            }
-        }
+        (void)ao_hvac_feed_sensor_snapshot(&s_active_container->hvac.ao,
+                                           msg->temperatures,
+                                           msg->valid_mask,
+                                           64U);
     }
-
-    /* The pilot profile routes on-board RTD 1..5 to room ambient probes 0..4. */
-    (void)app_facade_update_internal_temperatures(frame->t_room,
-                                                  (uint16_t)(frame->room_valid_mask & 0x1FU),
-                                                  5U);
 }
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
+
+ZBUS_LISTENER_DEFINE(lis_hvac_sensor_feed, on_hvac_sensor_feed_cb);
 
 int composition_root_init(app_container_t *self)
 {
@@ -1138,6 +1093,7 @@ int composition_root_init(app_container_t *self)
     }
 
     (void)memset(self, 0, sizeof(*self));
+    s_active_container = self;
 
     int err = composition_root_init_storage(self);
     if (err != 0)
@@ -1501,6 +1457,7 @@ int composition_root_deinit(app_container_t *self)
         self->storage.initialized = false;
     }
 
+    s_active_container = NULL;
     self->is_initialized = false;
     self->is_running = false;
     return 0;

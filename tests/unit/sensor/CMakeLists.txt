@@ -14,6 +14,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/domain/services/sensor_matrix_mapper.c
     ${APP_DIR}/app/src/domain/services/thermodynamic_engine.c
     ${APP_DIR}/app/src/application/active_objects/ao_sensor_matrix.c
+    ${APP_DIR}/app/src/application/zbus/sensor_channels.c
     ${APP_DIR}/tests/fakes/src/fake_sensor_matrix.c
 )
 

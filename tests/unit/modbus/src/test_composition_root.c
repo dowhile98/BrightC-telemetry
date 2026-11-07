@@ -504,7 +504,7 @@ ZTEST(composition_root_suite, test_all_config_domains_registered_and_persistable
     (void)composition_root_deinit(&s_app);
 }
 
-ZTEST(composition_root_suite, test_app_facade_sensor_get_matrix_and_modbus_facade_update)
+ZTEST(composition_root_suite, test_app_facade_sensor_get_matrix_and_snapshot_zbus)
 {
     (void)composition_root_deinit(&s_app);
     (void)memset(&s_app, 0, sizeof(s_app));
@@ -512,8 +512,11 @@ ZTEST(composition_root_suite, test_app_facade_sensor_get_matrix_and_modbus_facad
 
     /* Before facade init or when uninitialized, app_facade_sensor_get_matrix returns -ENODEV */
     thermal_matrix_frame_t frame;
+    sensor_snapshot_msg_t snap;
     zassert_equal(app_facade_sensor_get_matrix(&frame), -ENODEV, "Uninitialized facade returns -ENODEV");
     zassert_equal(app_facade_sensor_get_matrix(NULL), -EINVAL, "NULL frame returns -EINVAL");
+    zassert_equal(app_facade_sensor_get_snapshot(&snap), -ENODEV, "Uninitialized facade returns -ENODEV");
+    zassert_equal(app_facade_sensor_get_snapshot(NULL), -EINVAL, "NULL snapshot returns -EINVAL");
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
     zassert_equal(app_facade_init(&s_app), 0, "Facade init failed");
@@ -521,13 +524,24 @@ ZTEST(composition_root_suite, test_app_facade_sensor_get_matrix_and_modbus_facad
     /* When sensor matrix is initialized, app_facade_sensor_get_matrix retrieves latest frame */
     zassert_equal(app_facade_sensor_get_matrix(&frame), 0, "Get matrix succeeded");
 
-    /* Test physical Modbus CWT temperature update directly into facade */
-    float test_temps[16] = {25.5f, 26.0f, 24.8f};
-    uint16_t test_mask = 0x0007U;
-    zassert_equal(app_facade_update_modbus_temperatures(test_temps, test_mask, 16), 0);
+    /* Test flat snapshot reading from Zbus via facade */
+    sensor_snapshot_msg_t snap_pub = {
+        .valid_mask = (1ULL << 0) | (1ULL << 9), /* RTD0 and CWT1 CH0 */
+        .temperatures = { [0] = 21.0f, [9] = 25.5f },
+        .sequence = 42U,
+        .timestamp_ms = 1000ULL,
+    };
+    zassert_equal(zbus_chan_pub(&chan_sensor_snapshot, &snap_pub, K_NO_WAIT), 0);
+
+    sensor_snapshot_msg_t snap_rx;
+    zassert_equal(app_facade_sensor_get_snapshot(&snap_rx), 0);
+    zassert_equal(snap_rx.sequence, 42U);
+    zassert_within(snap_rx.temperatures[9], 25.5f, 0.01f);
 
     app_facade_sensor_view_t view;
     zassert_equal(app_facade_sensor_get_readings(&view), 0);
+    zassert_within(view.internal_rtd_temps[0], 21.0f, 0.01f);
+    zassert_true(view.internal_rtd_valid[0]);
     zassert_within(view.modbus_rtd_temps[0], 25.5f, 0.01f);
     zassert_true(view.modbus_rtd_valid[0]);
     zassert_false(view.modbus_rtd_valid[3]);

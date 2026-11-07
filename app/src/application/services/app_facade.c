@@ -31,14 +31,7 @@ static storage_stats_t s_storage_stats = {0};
 /* Sensor calibration offsets (in 0.1°C units) */
 static int16_t s_sensor_cal_offsets[21] = {0};
 
-/* Cached sensor readings */
-static struct {
-    struct k_spinlock lock;
-    float internal_rtd_temps[5];
-    bool  internal_rtd_valid[5];
-    float modbus_rtd_temps[16];
-    bool  modbus_rtd_valid[16];
-} s_sensor_cache;
+
 
 /* =========================================================================
  * Helper Functions
@@ -115,12 +108,7 @@ int app_facade_init(void *container)
     }
     s_app = (app_container_t *)container;
 
-    k_spinlock_key_t key = k_spin_lock(&s_sensor_cache.lock);
-    memset(s_sensor_cache.internal_rtd_temps, 0, sizeof(s_sensor_cache.internal_rtd_temps));
-    memset(s_sensor_cache.internal_rtd_valid, 0, sizeof(s_sensor_cache.internal_rtd_valid));
-    memset(s_sensor_cache.modbus_rtd_temps, 0, sizeof(s_sensor_cache.modbus_rtd_temps));
-    memset(s_sensor_cache.modbus_rtd_valid, 0, sizeof(s_sensor_cache.modbus_rtd_valid));
-    k_spin_unlock(&s_sensor_cache.lock, key);
+
 
     LOG_INF("Application Facade initialized");
     return 0;
@@ -409,63 +397,37 @@ int app_facade_hvac_configure_group_units(uint8_t group_id,
  * Sensor Matrix Service APIs
  * ========================================================================= */
 
-int app_facade_update_modbus_temperatures(const float *temps, uint16_t valid_mask, size_t count)
-{
-    if (temps == NULL) {
-        return -EINVAL;
-    }
-
-    k_spinlock_key_t key = k_spin_lock(&s_sensor_cache.lock);
-    for (size_t i = 0U; i < 16U && i < count; i++) {
-        s_sensor_cache.modbus_rtd_temps[i] = temps[i];
-        s_sensor_cache.modbus_rtd_valid[i] = ((valid_mask & (1U << i)) != 0U);
-    }
-    k_spin_unlock(&s_sensor_cache.lock, key);
-    return 0;
-}
-
-int app_facade_update_internal_temperatures(const float *temps, uint16_t valid_mask, size_t count)
-{
-    if (temps == NULL) {
-        return -EINVAL;
-    }
-
-    k_spinlock_key_t key = k_spin_lock(&s_sensor_cache.lock);
-    for (size_t i = 0U; i < 5U && i < count; i++) {
-        s_sensor_cache.internal_rtd_temps[i] = temps[i];
-        s_sensor_cache.internal_rtd_valid[i] = ((valid_mask & (1U << i)) != 0U);
-    }
-    k_spin_unlock(&s_sensor_cache.lock, key);
-    return 0;
-}
-
 int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view)
 {
     if (out_view == NULL) {
         return -EINVAL;
     }
 
-    k_spinlock_key_t key = k_spin_lock(&s_sensor_cache.lock);
+    if (s_app == NULL || !s_app->sensor.initialized) {
+        return -ENODEV;
+    }
+
+    sensor_snapshot_msg_t snap;
+    int err = zbus_chan_read(&chan_sensor_snapshot, &snap, K_NO_WAIT);
+    if (err != 0) {
+        return err;
+    }
 
     out_view->internal_count = 5U;
     for (uint8_t i = 0U; i < 5U; i++) {
-        int16_t offset = (s_app != NULL) ? s_app->calibration_cfg.temp_offsets_x10[i]
-                                         : s_sensor_cal_offsets[i];
-        out_view->internal_rtd_temps[i] = s_sensor_cache.internal_rtd_temps[i] +
-                                          ((float)offset / 10.0f);
-        out_view->internal_rtd_valid[i] = s_sensor_cache.internal_rtd_valid[i];
+        int16_t offset = s_app->calibration_cfg.temp_offsets_x10[i];
+        out_view->internal_rtd_temps[i] = snap.temperatures[i] + ((float)offset / 10.0f);
+        out_view->internal_rtd_valid[i] = ((snap.valid_mask & (1ULL << i)) != 0ULL);
     }
 
     out_view->modbus_count = 16U;
     for (uint8_t i = 0U; i < 16U; i++) {
-        int16_t offset = (s_app != NULL) ? s_app->calibration_cfg.temp_offsets_x10[5U + i]
-                                         : s_sensor_cal_offsets[5U + i];
-        out_view->modbus_rtd_temps[i] = s_sensor_cache.modbus_rtd_temps[i] +
-                                        ((float)offset / 10.0f);
-        out_view->modbus_rtd_valid[i] = s_sensor_cache.modbus_rtd_valid[i];
+        int16_t offset = s_app->calibration_cfg.temp_offsets_x10[5U + i];
+        uint8_t idx = 9U + i;
+        out_view->modbus_rtd_temps[i] = snap.temperatures[idx] + ((float)offset / 10.0f);
+        out_view->modbus_rtd_valid[i] = ((snap.valid_mask & (1ULL << idx)) != 0ULL);
     }
 
-    k_spin_unlock(&s_sensor_cache.lock, key);
     return 0;
 }
 
@@ -479,7 +441,20 @@ int app_facade_sensor_get_matrix(thermal_matrix_frame_t *out_frame)
         return -ENODEV;
     }
 
-    return i_sensor_matrix_get_frame(&s_app->sensor.port, out_frame);
+    return zbus_chan_read(&chan_thermal_matrix, out_frame, K_NO_WAIT);
+}
+
+int app_facade_sensor_get_snapshot(sensor_snapshot_msg_t *out_snapshot)
+{
+    if (out_snapshot == NULL) {
+        return -EINVAL;
+    }
+
+    if (s_app == NULL || !s_app->sensor.initialized) {
+        return -ENODEV;
+    }
+
+    return zbus_chan_read(&chan_sensor_snapshot, out_snapshot, K_NO_WAIT);
 }
 
 int app_facade_sensor_set_calibration(uint8_t sensor_idx, int16_t offset_x10)

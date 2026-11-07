@@ -464,8 +464,83 @@ static int cmd_sensor_matrix(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_sensor_snapshot(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    sensor_snapshot_msg_t snap;
+    int err = app_facade_sensor_get_snapshot(&snap);
+    if (err != 0) {
+        shell_error(sh, "Failed to get sensor snapshot (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Flat Sensor Telemetry Snapshot (Zbus chan_sensor_snapshot) ===");
+    shell_print(sh, "Seq: %u | Timestamp: %llu ms | Valid Mask: 0x%016llX\n",
+                snap.sequence, (unsigned long long)snap.timestamp_ms,
+                (unsigned long long)snap.valid_mask);
+
+    shell_print(sh, "Flat ID | Channel Name             | Value      | Status");
+    shell_print(sh, "--------+--------------------------+------------+--------");
+
+    for (uint8_t i = 0U; i < 5U; i++) {
+        uint64_t bit = 1ULL << i;
+        bool valid = (snap.valid_mask & bit) != 0ULL;
+        if (valid) {
+            shell_print(sh, "   %2u   | Internal RTD %u           | %6.1f degC | VALID",
+                        i + 1U, i, (double)snap.temperatures[i]);
+        } else {
+            shell_print(sh, "   %2u   | Internal RTD %u           |   --.- degC | INVALID",
+                        i + 1U, i);
+        }
+    }
+
+    for (uint8_t c = 0U; c < 16U; c++) {
+        uint8_t idx = 9U + c;
+        uint64_t bit = 1ULL << idx;
+        bool valid = (snap.valid_mask & bit) != 0ULL;
+        if (valid) {
+            shell_print(sh, "   %2u   | Modbus CWT1 CH %2u       | %6.1f degC | VALID",
+                        10U + c, c + 1U, (double)snap.temperatures[idx]);
+        } else {
+            shell_print(sh, "   %2u   | Modbus CWT1 CH %2u       |   --.- degC | INVALID",
+                        10U + c, c + 1U);
+        }
+    }
+
+    for (uint8_t c = 0U; c < 16U; c++) {
+        uint8_t idx = 29U + c;
+        uint64_t bit = 1ULL << idx;
+        bool valid = (snap.valid_mask & bit) != 0ULL;
+        if (valid) {
+            shell_print(sh, "   %2u   | Modbus CWT2 CH %2u       | %6.1f degC | VALID",
+                        30U + c, c + 1U, (double)snap.temperatures[idx]);
+        } else {
+            shell_print(sh, "   %2u   | Modbus CWT2 CH %2u       |   --.- degC | INVALID",
+                        30U + c, c + 1U);
+        }
+    }
+
+    for (uint8_t j = 0U; j < 10U; j++) {
+        uint8_t idx = 49U + j;
+        uint64_t bit = 1ULL << idx;
+        bool valid = (snap.valid_mask & bit) != 0ULL;
+        if (valid) {
+            shell_print(sh, "   %2u   | Analog J9 CH %2u         |  %5.2f mA  | VALID",
+                        50U + j, j + 1U, (double)snap.temperatures[idx]);
+        } else {
+            shell_print(sh, "   %2u   | Analog J9 CH %2u         |   --.-- mA | INVALID",
+                        50U + j, j + 1U);
+        }
+    }
+
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor,
     SHELL_CMD(matrix, NULL, "Display semantic sensor matrix (evaporator pairs, ambient, RH)", cmd_sensor_matrix),
+    SHELL_CMD(snapshot, NULL, "Display flat 64-channel Zbus telemetry snapshot", cmd_sensor_snapshot),
     SHELL_CMD(status, NULL, "Display all RTD channels (internal 0..4, external Modbus)", cmd_sensor_status),
     SHELL_SUBCMD_SET_END
 );

@@ -23,6 +23,7 @@
 #include "common/hvac_types.h"
 #include "common/modbus_types.h"
 #include "common/sensor_types.h"
+#include "application/zbus/sensor_channels.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -305,24 +306,12 @@ int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view);
 int app_facade_sensor_get_matrix(thermal_matrix_frame_t *out_frame);
 
 /**
- * @brief Update cached Modbus RTD temperature sensor readings.
+ * @brief Query current flat sensor telemetry snapshot from Zbus chan_sensor_snapshot.
  *
- * @param[in] temps      Array of temperature values in degrees C.
- * @param[in] valid_mask Bitmask of valid sensor channels.
- * @param[in] count      Number of temperatures in array.
+ * @param[out] out_snapshot Destination snapshot message structure.
  * @return 0 on success, negative errno on error.
  */
-int app_facade_update_modbus_temperatures(const float *temps, uint16_t valid_mask, size_t count);
-
-/**
- * @brief Update cached internal on-board RTD temperature sensor readings.
- *
- * @param[in] temps      Array of temperature values in degrees C.
- * @param[in] valid_mask Bitmask of valid sensor channels.
- * @param[in] count      Number of temperatures in array.
- * @return 0 on success, negative errno on error.
- */
-int app_facade_update_internal_temperatures(const float *temps, uint16_t valid_mask, size_t count);
+int app_facade_sensor_get_snapshot(sensor_snapshot_msg_t *out_snapshot);
 
 /**
  * @brief Update calibration offset for a sensor channel.

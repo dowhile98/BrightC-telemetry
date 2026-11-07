@@ -45,6 +45,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_hvac_actuator.c
     ${APP_DIR}/app/src/application/active_objects/ao_hvac.c
     ${APP_DIR}/app/src/application/zbus/hvac_channels.c
+    ${APP_DIR}/app/src/application/zbus/sensor_channels.c
     ${APP_DIR}/app/src/domain/models/hvac_unit_entity.c
     ${APP_DIR}/app/src/domain/models/hvac_group_entity.c
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c

@@ -45,18 +45,6 @@ extern "C" {
 #define AO_SENSOR_MATRIX_STOP_WAIT_MS 1000U
 
 /**
- * @brief Callback invoked after every successful mapping cycle.
- *
- * Allows the composition root to route a fresh frame towards HVAC and the
- * presentation facade without the Active Object depending on either of them.
- *
- * @param[in] ctx   Opaque context supplied at init time.
- * @param[in] frame Freshly mapped semantic frame (valid only during the call).
- */
-typedef void (*ao_sensor_matrix_frame_sink_t)(void *ctx,
-                                              const thermal_matrix_frame_t *frame);
-
-/**
  * @brief Command event types for ao_sensor_matrix queue.
  */
 typedef enum {
@@ -76,8 +64,6 @@ typedef struct {
  */
 typedef struct {
     const i_sensor_matrix_t       *matrix;        /**< Injected sensor matrix port */
-    ao_sensor_matrix_frame_sink_t  frame_sink;    /**< Optional frame consumer */
-    void                          *frame_sink_ctx;/**< Opaque context for frame_sink */
     uint32_t                       poll_period_ms;/**< 0 selects AO_SENSOR_MATRIX_PERIOD_MS */
     k_thread_stack_t              *stack;         /**< File-scope stack buffer */
     size_t                         stack_size;    /**< Usable stack size in bytes */
@@ -88,9 +74,8 @@ typedef struct {
  */
 typedef struct {
     const i_sensor_matrix_t       *matrix;
-    ao_sensor_matrix_frame_sink_t  frame_sink;
-    void                          *frame_sink_ctx;
     uint32_t                       poll_period_ms;
+    uint32_t                       sequence;      /**< Monotonically increasing publish sequence */
 
     struct k_msgq    *queue;          /**< Command queue */
     struct k_thread   thread;         /**< Kernel thread control block */

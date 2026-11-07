@@ -7,6 +7,8 @@
  */
 
 #include "application/active_objects/ao_sensor_matrix.h"
+#include "application/zbus/sensor_channels.h"
+#include "domain/services/sensor_matrix_mapper.h"
 
 #include <errno.h>
 #include <string.h>
@@ -85,10 +87,9 @@ int ao_sensor_matrix_init(ao_sensor_matrix_t *self,
     memset(self, 0, sizeof(*self));
 
     self->matrix = config->matrix;
-    self->frame_sink = config->frame_sink;
-    self->frame_sink_ctx = config->frame_sink_ctx;
     self->poll_period_ms = (config->poll_period_ms > 0U) ? config->poll_period_ms
                                                          : AO_SENSOR_MATRIX_PERIOD_MS;
+    self->sequence = 0U;
     self->queue = queue;
     self->stack = config->stack;
     self->stack_size = config->stack_size;
@@ -169,18 +170,32 @@ int ao_sensor_matrix_step(ao_sensor_matrix_t *self, uint32_t elapsed_ms)
 
     self->error_count = 0U;
 
-    if (self->frame_sink == NULL) {
-        return 0;
-    }
-
+    /* 1. Read semantic matrix frame and publish to chan_thermal_matrix */
     thermal_matrix_frame_t frame;
     err = i_sensor_matrix_get_frame(self->matrix, &frame);
-    if (err != 0) {
+    if (err == 0) {
+        (void)zbus_chan_pub(&chan_thermal_matrix, &frame, K_MSEC(50));
+    } else {
         LOG_WRN("sensor matrix frame unavailable (%d)", err);
-        return err;
     }
 
-    self->frame_sink(self->frame_sink_ctx, &frame);
+    /* 2. Obtain raw readings, pack flat snapshot, and publish to chan_sensor_snapshot */
+    raw_sensor_readings_t raw;
+    err = i_sensor_matrix_get_raw_readings(self->matrix, &raw);
+    if (err == 0) {
+        sensor_snapshot_msg_t snapshot;
+        (void)memset(&snapshot, 0, sizeof(snapshot));
+        int pack_res = sensor_matrix_pack_flat_snapshot(&raw, snapshot.temperatures, &snapshot.valid_mask);
+        if (pack_res == 0) {
+            snapshot.timestamp_ms = (uint64_t)k_uptime_get();
+            snapshot.sequence = self->sequence++;
+            (void)zbus_chan_pub(&chan_sensor_snapshot, &snapshot, K_MSEC(50));
+        } else {
+            LOG_WRN("failed to pack flat snapshot (%d)", pack_res);
+        }
+    } else {
+        LOG_WRN("raw sensor readings unavailable (%d)", err);
+    }
 
     return 0;
 }
