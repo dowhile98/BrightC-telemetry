@@ -23,7 +23,7 @@ static uint8_t s_queue_buf[AO_HVAC_QUEUE_DEPTH * sizeof(ao_hvac_event_t)];
 static K_THREAD_STACK_DEFINE(s_test_stack, AO_HVAC_STACK_SIZE);
 static i_hvac_unit_t s_actuator_port;
 
-#define zassert_tri_equal(a, b, msg) zassert_true(hvac_tri_state_is_equal((a), (b)), msg)
+#define zassert_tri_equal(a, b, ...) zassert_true(hvac_tri_state_is_equal((a), (b)), ##__VA_ARGS__)
 
 static uint32_t s_event_count;
 static hvac_event_t s_last_event;
@@ -397,9 +397,9 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     zassert_equal(g0->unit_mask, 0x0FU, "unit_mask must be 0x0F (units 0..3)");
     zassert_equal(g0->active_turn_count, 2U, "active_turn_count must be 2 (2+2 rotation)");
     zassert_equal(g0->sensor_mask, 0x001FU, "sensor_mask must be 0x001F (5 internal RTD probes)");
-    zassert_within(g0->temp_min, 20.0f, 0.001f, "temp_min must be 20.0 C");
-    zassert_within(g0->temp_max, 24.0f, 0.001f, "temp_max must be 24.0 C");
-    zassert_within(g0->temp_alarm, 28.0f, 0.001f, "temp_alarm must be 28.0 C");
+    zassert_within(g0->temp_min, 26.0f, 0.001f, "temp_min must be 26.0 C");
+    zassert_within(g0->temp_max, 28.0f, 0.001f, "temp_max must be 28.0 C");
+    zassert_within(g0->temp_alarm, 30.0f, 0.001f, "temp_alarm must be 30.0 C");
     zassert_within(g0->temp_bypass, 32.0f, 0.001f, "temp_bypass must be 32.0 C");
     zassert_equal(g0->time_to_cool_s, 1800U, "time_to_cool_s must be 1800");
     zassert_equal(g0->delay_on_s, 10U, "delay_on_s must be 10");
@@ -499,8 +499,8 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
                            &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
     zassert_equal(ret, 0, "ao_hvac_init with hybrid profile must succeed");
 
-    /* Feed 5 internal RTDs: all at 25.0 C (above max 24.0 C) */
-    float rtd_temps[5] = { 25.0f, 25.0f, 25.0f, 25.0f, 25.0f };
+    /* Feed 5 internal RTDs: all at 29.0 C (above max 28.0 C) */
+    float rtd_temps[5] = { 29.0f, 29.0f, 29.0f, 29.0f, 29.0f };
     ret = ao_hvac_feed_temperatures(&s_ao, rtd_temps, 0x001FU, 5U);
     zassert_equal(ret, 0, "ao_hvac_feed_temperatures must succeed");
 
@@ -511,7 +511,7 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
     ret = ao_hvac_get_status(&s_ao, &status);
     zassert_equal(ret, 0, "ao_hvac_get_status must succeed");
     zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group 0 must enter COOLING");
-    zassert_within(status.highest_temp[0], 25.0f, 0.001f, "Highest temp should be 25.0 C");
+    zassert_within(status.highest_temp[0], 29.0f, 0.001f, "Highest temp should be 29.0 C");
 }
 
 ZTEST(ao_hvac_suite, test_safe_state_and_lifecycle_contract)
@@ -560,8 +560,8 @@ ZTEST(ao_hvac_suite, test_actuator_error_handling)
     /* Inject set_tri_state failure */
     fake_hvac_unit_set_errors(-EIO, 0);
 
-    /* Feed hot temperatures (26 C) to demand cooling actuation */
-    float rtd_temps[5] = { 26.0f, 26.0f, 26.0f, 26.0f, 26.0f };
+    /* Feed hot temperatures (29 C) to demand cooling actuation */
+    float rtd_temps[5] = { 29.0f, 29.0f, 29.0f, 29.0f, 29.0f };
     ret = ao_hvac_feed_temperatures(&s_ao, rtd_temps, 0x001FU, 5U);
     zassert_equal(ret, 0, "ao_hvac_feed_temperatures failed");
 
@@ -901,7 +901,7 @@ ZTEST(ao_hvac_suite, test_hot_unit_mask_rebuilds_topology)
 
     /* Feed hot temperature and step */
     group_temperature_metrics_t metrics = {
-        .highest_temp = 26.0f,
+        .highest_temp = 29.0f,
         .valid_sensors = 1U,
         .total_sensors = 1U,
     };
@@ -927,7 +927,7 @@ ZTEST(ao_hvac_suite, test_transition_events_published_to_chan_hvac_event)
 
     /* 1. Transition IDLE -> COOLING */
     group_temperature_metrics_t metrics = {
-        .highest_temp = 26.0f,
+        .highest_temp = 29.0f,
         .valid_sensors = 1U,
         .total_sensors = 1U,
     };
@@ -959,7 +959,7 @@ ZTEST(ao_hvac_suite, test_transition_events_published_to_chan_hvac_event)
     zassert_equal(s_last_event.type, HVAC_EVENT_FIRE_CLEARED, "Final event type must be FIRE_CLEARED");
 
     /* 4. Direct transition COOLING -> IDLE */
-    metrics.highest_temp = 26.0f;
+    metrics.highest_temp = 29.0f;
     (void)ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
     (void)ao_hvac_step(&s_ao);
     zassert_equal(s_last_event.type, HVAC_EVENT_COOLING_STARTED, "Event must be COOLING_STARTED");
@@ -1103,6 +1103,199 @@ ZTEST(ao_hvac_suite, test_sensor_snapshot_staleness_watchdog)
                   "SENSOR_FAULT must clear once fresh data arrives");
     zassert_equal(status.group_state[0], GROUP_STATE_COOLING,
                   "Group must resume normal COOLING");
+}
+
+ZTEST(ao_hvac_suite, test_bypass_alarm_relay_cool_boost_and_sensor_recovery)
+{
+    config_hvac_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.total_groups = 1U;
+    cfg.total_units = 4U;
+
+    cfg.groups[0].temp_min = 20.0f;
+    cfg.groups[0].temp_max = 24.0f;
+    cfg.groups[0].temp_alarm = 28.0f;
+    cfg.groups[0].temp_bypass = 32.0f;
+    cfg.groups[0].delay_on_s = 0U; /* immediate start for deterministic unit test */
+    cfg.groups[0].unit_mask = 0x0FU; /* Units 0, 1, 2, 3 */
+    cfg.groups[0].active_turn_count = 2U; /* 2 active, 2 backup */
+    cfg.groups[0].max_allowed_faults = 3U;
+
+    int ret = ao_hvac_init(&s_ao, &cfg, &s_actuator_port, &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* 1. Normal cooling state at 25.0 C (between temp_max 24.0 and temp_alarm 28.0) */
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 25.0f,
+        .lowest_temp = 24.5f,
+        .average_temp = 24.8f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    hvac_status_msg_t status;
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group should be in COOLING");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 active");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_ON, "Unit 1 active");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_OFF, "Unit 2 standby");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_OFF, "Unit 3 standby");
+    zassert_false(fake_hvac_unit_is_bypass_alarm_active(), "Bypass alarm relay must be inactive in normal cooling");
+
+    /* 2. Temperature rises to 29.0 C (>= temp_alarm 28.0 C): COOL_BOOST starts backup units */
+    metrics.highest_temp = 29.0f;
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOL_BOOST, "Group should transition to COOL_BOOST");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_ON, "Unit 0 still running");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_ON, "Unit 1 still running");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(2), HVAC_TRI_STATE_ON, "Backup unit 2 energized in COOL_BOOST");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(3), HVAC_TRI_STATE_ON, "Backup unit 3 energized in COOL_BOOST");
+    zassert_false(fake_hvac_unit_is_bypass_alarm_active(), "Bypass alarm relay remains inactive in COOL_BOOST");
+
+    /* 3. Sensor disconnect: valid_sensors drops to 0 */
+    metrics.valid_sensors = 0U;
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_BYPASS, "Disconnecting sensor must trip BYPASS");
+    zassert_not_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                      "BYPASS_CAUSE_SENSOR_FAULT must be set");
+    zassert_true(fake_hvac_unit_is_bypass_alarm_active(),
+                 "Bypass alarm relay must be energized when sensor fault trips bypass");
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_tri_equal(fake_hvac_unit_get_unit_state(u), HVAC_TRI_STATE_BYPASS,
+                          "Unit %u should be in BYPASS", u);
+    }
+
+    /* 4. Sensor reconnects: valid_sensors restored, normal temp (25.0 C) */
+    metrics.valid_sensors = 2U;
+    metrics.highest_temp = 25.0f;
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_SENSOR_FAULT, 0U,
+                  "BYPASS_CAUSE_SENSOR_FAULT must clear on reconnect");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING,
+                  "Group must return to COOLING cleanly");
+    zassert_false(fake_hvac_unit_is_bypass_alarm_active(),
+                  "Bypass alarm relay must de-energize when bypass clears");
+
+    /* 5. High-temperature bypass and hysteresis recovery */
+    metrics.highest_temp = 33.0f; /* >= temp_bypass (32.0 C) */
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_BYPASS, "High temp must trip BYPASS");
+    zassert_not_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_HIGH_TEMP, 0U,
+                      "BYPASS_CAUSE_HIGH_TEMP must be active");
+    zassert_true(fake_hvac_unit_is_bypass_alarm_active(),
+                 "Bypass alarm relay must be active in high temp bypass");
+
+    /* Cool down to 23.0 C (<= temp_max 24.0 C): clears high temp bypass */
+    metrics.highest_temp = 23.0f;
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
+    zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_HIGH_TEMP, 0U,
+                  "BYPASS_CAUSE_HIGH_TEMP must clear when temperature recovers below temp_max");
+    zassert_false(fake_hvac_unit_is_bypass_alarm_active(),
+                  "Bypass alarm relay must de-energize after high temp clearance");
+}
+
+ZTEST(ao_hvac_suite, test_ao_hvac_test_temp_override_and_clear)
+{
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    /* Initial state IDLE */
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE, "Initial state IDLE");
+
+    /* Inject test temp 29.5 C (above temp_max 28.0 C) */
+    ret = ao_hvac_set_test_temp(&s_ao, 29.5f);
+    zassert_equal(ret, 0, "ao_hvac_set_test_temp failed");
+    zassert_true(s_ao.has_test_temp_override, "Override flag must be set");
+
+    /* Step should drive state machine directly from injected temperature */
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    hvac_status_msg_t status;
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "ao_hvac_get_status failed");
+    zassert_equal(status.group_state[0], GROUP_STATE_COOLING, "Group 0 must enter COOLING from test temp");
+    zassert_within(status.highest_temp[0], 29.5f, 0.001f, "Status temp must reflect test temp");
+
+    /* Clear test temp */
+    ret = ao_hvac_clear_test_temp(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_clear_test_temp failed");
+    zassert_false(s_ao.has_test_temp_override, "Override flag must be cleared");
+
+    /* Error handling */
+    zassert_equal(ao_hvac_set_test_temp(NULL, 25.0f), -EINVAL, "NULL self must fail");
+    zassert_equal(ao_hvac_clear_test_temp(NULL), -EINVAL, "NULL self must fail");
+}
+
+ZTEST(ao_hvac_suite, test_ao_hvac_get_timers)
+{
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    uint32_t cooling_timer_s = 99U;
+    uint32_t rotation_timer_s = 99U;
+    uint16_t startup_timers[HVAC_MAX_UNITS_TOTAL] = {0};
+    uint16_t fan_timers[HVAC_MAX_UNITS_TOTAL] = {0};
+
+    ret = ao_hvac_get_timers(&s_ao, 0U, &cooling_timer_s, &rotation_timer_s,
+                             startup_timers, fan_timers);
+    zassert_equal(ret, 0, "ao_hvac_get_timers failed");
+    zassert_equal(cooling_timer_s, 0U, "Initial cooling timer 0");
+    zassert_equal(rotation_timer_s, 0U, "Initial rotation timer 0");
+
+    /* Step and check rotation timer */
+    (void)ao_hvac_step(&s_ao);
+    ret = ao_hvac_get_timers(&s_ao, 0U, &cooling_timer_s, &rotation_timer_s,
+                             NULL, NULL);
+    zassert_equal(ret, 0, "ao_hvac_get_timers with NULL unit arrays failed");
+    zassert_equal(rotation_timer_s, 1U, "Rotation timer should advance to 1s");
+
+    /* Error handling */
+    zassert_equal(ao_hvac_get_timers(NULL, 0U, NULL, NULL, NULL, NULL), -EINVAL, "NULL self");
+    zassert_equal(ao_hvac_get_timers(&s_ao, HVAC_MAX_GROUPS, NULL, NULL, NULL, NULL), -EINVAL, "Invalid group");
 }
 
 

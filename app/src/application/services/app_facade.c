@@ -414,6 +414,88 @@ int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days)
     return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
 }
 
+int app_facade_hvac_set_test_temp(float temp)
+{
+    if (s_app == NULL || !s_app->hvac.initialized) {
+        return -EINVAL;
+    }
+    return ao_hvac_set_test_temp(&s_app->hvac.ao, temp);
+}
+
+int app_facade_hvac_clear_test_temp(void)
+{
+    if (s_app == NULL || !s_app->hvac.initialized) {
+        return -EINVAL;
+    }
+    return ao_hvac_clear_test_temp(&s_app->hvac.ao);
+}
+
+int app_facade_hvac_test_relay(uint8_t ch, bool state)
+{
+    if (s_app == NULL || !s_app->hvac.initialized) {
+        return -EINVAL;
+    }
+    if (ch >= ADAPTER_RELAY_GPIO_CHANNEL_COUNT) {
+        return -EINVAL;
+    }
+    const i_relay_t *port = &s_app->hvac.local_relay_port;
+    if (!i_relay_is_bound(port)) {
+        port = &s_app->hvac.actuator_adapter.local_relay_port;
+    }
+    if (!i_relay_is_bound(port)) {
+        return -ENODEV;
+    }
+    return i_relay_set_state(port, (relay_channel_t)ch,
+                             state ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN);
+}
+
+int app_facade_hvac_reset_eeprom(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    /* 1. Pack k_default_hvac_config_hybrid_4units into CONFIG_DOMAIN_HVAC envelope */
+    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
+    size_t pack_len = 0;
+    int pack_rc = config_envelope_pack(CONFIG_DOMAIN_HVAC,
+                                       &k_default_hvac_config_hybrid_4units,
+                                       sizeof(k_default_hvac_config_hybrid_4units),
+                                       hvac_buf, sizeof(hvac_buf), &pack_len);
+    if (pack_rc != 0) {
+        LOG_ERR("Failed to pack default HVAC envelope: %d", pack_rc);
+        return pack_rc;
+    }
+
+    /* 2. Save directly to EEPROM storage */
+    if (s_app->storage.initialized && i_config_storage_is_bound(&s_app->storage.port)) {
+        int save_rc = i_config_storage_save(&s_app->storage.port, CONFIG_DOMAIN_HVAC,
+                                            hvac_buf, pack_len);
+        if (save_rc != 0) {
+            LOG_ERR("Failed to save default HVAC config to EEPROM: %d", save_rc);
+            return save_rc;
+        }
+        s_storage_stats.write_count++;
+    }
+
+    /* 3. Apply profile to container and active objects */
+    return app_container_apply_profile(s_app, HVAC_MODE_HYBRID_FULL);
+}
+
+int app_facade_hvac_get_timers(uint8_t group_idx,
+                               uint32_t *cooling_timer_s,
+                               uint32_t *rotation_timer_s,
+                               uint16_t *startup_timers,
+                               uint16_t *fan_timers)
+{
+    if (s_app == NULL || !s_app->hvac.initialized) {
+        return -EINVAL;
+    }
+    return ao_hvac_get_timers(&s_app->hvac.ao, group_idx,
+                              cooling_timer_s, rotation_timer_s,
+                              startup_timers, fan_timers);
+}
+
 /* =========================================================================
  * Sensor Matrix Service APIs
  * ========================================================================= */

@@ -7,6 +7,7 @@
  */
 
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
+#include "infrastructure/adapters/adapter_relay_gpio.h"
 #include "common/default_config_profiles.h"
 
 #include <errno.h>
@@ -111,9 +112,27 @@ static int adapter_hvac_actuator_get_tri_state(void *impl, uint8_t unit_id, hvac
     return 0;
 }
 
+int adapter_hvac_actuator_set_bypass_alarm(void *impl, bool active)
+{
+    adapter_hvac_actuator_t *self = (adapter_hvac_actuator_t *)impl;
+
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+    if (!i_relay_is_bound(&self->local_relay_port)) {
+        return 0;
+    }
+
+    return i_relay_set_state(&self->local_relay_port,
+                             (relay_channel_t)RELAY_CH_ALARM_OUT_1,
+                             active ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN);
+}
+
 static const i_hvac_unit_api_t s_actuator_api = {
     .set_tri_state = adapter_hvac_actuator_set_tri_state,
     .get_tri_state = adapter_hvac_actuator_get_tri_state,
+    .set_bypass_alarm = adapter_hvac_actuator_set_bypass_alarm,
 };
 
 int adapter_hvac_actuator_init(adapter_hvac_actuator_t *self,

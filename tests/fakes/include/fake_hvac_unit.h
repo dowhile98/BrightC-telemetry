@@ -27,6 +27,7 @@ typedef struct {
     /* Call counters */
     uint32_t set_tri_state_calls;
     uint32_t get_tri_state_calls;
+    uint32_t set_bypass_alarm_calls;
 
     /* Error injection */
     int simulated_set_tri_state_error;
@@ -35,6 +36,7 @@ typedef struct {
     /* Observable outputs */
     hvac_tri_state_t unit_tri_states[HVAC_MAX_UNITS_TOTAL];
     uint32_t         unit_set_count[HVAC_MAX_UNITS_TOTAL];
+    bool             bypass_alarm_active;
 } fake_hvac_unit_state_t;
 
 /**
@@ -66,6 +68,11 @@ void fake_hvac_unit_set_unit_state(uint8_t unit_id, hvac_tri_state_t state);
  * @brief Inject simulated error return codes.
  */
 void fake_hvac_unit_set_errors(int set_err, int get_err);
+
+/**
+ * @brief Inspect if the bypass alarm contact is currently active.
+ */
+bool fake_hvac_unit_is_bypass_alarm_active(void);
 
 #ifdef __cplusplus
 }

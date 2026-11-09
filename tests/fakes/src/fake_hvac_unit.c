@@ -54,9 +54,21 @@ static int fake_hvac_unit_impl_get_tri_state(void *impl, uint8_t unit_id, hvac_t
     return 0;
 }
 
+static int fake_hvac_unit_impl_set_bypass_alarm(void *impl, bool active)
+{
+    fake_hvac_unit_state_t *s = (fake_hvac_unit_state_t *)impl;
+    if (s == NULL) {
+        return -EINVAL;
+    }
+    s->set_bypass_alarm_calls++;
+    s->bypass_alarm_active = active;
+    return 0;
+}
+
 static const i_hvac_unit_api_t s_fake_hvac_unit_api = {
     .set_tri_state = fake_hvac_unit_impl_set_tri_state,
     .get_tri_state = fake_hvac_unit_impl_get_tri_state,
+    .set_bypass_alarm = fake_hvac_unit_impl_set_bypass_alarm,
 };
 
 void fake_hvac_unit_reset(void)
@@ -100,4 +112,9 @@ void fake_hvac_unit_set_errors(int set_err, int get_err)
 {
     s_fake_hvac_unit.simulated_set_tri_state_error = set_err;
     s_fake_hvac_unit.simulated_get_tri_state_error = get_err;
+}
+
+bool fake_hvac_unit_is_bypass_alarm_active(void)
+{
+    return s_fake_hvac_unit.bypass_alarm_active;
 }

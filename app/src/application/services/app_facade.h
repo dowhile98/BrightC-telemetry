@@ -323,6 +323,53 @@ int app_facade_hvac_configure_group_units(uint8_t group_id,
  */
 int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days);
 
+/**
+ * @brief Inject a temporary test temperature across all HVAC groups.
+ *
+ * @param[in] temp Injected temperature in °C.
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_set_test_temp(float temp);
+
+/**
+ * @brief Clear injected test temperature override and resume live sensor readings.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_clear_test_temp(void);
+
+/**
+ * @brief Directly actuate a physical internal relay channel for hardware testing.
+ *
+ * @param[in] ch    Relay channel (0..17).
+ * @param[in] state true for CLOSED (active/ON), false for OPEN (inactive/OFF).
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_test_relay(uint8_t ch, bool state);
+
+/**
+ * @brief Reset HVAC domain in EEPROM storage to baseline defaults (26/28/30/32 setpoints) and apply to RAM.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_reset_eeprom(void);
+
+/**
+ * @brief Query active countdown and interval timers for an HVAC group and units.
+ *
+ * @param[in]  group_idx        HVAC group index (0..HVAC_MAX_GROUPS-1).
+ * @param[out] cooling_timer_s  Accumulated cooling duration in seconds (may be NULL).
+ * @param[out] rotation_timer_s Elapsed rotation interval in seconds (may be NULL).
+ * @param[out] startup_timers   Array of size HVAC_MAX_UNITS_TOTAL for unit startup countdowns (may be NULL).
+ * @param[out] fan_timers       Array of size HVAC_MAX_UNITS_TOTAL for fan purge countdowns (may be NULL).
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_get_timers(uint8_t group_idx,
+                               uint32_t *cooling_timer_s,
+                               uint32_t *rotation_timer_s,
+                               uint16_t *startup_timers,
+                               uint16_t *fan_timers);
+
 /* =========================================================================
  * Sensor Matrix Service APIs
  * ========================================================================= */

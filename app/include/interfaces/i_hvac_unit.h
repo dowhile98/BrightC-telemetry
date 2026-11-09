@@ -53,6 +53,15 @@ typedef struct {
      * @return 0 on success, negative errno on failure.
      */
     int (*get_tri_state)(void *impl, uint8_t unit_id, hvac_tri_state_t *out_tri);
+
+    /**
+     * @brief Set the bypass alarm contact state (Alarm 1).
+     *
+     * @param[in] impl    Adapter implementation context.
+     * @param[in] active  true to energize Alarm 1 relay, false to de-energize.
+     * @return 0 on success, negative errno on failure.
+     */
+    int (*set_bypass_alarm)(void *impl, bool active);
 } i_hvac_unit_api_t;
 
 /**
@@ -121,6 +130,24 @@ static inline int i_hvac_unit_get_tri_state(const i_hvac_unit_t *port, uint8_t u
         return -EINVAL;
     }
     return port->api->get_tri_state(port->impl, unit_id, out_tri);
+}
+
+/**
+ * @brief Set the bypass alarm output state.
+ *
+ * @param[in] port    HVAC unit port handle.
+ * @param[in] active  true to energize Alarm 1 relay, false to de-energize.
+ * @return 0 on success, -EINVAL on invalid handle/parameters, or adapter errno.
+ */
+static inline int i_hvac_unit_set_bypass_alarm(const i_hvac_unit_t *port, bool active)
+{
+    if (!i_hvac_unit_is_bound(port)) {
+        return -EINVAL;
+    }
+    if (port->api->set_bypass_alarm == NULL) {
+        return -ENOTSUP;
+    }
+    return port->api->set_bypass_alarm(port->impl, active);
 }
 
 #ifdef __cplusplus

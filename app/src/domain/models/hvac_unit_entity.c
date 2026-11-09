@@ -162,7 +162,7 @@ bool hvac_unit_entity_request_start_staggered(hvac_unit_entity_t *self, uint16_t
         return false;
     }
 
-    if (self->state == UNIT_STATE_RUNNING) {
+    if (self->state == UNIT_STATE_RUNNING || self->state == UNIT_STATE_STARTING) {
         return true;
     }
 

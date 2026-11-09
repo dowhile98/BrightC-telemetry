@@ -87,6 +87,8 @@ typedef struct {
     sensor_snapshot_msg_t       last_sensor_snapshot;
     uint8_t                     boot_stabilization_s;
     uint32_t                    sensor_snapshot_age_s; /**< Elapsed seconds since last valid sensor snapshot */
+    float                       test_temp_override;    /**< Injected test temperature override (°C) */
+    bool                        has_test_temp_override; /**< True if test temperature override is active */
 
     /* Synchronization and Thread Control */
     struct k_msgq    *queue;
@@ -386,6 +388,41 @@ int ao_hvac_set_group_rotation(ao_hvac_t *self, uint8_t group_id, uint16_t days)
  * @return 0 on success, negative errno on error.
  */
 int ao_hvac_set_unit_manual(ao_hvac_t *self, uint8_t unit_id, bool enable, bool run_compressor, bool run_fan);
+
+/**
+ * @brief Set a manual test temperature override across all active HVAC groups.
+ *
+ * @param[in,out] self Active Object instance.
+ * @param[in]     temp Test temperature in °C.
+ * @return 0 on success, negative errno on invalid arguments or uninitialized AO.
+ */
+int ao_hvac_set_test_temp(ao_hvac_t *self, float temp);
+
+/**
+ * @brief Clear any active manual test temperature override and resume live sensors.
+ *
+ * @param[in,out] self Active Object instance.
+ * @return 0 on success, negative errno on invalid arguments or uninitialized AO.
+ */
+int ao_hvac_clear_test_temp(ao_hvac_t *self);
+
+/**
+ * @brief Query current active countdown timers and delays for an HVAC group and its units.
+ *
+ * @param[in,out] self             Active Object instance.
+ * @param[in]     group_idx        Group index (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[out]    cooling_timer_s  Accumulated cooling time in seconds (optional, may be NULL).
+ * @param[out]    rotation_timer_s Accumulated duty rotation time in seconds (optional, may be NULL).
+ * @param[out]    startup_timers   Array of size HVAC_MAX_UNITS_TOTAL for unit startup countdowns (optional, may be NULL).
+ * @param[out]    fan_timers       Array of size HVAC_MAX_UNITS_TOTAL for fan purge countdowns (optional, may be NULL).
+ * @return 0 on success, negative errno on invalid arguments.
+ */
+int ao_hvac_get_timers(ao_hvac_t *self,
+                       uint8_t group_idx,
+                       uint32_t *cooling_timer_s,
+                       uint32_t *rotation_timer_s,
+                       uint16_t *startup_timers,
+                       uint16_t *fan_timers);
 
 /**
  * @brief Check whether the Active Object execution thread is running.

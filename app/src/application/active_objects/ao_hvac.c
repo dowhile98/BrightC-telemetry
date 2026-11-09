@@ -244,6 +244,18 @@ int ao_hvac_step(ao_hvac_t *self)
     }
 
     /* 1. Evaluate and tick each active group */
+    if (self->has_test_temp_override) {
+        for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+            if (self->group_active[g]) {
+                self->group_metrics[g].highest_temp = self->test_temp_override;
+                self->group_metrics[g].average_temp = self->test_temp_override;
+                self->group_metrics[g].valid_sensors = 1U;
+                self->group_metrics[g].total_sensors = 1U;
+            }
+        }
+        in_grace_period = false;
+    }
+
     for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
         if (self->group_active[g]) {
             if (in_grace_period && (self->group_metrics[g].valid_sensors == 0U)) {
@@ -318,7 +330,19 @@ int ao_hvac_step(ao_hvac_t *self)
         }
     }
 
-    /* 3. Snapshot status and publish to Zbus */
+    /* 3. Evaluate global bypass condition and drive Alarm 1 relay */
+    bool any_bypass = false;
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        if (self->group_active[g] && (self->groups[g].state == GROUP_STATE_BYPASS || self->groups[g].bypass_causes_mask != 0U)) {
+            any_bypass = true;
+            break;
+        }
+    }
+    if (i_hvac_unit_is_bound(&self->actuator_port)) {
+        (void)i_hvac_unit_set_bypass_alarm(&self->actuator_port, any_bypass);
+    }
+
+    /* 4. Snapshot status and publish to Zbus */
     hvac_status_msg_t status;
     memset(&status, 0, sizeof(status));
 
@@ -360,6 +384,10 @@ int ao_hvac_safe_state(ao_hvac_t *self)
                 }
             }
         }
+    }
+
+    if (i_hvac_unit_is_bound(&self->actuator_port)) {
+        (void)i_hvac_unit_set_bypass_alarm(&self->actuator_port, false);
     }
 
     k_mutex_unlock(&self->lock);
@@ -731,6 +759,74 @@ int ao_hvac_set_unit_manual(ao_hvac_t *self, uint8_t unit_id, bool enable, bool 
     } else {
         hvac_unit_entity_request_stop(&self->units[unit_id], false);
     }
+    k_mutex_unlock(&self->lock);
+    return 0;
+}
+
+int ao_hvac_set_test_temp(ao_hvac_t *self, float temp)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    self->test_temp_override = temp;
+    self->has_test_temp_override = true;
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        if (self->group_active[g]) {
+            self->group_metrics[g].highest_temp = temp;
+            self->group_metrics[g].average_temp = temp;
+            self->group_metrics[g].valid_sensors = 1U;
+            self->group_metrics[g].total_sensors = 1U;
+        }
+    }
+    k_mutex_unlock(&self->lock);
+
+    return 0;
+}
+
+int ao_hvac_clear_test_temp(ao_hvac_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+    self->has_test_temp_override = false;
+    k_mutex_unlock(&self->lock);
+
+    return 0;
+}
+
+int ao_hvac_get_timers(ao_hvac_t *self,
+                       uint8_t group_idx,
+                       uint32_t *cooling_timer_s,
+                       uint32_t *rotation_timer_s,
+                       uint16_t *startup_timers,
+                       uint16_t *fan_timers)
+{
+    if (self == NULL || !self->is_initialized || group_idx >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+
+    k_mutex_lock(&self->lock, K_FOREVER);
+
+    if (cooling_timer_s != NULL) {
+        *cooling_timer_s = (uint32_t)self->groups[group_idx].cooling_timer_s;
+    }
+    if (rotation_timer_s != NULL) {
+        *rotation_timer_s = self->groups[group_idx].rotation_timer_s;
+    }
+
+    for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+        if (startup_timers != NULL) {
+            startup_timers[u] = self->units[u].startup_timer_s;
+        }
+        if (fan_timers != NULL) {
+            fan_timers[u] = self->units[u].fan_delay_timer_s;
+        }
+    }
+
     k_mutex_unlock(&self->lock);
     return 0;
 }

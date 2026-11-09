@@ -298,22 +298,22 @@ ZTEST(hvac_group_suite, test_high_temp_bypass_and_hysteresis)
     zassert_true((s_group.bypass_causes_mask & (uint32_t)BYPASS_CAUSE_HIGH_TEMP) != 0U,
                  "BYPASS_CAUSE_HIGH_TEMP bit set");
 
-    /* Temperature cools to 28.0 C (< temp_bypass, but > temp_min 21.0 C) */
+    /* Temperature cools to 28.0 C (< temp_bypass, but > temp_max 24.0 C) */
     metrics.highest_temp = 28.0f;
     hvac_group_entity_evaluate(&s_group, &metrics);
     zassert_equal(s_group.state, GROUP_STATE_BYPASS, "Bypass must remain active due to hysteresis at 28.0 C");
     zassert_true((s_group.bypass_causes_mask & (uint32_t)BYPASS_CAUSE_HIGH_TEMP) != 0U,
                  "Bypass flag must remain set");
 
-    /* Temperature cools to 23.0 C (> temp_min) */
-    metrics.highest_temp = 23.0f;
+    /* Temperature cools to 25.0 C (> temp_max 24.0 C) */
+    metrics.highest_temp = 25.0f;
     hvac_group_entity_evaluate(&s_group, &metrics);
-    zassert_equal(s_group.state, GROUP_STATE_BYPASS, "Bypass must remain active at 23.0 C");
+    zassert_equal(s_group.state, GROUP_STATE_BYPASS, "Bypass must remain active at 25.0 C");
 
-    /* Temperature reaches temp_min (20.5 C <= 21.0 C): Bypass clears! */
-    metrics.highest_temp = 20.5f;
+    /* Temperature drops to or below temp_max (23.5 C <= 24.0 C): Bypass clears! */
+    metrics.highest_temp = 23.5f;
     hvac_group_entity_evaluate(&s_group, &metrics);
-    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Bypass must clear when T <= temp_min");
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Bypass must clear when T <= temp_max");
     zassert_equal(s_group.bypass_causes_mask, 0U, "All bypass flags must be cleared");
 
     /* Verify units restored to smart mode (relay_sm = 1) */

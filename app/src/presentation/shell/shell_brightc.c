@@ -355,6 +355,112 @@ static int cmd_hvac_rotation(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_hvac_relay(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 3) {
+        shell_error(sh, "Usage: hvac relay <ch 0..17> <0|1>");
+        return -EINVAL;
+    }
+
+    uint8_t ch = (uint8_t)strtoul(argv[1], NULL, 10);
+    if (ch > 17U) {
+        shell_error(sh, "Invalid relay channel: %u (must be 0..17)", ch);
+        return -EINVAL;
+    }
+
+    bool state = (strtoul(argv[2], NULL, 10) != 0U);
+    int err = app_facade_hvac_test_relay(ch, state);
+    if (err != 0) {
+        shell_error(sh, "Failed to actuate relay %u (%d)", ch, err);
+        return err;
+    }
+
+    shell_print(sh, "Relay %u -> %s", ch, state ? "ON (CLOSED)" : "OFF (OPEN)");
+    return 0;
+}
+
+static int cmd_hvac_set_temp(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        shell_error(sh, "Usage: hvac set_temp <degrees_c>");
+        return -EINVAL;
+    }
+
+    float temp = strtof(argv[1], NULL);
+    int err = app_facade_hvac_set_test_temp(temp);
+    if (err != 0) {
+        shell_error(sh, "Failed to set test temperature (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "Injected HVAC test temperature: %.1f C", (double)temp);
+    return 0;
+}
+
+static int cmd_hvac_clear_temp(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int err = app_facade_hvac_clear_test_temp();
+    if (err != 0) {
+        shell_error(sh, "Failed to clear test temperature (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "Cleared HVAC test temperature override. Resumed live sensors.");
+    return 0;
+}
+
+static int cmd_hvac_eeprom_reset(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    shell_print(sh, "Resetting HVAC configuration in EEPROM to default 26/28/30/32 setpoints...");
+    int err = app_facade_hvac_reset_eeprom();
+    if (err != 0) {
+        shell_error(sh, "Failed to reset HVAC EEPROM (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "HVAC EEPROM reset and profile applied successfully.");
+    return 0;
+}
+
+static int cmd_hvac_timers(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    shell_print(sh, "=== HVAC TIMERS & COUNTDOWNS ===");
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        uint32_t cooling_timer_s = 0U;
+        uint32_t rotation_timer_s = 0U;
+        uint16_t startup_timers[HVAC_MAX_UNITS_TOTAL] = {0};
+        uint16_t fan_timers[HVAC_MAX_UNITS_TOTAL] = {0};
+
+        int err = app_facade_hvac_get_timers(g, &cooling_timer_s, &rotation_timer_s,
+                                             startup_timers, fan_timers);
+        if (err != 0) {
+            continue;
+        }
+
+        shell_print(sh, "[Group %u] Cooling timer: %u s | Rotation timer: %u s (%u d %02u:%02u:%02u)",
+                    g, cooling_timer_s, rotation_timer_s,
+                    rotation_timer_s / 86400U,
+                    (rotation_timer_s % 86400U) / 3600U,
+                    (rotation_timer_s % 3600U) / 60U,
+                    rotation_timer_s % 60U);
+
+        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+            shell_print(sh, "  Unit %u: Startup Delay = %u s | Fan Purge Delay = %u s",
+                        u, startup_timers[u], fan_timers[u]);
+        }
+    }
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_hvac,
     SHELL_CMD(status, NULL, "Show group modes, temperatures, active units, relays, alarms", cmd_hvac_status),
     SHELL_CMD_ARG(mode, NULL, "Set operating mode: hvac mode <grp> <off|cool|heat|auto|fan_only|emergency>", cmd_hvac_mode, 3, 0),
@@ -364,6 +470,11 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_hvac,
     SHELL_CMD_ARG(rotation, NULL, "Set group rotation interval: hvac rotation <grp> <days (e.g. 7, 15, 20, 30)>", cmd_hvac_rotation, 3, 0),
     SHELL_CMD_ARG(rotate, NULL, "Force unit rotation turn: hvac rotate <grp>", cmd_hvac_rotate, 2, 0),
     SHELL_CMD_ARG(manual, NULL, "Manual override: hvac manual <unit> <on|off> [comp_on|comp_off] [fan_on|fan_off]", cmd_hvac_manual, 3, 2),
+    SHELL_CMD_ARG(relay, NULL, "Directly drive relay: hvac relay <ch 0..17> <0|1>", cmd_hvac_relay, 3, 0),
+    SHELL_CMD_ARG(set_temp, NULL, "Inject test temperature: hvac set_temp <degrees_c>", cmd_hvac_set_temp, 2, 0),
+    SHELL_CMD(clear_temp, NULL, "Clear injected test temperature and resume sensors", cmd_hvac_clear_temp),
+    SHELL_CMD(eeprom_reset, NULL, "Reset HVAC domain in EEPROM to default 26/28/30/32 setpoints and apply", cmd_hvac_eeprom_reset),
+    SHELL_CMD(timers, NULL, "Show active countdown timers for all units and groups", cmd_hvac_timers),
     SHELL_SUBCMD_SET_END
 );
 

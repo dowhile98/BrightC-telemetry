@@ -77,6 +77,15 @@ int adapter_hvac_actuator_set_hw_config(adapter_hvac_actuator_t *self,
  */
 i_hvac_unit_t adapter_hvac_actuator_port(adapter_hvac_actuator_t *self);
 
+/**
+ * @brief Drive the bypass alarm contact (Alarm Relay 1) via local relay port.
+ *
+ * @param[in] impl    Adapter instance context.
+ * @param[in] active  true to close Alarm 1 contact, false to open.
+ * @return 0 on success, negative errno on failure.
+ */
+int adapter_hvac_actuator_set_bypass_alarm(void *impl, bool active);
+
 #ifdef __cplusplus
 }
 #endif

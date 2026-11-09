@@ -250,6 +250,7 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
 
     /* 2. Sensor health evaluation */
     if (metrics == NULL || metrics->valid_sensors == 0U) {
+        self->bypass_causes_mask &= ~(uint32_t)BYPASS_CAUSE_HIGH_TEMP;
         hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_SENSOR_FAULT, true);
         return;
     } else {
@@ -285,7 +286,7 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
     if (ctrl_temp >= self->temp_bypass) {
         hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_HIGH_TEMP, true);
     } else if ((self->bypass_causes_mask & (uint32_t)BYPASS_CAUSE_HIGH_TEMP) != 0U) {
-        if (ctrl_temp <= self->temp_min) {
+        if (ctrl_temp <= self->temp_max) {
             hvac_group_entity_set_bypass_cause(self, BYPASS_CAUSE_HIGH_TEMP, false);
         }
     }
@@ -331,15 +332,29 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
         }
     } else if ((ctrl_temp >= self->temp_alarm) || (self->cooling_timeout_count == 1U)) {
         self->state = GROUP_STATE_COOL_BOOST;
+        uint8_t starting_delay_step = 0U;
         for (uint8_t k = 0U; k < self->unit_count; k++) {
             uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
-            if (self->units[idx] != NULL) {
-                hvac_unit_entity_request_start_staggered(self->units[idx], (uint16_t)(k * self->delay_on_s));
+            hvac_unit_entity_t *unit = self->units[idx];
+            if (unit != NULL) {
+                bool is_available = (unit->state != UNIT_STATE_FAULT &&
+                                     unit->state != UNIT_STATE_BLOCKED_ALARM &&
+                                     unit->state != UNIT_STATE_BYPASS);
+                if (is_available) {
+                    if (unit->state == UNIT_STATE_RUNNING || unit->state == UNIT_STATE_STARTING) {
+                        (void)hvac_unit_entity_request_start_staggered(unit, 0U);
+                    } else {
+                        uint16_t delay = (uint16_t)(starting_delay_step * self->delay_on_s);
+                        (void)hvac_unit_entity_request_start_staggered(unit, delay);
+                        starting_delay_step++;
+                    }
+                }
             }
         }
     } else if ((ctrl_temp >= self->temp_max) || (self->state == GROUP_STATE_COOLING)) {
         self->state = GROUP_STATE_COOLING;
         uint8_t active_assigned = 0U;
+        uint8_t starting_delay_step = 0U;
         for (uint8_t k = 0U; k < self->unit_count; k++) {
             uint8_t idx = (self->current_turn_offset + k) % self->unit_count;
             hvac_unit_entity_t *unit = self->units[idx];
@@ -348,7 +363,13 @@ void hvac_group_entity_evaluate(hvac_group_entity_t *self, const group_temperatu
                                      unit->state != UNIT_STATE_BLOCKED_ALARM &&
                                      unit->state != UNIT_STATE_BYPASS);
                 if (is_available && (active_assigned < self->active_turn_count)) {
-                    hvac_unit_entity_request_start_staggered(unit, (uint16_t)(active_assigned * self->delay_on_s));
+                    if (unit->state == UNIT_STATE_RUNNING || unit->state == UNIT_STATE_STARTING) {
+                        (void)hvac_unit_entity_request_start_staggered(unit, 0U);
+                    } else {
+                        uint16_t delay = (uint16_t)(starting_delay_step * self->delay_on_s);
+                        (void)hvac_unit_entity_request_start_staggered(unit, delay);
+                        starting_delay_step++;
+                    }
                     active_assigned++;
                 } else {
                     hvac_unit_entity_request_stop(unit, self->enable_fan_delay);
