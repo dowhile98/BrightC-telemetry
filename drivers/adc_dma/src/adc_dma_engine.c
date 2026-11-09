@@ -34,14 +34,18 @@ BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) <= 1,
 /** Channels physically supported by an STM32H7 ADC sequence mask. */
 #define MAX_ADC_HW_CHANNEL_ID 31U
 
+/** Number of burst samples collected and averaged per channel. */
+#define ADC_DMA_BURST_SAMPLES 16U
+
 /** State of one ADC controller participating in the parallel scan. */
 struct adc_ctrl_group {
     const struct device *adc_dev;
     uint32_t channel_mask;
     uint8_t channel_ids[MAX_CHANNELS_PER_ADC]; /**< Ascending: equals DMA buffer order */
     uint8_t num_channels;
-    int16_t *dma_buf;                          /**< Points into s_adc_dma_arena */
+    uint16_t *dma_buf;                         /**< Points into s_adc_dma_arena */
     struct k_poll_signal done_signal;
+    struct adc_sequence seq;
 };
 
 struct adc_dma_data {
@@ -51,6 +55,10 @@ struct adc_dma_data {
     uint8_t channel_to_group[MAX_TOTAL_CHANNELS];
     uint8_t channel_to_buf_idx[MAX_TOTAL_CHANNELS];
     uint8_t channel_input[MAX_TOTAL_CHANNELS];
+    uint32_t accum_sum[MAX_TOTAL_CHANNELS];
+    uint16_t accum_min[MAX_TOTAL_CHANNELS];
+    uint16_t accum_max[MAX_TOTAL_CHANNELS];
+    uint16_t averaged_counts[MAX_TOTAL_CHANNELS];
 };
 
 /*
@@ -59,7 +67,7 @@ struct adc_dma_data {
  * counts. Section attributes cannot be applied to struct members, hence the
  * arena lives at file scope; a single engine instance is enforced above.
  */
-static int16_t s_adc_dma_arena[MAX_ADC_CONTROLLERS][MAX_CHANNELS_PER_ADC]
+static uint16_t s_adc_dma_arena[MAX_ADC_CONTROLLERS][MAX_CHANNELS_PER_ADC]
     __aligned(32) __nocache;
 
 struct adc_dma_config {
@@ -99,20 +107,18 @@ static int adc_dma_engine_group_for(struct adc_dma_data *data,
 static int adc_dma_engine_trigger_scan(const struct device *dev)
 {
     struct adc_dma_data *data = dev->data;
-    const struct adc_dma_config *cfg = dev->config;
+
+    for (size_t c = 0; c < data->total_channels; c++) {
+        data->accum_sum[c] = 0U;
+        data->accum_min[c] = UINT16_MAX;
+        data->accum_max[c] = 0U;
+    }
 
     for (size_t i = 0; i < data->active_groups; i++) {
         struct adc_ctrl_group *grp = &data->groups[i];
         k_poll_signal_reset(&grp->done_signal);
 
-        struct adc_sequence seq = {
-            .channels = grp->channel_mask,
-            .buffer = grp->dma_buf,
-            .buffer_size = grp->num_channels * sizeof(int16_t),
-            .resolution = cfg->resolution,
-        };
-
-        int err = adc_read_async(grp->adc_dev, &seq, &grp->done_signal);
+        int err = adc_read_async(grp->adc_dev, &grp->seq, &grp->done_signal);
         if (err) {
             LOG_ERR("adc_read_async group %u failed: %d", (unsigned int)i, err);
             return err;
@@ -132,52 +138,89 @@ static int adc_dma_engine_wait_scan(const struct device *dev, k_timeout_t timeou
     k_timepoint_t timepoint = sys_timepoint_calc(timeout);
     int ret = 0;
 
-    for (size_t i = 0; i < data->active_groups; i++) {
-        struct k_poll_event ev = K_POLL_EVENT_INITIALIZER(
-            K_POLL_TYPE_SIGNAL,
-            K_POLL_MODE_NOTIFY_ONLY,
-            &data->groups[i].done_signal
-        );
+    for (uint32_t b = 0; b < ADC_DMA_BURST_SAMPLES; b++) {
+        if (b > 0) {
+            for (size_t i = 0; i < data->active_groups; i++) {
+                struct adc_ctrl_group *grp = &data->groups[i];
+                k_poll_signal_reset(&grp->done_signal);
 
-        k_timeout_t remaining = sys_timepoint_timeout(timepoint);
-        ret = k_poll(&ev, 1, remaining);
-        if (ret != 0) {
-            LOG_WRN("ADC DMA wait group %u failed or timed out: %d", (unsigned int)i, ret);
-            break;
+                int err = adc_read_async(grp->adc_dev, &grp->seq, &grp->done_signal);
+                if (err) {
+                    LOG_ERR("adc_read_async burst %u group %u failed: %d",
+                            (unsigned int)b, (unsigned int)i, err);
+                    return err;
+                }
+            }
         }
 
-        unsigned int signaled = 0;
-        int result = 0;
-        k_poll_signal_check(&data->groups[i].done_signal, &signaled, &result);
-        if (result != 0) {
-            LOG_WRN("ADC DMA group %u completed with error: %d", (unsigned int)i, result);
-            ret = result;
-            break;
+        for (size_t i = 0; i < data->active_groups; i++) {
+            struct k_poll_event ev = K_POLL_EVENT_INITIALIZER(
+                K_POLL_TYPE_SIGNAL,
+                K_POLL_MODE_NOTIFY_ONLY,
+                &data->groups[i].done_signal
+            );
+
+            k_timeout_t remaining = sys_timepoint_timeout(timepoint);
+            ret = k_poll(&ev, 1, remaining);
+            if (ret != 0) {
+                LOG_WRN("ADC DMA wait group %u failed or timed out: %d", (unsigned int)i, ret);
+                break;
+            }
+
+            unsigned int signaled = 0;
+            int result = 0;
+            k_poll_signal_check(&data->groups[i].done_signal, &signaled, &result);
+            if (result != 0) {
+                LOG_WRN("ADC DMA group %u completed with error: %d", (unsigned int)i, result);
+                ret = result;
+                break;
+            }
+        }
+
+        if (ret != 0) {
+            for (size_t i = 0; i < data->active_groups; i++) {
+                k_poll_signal_reset(&data->groups[i].done_signal);
+            }
+            return ret;
+        }
+
+        for (size_t c = 0; c < data->total_channels; c++) {
+            uint8_t grp_idx = data->channel_to_group[c];
+            uint8_t buf_idx = data->channel_to_buf_idx[c];
+            uint16_t sample = data->groups[grp_idx].dma_buf[buf_idx];
+
+            data->accum_sum[c] += sample;
+            if (sample < data->accum_min[c]) {
+                data->accum_min[c] = sample;
+            }
+            if (sample > data->accum_max[c]) {
+                data->accum_max[c] = sample;
+            }
         }
     }
 
-    if (ret != 0) {
-        for (size_t i = 0; i < data->active_groups; i++) {
-            k_poll_signal_reset(&data->groups[i].done_signal);
-        }
-        return ret;
+    for (size_t c = 0; c < data->total_channels; c++) {
+#if ADC_DMA_BURST_SAMPLES > 2
+        uint32_t net_sum = data->accum_sum[c] - data->accum_min[c] - data->accum_max[c];
+        data->averaged_counts[c] = (uint16_t)((net_sum + (ADC_DMA_BURST_SAMPLES - 2) / 2) /
+                                             (ADC_DMA_BURST_SAMPLES - 2));
+#else
+        data->averaged_counts[c] = (uint16_t)(data->accum_sum[c] / ADC_DMA_BURST_SAMPLES);
+#endif
     }
 
     return 0;
 }
 
 static int adc_dma_engine_get_raw_sample(const struct device *dev, uint8_t channel_idx,
-                                         int16_t *out_counts)
+                                         uint16_t *out_counts)
 {
     struct adc_dma_data *data = dev->data;
     if (out_counts == NULL || channel_idx >= data->total_channels) {
         return -EINVAL;
     }
 
-    uint8_t grp_idx = data->channel_to_group[channel_idx];
-    uint8_t buf_idx = data->channel_to_buf_idx[channel_idx];
-
-    *out_counts = data->groups[grp_idx].dma_buf[buf_idx];
+    *out_counts = data->averaged_counts[channel_idx];
     return 0;
 }
 
@@ -328,6 +371,15 @@ static int adc_dma_engine_init(const struct device *dev)
     int err = adc_dma_engine_build_map(dev);
     if (err != 0) {
         return err;
+    }
+
+    for (size_t i = 0U; i < data->active_groups; i++) {
+        struct adc_ctrl_group *grp = &data->groups[i];
+        grp->seq.channels = grp->channel_mask;
+        grp->seq.buffer = grp->dma_buf;
+        grp->seq.buffer_size = grp->num_channels * sizeof(uint16_t);
+        grp->seq.resolution = cfg->resolution;
+        grp->seq.options = NULL;
     }
 
     LOG_INF("ADC DMA engine ready: %u controllers, %u logical channels",

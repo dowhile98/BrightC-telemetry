@@ -21,6 +21,7 @@
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
+#include "transducer_rtd.h"
 
 LOG_MODULE_REGISTER(app_facade, LOG_LEVEL_INF);
 
@@ -433,11 +434,22 @@ int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view)
         return err;
     }
 
+    raw_sensor_readings_t raw = {0};
+    int raw_err = i_sensor_matrix_get_raw_readings(&s_app->sensor.port, &raw);
+
     out_view->internal_count = 5U;
     for (uint8_t i = 0U; i < 5U; i++) {
         int16_t offset = s_app->calibration_cfg.temp_offsets_x10[i];
         out_view->internal_rtd_temps[i] = snap.temperatures[i] + ((float)offset / 10.0f);
         out_view->internal_rtd_valid[i] = ((snap.valid_mask & (1ULL << i)) != 0ULL);
+
+        if (raw_err == 0) {
+            out_view->internal_rtd_raw_counts[i] = raw.internal_rtd_raw_adc[i];
+            (void)transducer_rtd_adc_to_ohms(NULL, raw.internal_rtd_raw_adc[i], &out_view->internal_rtd_ohms[i]);
+        } else {
+            out_view->internal_rtd_raw_counts[i] = 0.0f;
+            out_view->internal_rtd_ohms[i] = 0.0f;
+        }
     }
 
     out_view->modbus_count = 16U;
@@ -449,6 +461,19 @@ int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view)
     }
 
     return 0;
+}
+
+int app_facade_sensor_get_raw(raw_sensor_readings_t *out_raw)
+{
+    if (out_raw == NULL) {
+        return -EINVAL;
+    }
+
+    if (s_app == NULL || !s_app->sensor.initialized) {
+        return -ENODEV;
+    }
+
+    return i_sensor_matrix_get_raw_readings(&s_app->sensor.port, out_raw);
 }
 
 int app_facade_sensor_get_matrix(thermal_matrix_frame_t *out_frame)

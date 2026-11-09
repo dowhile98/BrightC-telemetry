@@ -74,6 +74,30 @@ ZTEST(transducer_suite, test_rtd_callendar_van_dusen)
     zassert_within(temp_c, 100.0f, 0.1f, "Expected ~100.0 deg C at 138.51 Ohms");
 }
 
+ZTEST(transducer_suite, test_rtd_open_probe_detection)
+{
+    float ohms = 0.0f;
+    /* Normal ADC counts: ~16700 counts */
+    int err = transducer_rtd_adc_to_ohms(NULL, 16700.0f, &ohms);
+    zassert_equal(err, 0, "Normal RTD counts must succeed");
+    zassert_within(ohms, 107.79f, 0.5f, "Normal ohms ~107.8");
+
+    /* Open probe saturation threshold: adc_raw >= 64000.0f */
+    err = transducer_rtd_adc_to_ohms(NULL, 64000.0f, &ohms);
+    zassert_equal(err, -1, "adc_raw >= 64000 must report open circuit");
+    zassert_equal(ohms, 9999.0f, "Open circuit resistance must be 9999.0");
+
+    /* Full saturation 65535.0f */
+    err = transducer_rtd_adc_to_ohms(NULL, 65535.0f, &ohms);
+    zassert_equal(err, -1, "65535 must report open circuit");
+    zassert_equal(ohms, 9999.0f, "Open circuit resistance must be 9999.0");
+
+    /* Transducer direct to celsius with saturated counts */
+    float temp_c = 0.0f;
+    err = transducer_rtd_adc_to_celsius(NULL, 65535.0f, &temp_c);
+    zassert_equal(err, -1, "adc_to_celsius must fail on open circuit");
+}
+
 ZTEST(transducer_suite, test_current_loop_and_namur_ne43)
 {
     /* Test NAMUR NE43 status classification */

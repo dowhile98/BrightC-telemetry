@@ -1,6 +1,6 @@
 # Sensors & Mathematical Model Subsystem Progress
 
-- **Status**: **IN_PROGRESS (95%)**
+- **Status**: **IN_PROGRESS (98%)**
 - **Architecture Reference**: [`doc/architecture/sensor_subsystem.md`](../architecture/sensor_subsystem.md)
 
 ---
@@ -16,6 +16,8 @@
 | **Thermodynamic Engine** | `app/src/domain/services/thermodynamic_engine.h`, `app/src/domain/services/thermodynamic_engine.c` | 100% | Pure C99/C11 implementation of Revision F baseline: psychrometrics, mass flow, sensible/latent balances, enthalpies, Carnot COP, exergy efficiency, Flash R410A LUT, 64-bit OLS solver |
 | **Zbus Decoupling Channels** | `app/src/application/zbus/sensor_channels.h`, `app/src/application/zbus/sensor_channels.c` | 100% | `chan_sensor_snapshot` (flat array) & `chan_thermal_matrix` (semantic frame) channels for decoupled reactive consumer delivery |
 | **Sensor Matrix AO** | `app/src/application/active_objects/ao_sensor_matrix.c` | 100% | Canonical 5-phase AO executing periodic acquisition and publishing to Zbus channels |
+| **ADC DMA Engine Driver** | `drivers/adc_dma/src/adc_dma_engine.c`, `include/drivers/adc_dma_engine.h` | 100% | Multi-ADC DMA parallel driver with 16-sample burst oversampling and min/max rejection for 16-bit uint16_t counts |
+| **Sensor Matrix Adapter** | `app/src/infrastructure/adapters/adapter_sensor_zephyr.c/.h` | 100% | Zephyr ADC DMA adapter with 1st-order bilinear IIR low-pass filtering (Fc=1.0Hz) and zero startup transient |
 
 ---
 
@@ -23,11 +25,17 @@
 - [ ] Implement `adapter_temperature_bank.c` linking Modbus/internal sensors to `i_temperature_bank_t`.
 - [ ] Implement `adapter_energy_meter.c` linking JSY-MK-339 to `i_energy_meter_t`.
 - [x] Implement Mathematical Model Revision F (`Mathematical_Model_Specification_REVF.md`): psychrometric enthalpy, thermal capacity, sensible/latent heat, COP, compressor degradation.
-- [ ] Implement ADC driver for 5 on-board PT100 channels (INA826) and 4-20mA current loop inputs (J9).
+- [x] Implement ADC driver for 5 on-board PT100 channels (INA826) and 4-20mA current loop inputs (J9).
 
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-09**: Redesigned internal ADC acquisition and RTD temperature conversion pipeline:
+  - Fixed 16-bit ADC sample data type bug (`uint16_t` 0..65535 instead of `int16_t` in `adc_dma_engine.h`, `adc_dma_engine.c`, and `adapter_sensor_zephyr.c`) preventing false OPEN/INVALID from sign extension.
+  - Implemented burst oversampling (16 samples per channel) with min/max rejection in `adc_dma_engine.c` to eliminate single-shot EMI noise and aliasing.
+  - Added 1st-order bilinear IIR low-pass filter (Fc = 1.0 Hz, seeded with first sample for zero startup transient) in `adapter_sensor_zephyr.c` across all 5 RTD and 10 J9 channels.
+  - Hardened RTD open probe detection in `transducer_rtd.c` (`adc_raw >= 64000.0f` or `a >= 3.25f`) and distinguished open circuit from out-of-range temperatures with [-25°C, -20°C] clamping in `sensor_matrix_mapper.c`.
+  - Added unit test suite `test_adapter_sensor_zephyr.c` and extended `test_sensor_matrix_mapper.c` and `test_rtd_open_probe_detection`. All 51 sensor tests and all library tests pass 100%.
 - **2026-11-07**: Complete Sensor Data Pipeline Zbus Decoupling & Consumer Alignment (`doc/issues/2026-11-07-sensor-data-pipeline-zbus-decoupling.md`):
   - Aligned Application Facade and Shell CLI with Zbus channels:
     - Added `app_facade_sensor_get_snapshot()` to read `chan_sensor_snapshot` atomically via `zbus_chan_read(..., K_NO_WAIT)`.

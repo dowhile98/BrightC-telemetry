@@ -17,7 +17,7 @@
 | **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **95%** | `ao_digital_input`, Zbus snapshot & transitions, HVAC safety interlock listener, 2x MCP23S17 SPI + Modbus MBSL32DI | 2026-11-07 |
 | **Network & Wi-Fi** | [`network_progress.md`](network_progress.md) | **75%** | `ao_network`, STM32 RMII Ethernet, ESP-Hosted SPI Wi-Fi, ISP ports | 2026-11-06 |
 | **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **100%** | `ao_storage`, Microconf I2C2 EEPROM adapter, 5 pruned domains, degraded mode | 2026-11-07 |
-| **Sensors & Mathematical Model** | [`sensors_progress.md`](sensors_progress.md) | **95%** | Zbus decoupling channels, sensor matrix mapper, flat 64-ch snapshot, Modbus codecs, Rev F Thermodynamic Engine. Pending ADC & adapters | 2026-11-07 |
+| **Sensors & Mathematical Model** | [`sensors_progress.md`](sensors_progress.md) | **98%** | Zbus decoupling channels, sensor matrix mapper, flat 64-ch snapshot, Modbus codecs, Rev F Thermodynamic Engine, ADC DMA engine with burst oversampling & IIR LPF | 2026-11-09 |
 | **MicroSD Filesystem** | [`sd_card_filesystem_progress.md`](sd_card_filesystem_progress.md) | **10%** | Port `i_storage_fs.h` & types. Pending SDMMC1 FatFS & `ao_storage_sd` | 2026-11-05 |
 | **Telemetry Store & Forward** | [`telemetry_store_forward_progress.md`](telemetry_store_forward_progress.md) | **0%** | Spec approved. Pending dual-tier spooling & `ao_telemetry_spool` | 2026-11-05 |
 | **Self-Test & Diagnostics** | [`selftest_progress.md`](selftest_progress.md) | **0%** | Spec approved. Pending POST registry, rail/bus sanity checks | 2026-11-05 |

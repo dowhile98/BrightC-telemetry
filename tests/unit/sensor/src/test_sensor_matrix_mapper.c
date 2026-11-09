@@ -250,8 +250,8 @@ ZTEST(sensor_matrix_mapper_suite, test_temperature_boundary_violation)
 
     /* CWT CH1 reports -25 C (< -20.0 C minimum limit) */
     raw.cwt_temperatures_c[0][0] = -25.0f;
-    /* CWT CH14 reports +85 C (> +80.0 C maximum limit) */
-    raw.cwt_temperatures_c[0][13] = 85.0f;
+    /* CWT CH14 reports +155 C (> +150.0 C maximum limit) */
+    raw.cwt_temperatures_c[0][13] = 155.0f;
 
     thermal_matrix_frame_t frame;
     sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
@@ -368,6 +368,68 @@ ZTEST(sensor_matrix_mapper_suite, test_internal_rtd_open_probe_saturation)
     /* Pair 0 must be invalid and flagged open */
     zassert_false((frame.pair_valid_mask & (1U << 0)), "Pair 0 must not be valid");
     zassert_true((frame.pair_open_probe_mask & (1U << 0)), "Pair 0 must be flagged open");
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_internal_rtd_clamping_minus_25_to_minus_20)
+{
+    sensor_channel_cfg_t configs[SENSOR_PHYS_CH_MAX];
+    sensor_matrix_init_default_pilot_config(configs, SENSOR_PHYS_CH_MAX);
+
+    /* Move Pair 0 Supply to INTERNAL_RTD_1 */
+    configs[0].role = SENSOR_ROLE_DISABLED;
+    configs[16].physical_ch = (uint8_t)PHYS_CH_INTERNAL_RTD_1;
+    configs[16].role = (uint8_t)SENSOR_ROLE_TEMP_SUPPLY_AIR;
+    configs[16].target_index = 0;
+    configs[16].associated_hvac_unit = 1;
+    configs[16].cal_offset_c_centi = 0;
+    configs[16].cal_gain_ppm = 0;
+
+    raw_sensor_readings_t raw;
+    setup_nominal_pilot_raw(&raw);
+
+    /* Simulate ADC counts producing a temperature between -25°C and -20°C:
+     * e.g. at -22.5°C, R ~ 91.18 Ohm.
+     * a = (91.18 / 5191.18) * 3.3 = 0.057963 V
+     * adc = ((0.057963 - 0.0579) * 80.8061 / 3.3) * 65535 = 100.0 counts
+     */
+    raw.internal_rtd_raw_adc[0] = 100.0f;
+    raw.internal_rtd_valid_mask = 0x01;
+
+    thermal_matrix_frame_t frame;
+    int err = sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
+    zassert_equal(err, 0, "Mapping returned error");
+
+    /* Pair 0 must be VALID and NOT flagged open, clamped to -20.0 C */
+    zassert_true((frame.pair_valid_mask & (1U << 0)) != 0, "Pair 0 must be valid when clamped");
+    zassert_false((frame.pair_open_probe_mask & (1U << 0)) != 0, "Pair 0 must not be flagged open");
+    zassert_within(frame.t_inj[0], SENSOR_TEMP_MIN_VALID_C, 0.01f, "Must clamp to SENSOR_TEMP_MIN_VALID_C (-20.0 C)");
+}
+
+ZTEST(sensor_matrix_mapper_suite, test_internal_rtd_open_probe_above_64000)
+{
+    sensor_channel_cfg_t configs[SENSOR_PHYS_CH_MAX];
+    sensor_matrix_init_default_pilot_config(configs, SENSOR_PHYS_CH_MAX);
+
+    /* Move Pair 0 Supply to INTERNAL_RTD_1 */
+    configs[0].role = SENSOR_ROLE_DISABLED;
+    configs[16].physical_ch = (uint8_t)PHYS_CH_INTERNAL_RTD_1;
+    configs[16].role = (uint8_t)SENSOR_ROLE_TEMP_SUPPLY_AIR;
+    configs[16].target_index = 0;
+    configs[16].associated_hvac_unit = 1;
+
+    raw_sensor_readings_t raw;
+    setup_nominal_pilot_raw(&raw);
+
+    /* ADC counts = 64100 (above 64000 threshold) */
+    raw.internal_rtd_raw_adc[0] = 64100.0f;
+    raw.internal_rtd_valid_mask = 0x01;
+
+    thermal_matrix_frame_t frame;
+    sensor_matrix_map(&raw, configs, SENSOR_PHYS_CH_MAX, &frame);
+
+    /* Pair 0 must be invalid and flagged open */
+    zassert_false((frame.pair_valid_mask & (1U << 0)), "Pair 0 must not be valid");
+    zassert_true((frame.pair_open_probe_mask & (1U << 0)), "Pair 0 must be flagged open at counts >= 64000");
 }
 
 ZTEST(sensor_matrix_mapper_suite, test_j9_humidity_4_20ma_linearization_and_namur_thresholds)

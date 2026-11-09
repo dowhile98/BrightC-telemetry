@@ -36,7 +36,7 @@ extern "C" {
 
 /** Temperature physical sanity bounds in degrees Celsius per Revision F */
 #define SENSOR_TEMP_MIN_VALID_C (-20.0f)
-#define SENSOR_TEMP_MAX_VALID_C (80.0f)
+#define SENSOR_TEMP_MAX_VALID_C (150.0f)
 
 /** 4-20 mA current loop validity bounds per NAMUR NE43 standard */
 #define SENSOR_4_20MA_LOOP_MIN_MA (3.5f)

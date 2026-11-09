@@ -122,6 +122,8 @@ typedef struct {
  * @brief Temperature and sensor channels presentation view.
  */
 typedef struct {
+    float   internal_rtd_raw_counts[5];
+    float   internal_rtd_ohms[5];
     float   internal_rtd_temps[5];
     bool    internal_rtd_valid[5];
     uint8_t internal_count;
@@ -332,6 +334,14 @@ int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days);
  * @return 0 on success, negative errno on error.
  */
 int app_facade_sensor_get_readings(app_facade_sensor_view_t *out_view);
+
+/**
+ * @brief Retrieve latest raw physical sensor readings bank.
+ *
+ * @param[out] out_raw Destination raw readings structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_sensor_get_raw(raw_sensor_readings_t *out_raw);
 
 /**
  * @brief Query current semantic thermal matrix frame from the sensor subsystem.

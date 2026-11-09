@@ -44,7 +44,7 @@ struct adc_dma_driver_api {
      * @param out_counts Output destination for raw ADC counts.
      * @return 0 on success, negative errno on failure.
      */
-    int (*get_raw_sample)(const struct device *dev, uint8_t channel_idx, int16_t *out_counts);
+    int (*get_raw_sample)(const struct device *dev, uint8_t channel_idx, uint16_t *out_counts);
 
     /**
      * @brief Return the total number of configured logical channels.

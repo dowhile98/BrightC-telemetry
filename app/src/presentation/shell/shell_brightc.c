@@ -387,13 +387,23 @@ static int cmd_sensor_status(const struct shell *sh, size_t argc, char **argv)
 
     shell_print(sh, "=== Temperature Sensor Probes ===");
     shell_print(sh, "\nInternal On-Board RTD Channels (0..4):");
-    shell_print(sh, "Ch | Temperature | Status");
-    shell_print(sh, "---+-------------+--------");
+    shell_print(sh, "Ch | Raw Counts | Resistance | Temperature | Status");
+    shell_print(sh, "---+------------+------------+-------------+----------------------------------");
     for (uint8_t i = 0U; i < view.internal_count; i++) {
         if (view.internal_rtd_valid[i]) {
-            shell_print(sh, " %u |   %6.1f C   | VALID", i, (double)view.internal_rtd_temps[i]);
+            shell_print(sh, " %u |   %8.0f |  %7.1f Ω |   %6.1f C   | VALID",
+                        i,
+                        (double)view.internal_rtd_raw_counts[i],
+                        (double)view.internal_rtd_ohms[i],
+                        (double)view.internal_rtd_temps[i]);
         } else {
-            shell_print(sh, " %u |      --.- C | OPEN / INVALID", i);
+            shell_print(sh, " %u |   %8.0f |  %7.1f Ω |   %6.1f C   | OPEN / INVALID (R=%.1f Ω, T=%.1f C)",
+                        i,
+                        (double)view.internal_rtd_raw_counts[i],
+                        (double)view.internal_rtd_ohms[i],
+                        (double)view.internal_rtd_temps[i],
+                        (double)view.internal_rtd_ohms[i],
+                        (double)view.internal_rtd_temps[i]);
         }
     }
 
@@ -580,8 +590,68 @@ static int cmd_sensor_snapshot(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_sensor_raw(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    raw_sensor_readings_t raw;
+    int err = app_facade_sensor_get_raw(&raw);
+    if (err != 0) {
+        shell_error(sh, "Failed to get raw ADC readings (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Raw Logical ADC Channels (0..14) ===");
+    shell_print(sh, "Logical | Physical Ch | Name              | Raw Counts | Voltage (V)");
+    shell_print(sh, "--------+-------------+-------------------+------------+------------");
+
+    for (uint8_t i = 0U; i < 15U; i++) {
+        uint8_t phys_ch;
+        const char *name;
+        float counts = 0.0f;
+
+        if (i < 5U) {
+            phys_ch = (uint8_t)(PHYS_CH_INTERNAL_RTD_1 + i);
+            counts = raw.internal_rtd_raw_adc[i];
+            static const char * const rtd_names[5] = {
+                "INTERNAL_RTD_1",
+                "INTERNAL_RTD_2",
+                "INTERNAL_RTD_3",
+                "INTERNAL_RTD_4",
+                "INTERNAL_RTD_5",
+            };
+            name = rtd_names[i];
+        } else {
+            uint8_t j9_idx = i - 5U;
+            phys_ch = (uint8_t)(PHYS_CH_ANALOG_J9_CH1 + j9_idx);
+            counts = raw.analog_j9_raw_adc[j9_idx];
+            static const char * const j9_names[10] = {
+                "ANALOG_J9_CH1",
+                "ANALOG_J9_CH2",
+                "ANALOG_J9_CH3",
+                "ANALOG_J9_CH4",
+                "ANALOG_J9_CH5",
+                "ANALOG_J9_CH6",
+                "ANALOG_J9_CH7",
+                "ANALOG_J9_CH8",
+                "ANALOG_J9_CH9",
+                "ANALOG_J9_CH10",
+            };
+            name = j9_names[j9_idx];
+        }
+
+        float v_adc = (counts * 3.3f) / 65535.0f;
+        shell_print(sh, "   %2u   |     %2u      | %-17s |   %8.0f |   %6.4f V",
+                    i, phys_ch, name, (double)counts, (double)v_adc);
+    }
+
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor,
     SHELL_CMD(matrix, NULL, "Display semantic sensor matrix (evaporator pairs, ambient, RH)", cmd_sensor_matrix),
+    SHELL_CMD(raw, NULL, "Display raw logical ADC channels (0..14)", cmd_sensor_raw),
     SHELL_CMD(snapshot, NULL, "Display flat 64-channel Zbus telemetry snapshot", cmd_sensor_snapshot),
     SHELL_CMD(status, NULL, "Display all RTD channels (internal 0..4, external Modbus)", cmd_sensor_status),
     SHELL_SUBCMD_SET_END

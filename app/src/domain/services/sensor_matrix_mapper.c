@@ -199,23 +199,43 @@ int sensor_matrix_map(const raw_sensor_readings_t *raw,
                 is_open = true;
             } else {
                 float adc_counts = raw->internal_rtd_raw_adc[rtd_idx];
-                float temp_c = 0.0f;
-                int cvd_res = transducer_rtd_adc_to_celsius(NULL, adc_counts, &temp_c);
+                float ohms = 0.0f;
+                int ohms_res = transducer_rtd_adc_to_ohms(NULL, adc_counts, &ohms);
 
-                if (cvd_res != 0 || temp_c < SENSOR_TEMP_MIN_VALID_C || temp_c > SENSOR_TEMP_MAX_VALID_C) {
+                if (ohms_res != 0 || ohms > 500.0f || ohms < 50.0f) {
                     is_valid = false;
                     is_open = true;
                 } else {
-                    /* Apply 2-point calibration */
-                    float gain = sensor_cal_gain_to_factor(cfg->cal_gain_ppm);
-                    float offset = sensor_cal_offset_to_c(cfg->cal_offset_c_centi);
-                    raw_val = (temp_c * gain) + offset;
+                    float temp_c = 0.0f;
+                    int cvd_res = transducer_rtd_ohms_to_celsius(100.0f, ohms, &temp_c);
 
-                    if (raw_val >= SENSOR_TEMP_MIN_VALID_C && raw_val <= SENSOR_TEMP_MAX_VALID_C) {
-                        is_valid = true;
-                        is_open = false;
-                    } else {
+                    if (cvd_res != 0) {
                         is_valid = false;
+                        is_open = true;
+                    } else {
+                        /* Clamp temperature between -25°C and -20°C to SENSOR_TEMP_MIN_VALID_C */
+                        if (temp_c >= -25.0f && temp_c < SENSOR_TEMP_MIN_VALID_C) {
+                            temp_c = SENSOR_TEMP_MIN_VALID_C;
+                        }
+
+                        if (temp_c < SENSOR_TEMP_MIN_VALID_C || temp_c > SENSOR_TEMP_MAX_VALID_C) {
+                            /* Out of valid range, but probe is physically connected */
+                            is_valid = false;
+                            is_open = false;
+                        } else {
+                            /* Apply 2-point calibration */
+                            float gain = sensor_cal_gain_to_factor(cfg->cal_gain_ppm);
+                            float offset = sensor_cal_offset_to_c(cfg->cal_offset_c_centi);
+                            raw_val = (temp_c * gain) + offset;
+
+                            if (raw_val >= SENSOR_TEMP_MIN_VALID_C && raw_val <= SENSOR_TEMP_MAX_VALID_C) {
+                                is_valid = true;
+                                is_open = false;
+                            } else {
+                                is_valid = false;
+                                is_open = false;
+                            }
+                        }
                     }
                 }
             }
@@ -427,10 +447,15 @@ int sensor_matrix_pack_flat_snapshot(const sensor_matrix_raw_bank_t *raw,
             bool adc_valid = (raw->internal_rtd_valid_mask & (1U << i)) != 0;
             if (adc_valid) {
                 float adc_counts = raw->internal_rtd_raw_adc[i];
+                float ohms = 0.0f;
                 float temp_c = 0.0f;
-                int cvd_res = transducer_rtd_adc_to_celsius(NULL, adc_counts, &temp_c);
+                int ohms_res = transducer_rtd_adc_to_ohms(NULL, adc_counts, &ohms);
+                int cvd_res = -1;
+                if (ohms_res == 0) {
+                    cvd_res = transducer_rtd_ohms_to_celsius(100.0f, ohms, &temp_c);
+                }
+                out_temps[idx] = temp_c;
                 if (cvd_res == 0 && temp_c >= SENSOR_TEMP_MIN_VALID_C && temp_c <= SENSOR_TEMP_MAX_VALID_C) {
-                    out_temps[idx] = temp_c;
                     *out_valid_mask |= (1ULL << idx);
                 }
             }

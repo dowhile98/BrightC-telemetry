@@ -33,6 +33,22 @@ extern "C" {
  */
 struct adc_dma_driver_api;
 
+#define ADAPTER_SENSOR_RTD_CHANNELS 5U
+#define ADAPTER_SENSOR_J9_CHANNELS  10U
+
+/**
+ * @brief 1st-order IIR bilinear RC low-pass filter state.
+ *
+ * Implements y[n] = b * (x[n] + x[n-1]) - a * y[n-1]
+ */
+typedef struct {
+    float a;
+    float b;
+    float x_1;
+    float y_1;
+    bool  initialized;
+} adapter_rc_filter_t;
+
 /**
  * @brief One sensor matrix ingestion instance backed by the ADC DMA engine.
  *
@@ -53,6 +69,10 @@ typedef struct {
 
     uint32_t scan_interval_ms;                  /**< Recommended acquisition period */
     uint8_t  consecutive_failures;              /**< Consecutive acquisition failure counter */
+    uint32_t log_cycle;                         /**< Periodic logging cycle counter */
+
+    adapter_rc_filter_t rtd_filter[ADAPTER_SENSOR_RTD_CHANNELS]; /**< Low-pass filters for RTD */
+    adapter_rc_filter_t j9_filter[ADAPTER_SENSOR_J9_CHANNELS];   /**< Low-pass filters for J9 */
 } adapter_sensor_zephyr_t;
 
 /**

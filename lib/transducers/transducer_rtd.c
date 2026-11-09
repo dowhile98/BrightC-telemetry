@@ -35,8 +35,13 @@ int transducer_rtd_adc_to_ohms(const rtd_circuit_config_t *cfg, float adc_raw, f
         return -1;
     }
 
+    if (adc_raw >= 64000.0f) {
+        *out_ohms = 9999.0f; /* Saturated / open circuit */
+        return -1;
+    }
+
     float a = ((cfg->v_ref / cfg->adc_max) * adc_raw) / cfg->gain + cfg->v_bias;
-    if (a >= cfg->v_ref || (cfg->v_ref - a) <= 1e-6f) {
+    if (a >= 3.25f || a >= cfg->v_ref || (cfg->v_ref - a) <= 1e-6f) {
         *out_ohms = 9999.0f; /* Saturated / open circuit */
         return -1;
     }
