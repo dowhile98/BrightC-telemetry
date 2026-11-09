@@ -227,15 +227,19 @@ int ao_hvac_step(ao_hvac_t *self)
     }
 
     /* Sensor data freshness watchdog (staleness check) */
-    self->sensor_snapshot_age_s++;
+    if (self->sensor_snapshot_age_s < UINT32_MAX) {
+        self->sensor_snapshot_age_s++;
+    }
     if (!in_grace_period && (self->boot_stabilization_s == 0U)) {
         if (self->sensor_snapshot_age_s >= HVAC_SENSOR_STALENESS_TIMEOUT_S) {
             self->last_sensor_snapshot.valid_mask = 0ULL;
             for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
                 self->group_metrics[g].valid_sensors = 0U;
             }
-            LOG_WRN("Sensor snapshot stale (%u s >= %u s), invalidating readings",
-                    self->sensor_snapshot_age_s, HVAC_SENSOR_STALENESS_TIMEOUT_S);
+            if (self->sensor_snapshot_age_s == HVAC_SENSOR_STALENESS_TIMEOUT_S) {
+                LOG_WRN("Sensor snapshot stale (%u s >= %u s), invalidating readings",
+                        self->sensor_snapshot_age_s, HVAC_SENSOR_STALENESS_TIMEOUT_S);
+            }
         }
     }
 
@@ -429,6 +433,9 @@ int ao_hvac_set_group_metrics(ao_hvac_t *self,
     k_mutex_lock(&self->lock, K_FOREVER);
     self->group_metrics[group_id] = *metrics;
     if (metrics->valid_sensors > 0U) {
+        if (self->sensor_snapshot_age_s >= HVAC_SENSOR_STALENESS_TIMEOUT_S) {
+            LOG_INF("Sensor snapshot recovered after %u s", self->sensor_snapshot_age_s);
+        }
         self->last_sensor_snapshot.valid_mask |= (1ULL << group_id);
         self->sensor_snapshot_age_s = 0U;
     }
@@ -449,6 +456,9 @@ int ao_hvac_feed_sensor_snapshot(ao_hvac_t *self,
     k_mutex_lock(&self->lock, K_FOREVER);
     self->last_sensor_snapshot.valid_mask = valid_mask;
     if (valid_mask != 0ULL) {
+        if (self->sensor_snapshot_age_s >= HVAC_SENSOR_STALENESS_TIMEOUT_S) {
+            LOG_INF("Sensor snapshot recovered after %u s", self->sensor_snapshot_age_s);
+        }
         self->sensor_snapshot_age_s = 0U;
     }
     if (count > 0U) {

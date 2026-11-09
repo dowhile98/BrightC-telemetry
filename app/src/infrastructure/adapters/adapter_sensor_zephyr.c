@@ -31,6 +31,9 @@ LOG_MODULE_REGISTER(adapter_sensor_zephyr, LOG_LEVEL_INF);
 /** Default acquisition period when not configured. */
 #define ADC_DMA_DEFAULT_SCAN_INTERVAL_MS 500U
 
+/** Number of consecutive acquisition failures before invalidating readings. */
+#define ADC_CONSECUTIVE_FAILURES_THRESHOLD 3U
+
 /** Number of on-board RTD channels wired to the ADC stage. */
 #define ADC_RTD_CHANNEL_COUNT 5U
 
@@ -135,10 +138,24 @@ static int sensor_zephyr_update(void *impl)
 
     int err = acquire_adc_samples(self, &self->raw);
     if (err != 0) {
-        /* Keep the last known-good raw bank; the mapper will report every
-         * ADC-backed probe as unhealthy because the masks stay cleared. */
-        self->raw.internal_rtd_valid_mask = 0U;
-        self->raw.analog_j9_valid_mask = 0U;
+        if (self->consecutive_failures < UINT8_MAX) {
+            self->consecutive_failures++;
+        }
+        LOG_WRN("ADC sample acquisition failed (consecutive: %u, err: %d)",
+                (unsigned int)self->consecutive_failures, err);
+
+        if (self->consecutive_failures >= ADC_CONSECUTIVE_FAILURES_THRESHOLD) {
+            /* Debounce threshold exceeded: invalidate masks */
+            self->raw.internal_rtd_valid_mask = 0U;
+            self->raw.analog_j9_valid_mask = 0U;
+        }
+        /* Else keep last known good readings and valid masks across transient glitches */
+    } else {
+        if (self->consecutive_failures > 0U) {
+            LOG_INF("ADC sample acquisition recovered after %u failures",
+                    (unsigned int)self->consecutive_failures);
+        }
+        self->consecutive_failures = 0U;
     }
 
     self->raw.timestamp_us = (uint64_t)k_uptime_get() * 1000ULL;

@@ -129,18 +129,37 @@ static int adc_dma_engine_wait_scan(const struct device *dev, k_timeout_t timeou
         return 0;
     }
 
-    struct k_poll_event evs[MAX_ADC_CONTROLLERS];
+    k_timepoint_t timepoint = sys_timepoint_calc(timeout);
+    int ret = 0;
+
     for (size_t i = 0; i < data->active_groups; i++) {
-        evs[i] = (struct k_poll_event)K_POLL_EVENT_INITIALIZER(
+        struct k_poll_event ev = K_POLL_EVENT_INITIALIZER(
             K_POLL_TYPE_SIGNAL,
             K_POLL_MODE_NOTIFY_ONLY,
             &data->groups[i].done_signal
         );
+
+        k_timeout_t remaining = sys_timepoint_timeout(timepoint);
+        ret = k_poll(&ev, 1, remaining);
+        if (ret != 0) {
+            LOG_WRN("ADC DMA wait group %u failed or timed out: %d", (unsigned int)i, ret);
+            break;
+        }
+
+        unsigned int signaled = 0;
+        int result = 0;
+        k_poll_signal_check(&data->groups[i].done_signal, &signaled, &result);
+        if (result != 0) {
+            LOG_WRN("ADC DMA group %u completed with error: %d", (unsigned int)i, result);
+            ret = result;
+            break;
+        }
     }
 
-    int ret = k_poll(evs, data->active_groups, timeout);
     if (ret != 0) {
-        LOG_WRN("ADC DMA wait timeout or error: %d", ret);
+        for (size_t i = 0; i < data->active_groups; i++) {
+            k_poll_signal_reset(&data->groups[i].done_signal);
+        }
         return ret;
     }
 
@@ -229,6 +248,20 @@ static int adc_dma_engine_build_map(const struct device *dev)
             LOG_ERR("io-channels[%u]: controller %s not ready",
                     (unsigned int)i, adc_dev->name);
             return -ENODEV;
+        }
+
+        struct adc_channel_cfg ch_cfg = {
+            .gain = ADC_GAIN_1,
+            .reference = ADC_REF_INTERNAL,
+            .acquisition_time = ADC_ACQ_TIME(ADC_ACQ_TIME_TICKS, 388),
+            .channel_id = channel,
+            .differential = 0,
+        };
+        int ch_err = adc_channel_setup(adc_dev, &ch_cfg);
+        if (ch_err != 0) {
+            LOG_ERR("io-channels[%u]: adc_channel_setup ch %u on %s failed (%d)",
+                    (unsigned int)i, (unsigned int)channel, adc_dev->name, ch_err);
+            return ch_err;
         }
 
         const int g = adc_dma_engine_group_for(data, adc_dev);

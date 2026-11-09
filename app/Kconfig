@@ -73,7 +73,7 @@ if BRIGHTC_MODBUS_ENABLE_JSY_MK339
 
 config BRIGHTC_MODBUS_ADDR_JSY_MK339
 	int "Modbus slave address for JSY-MK-339"
-	default 1
+	default 2
 	range 1 247
 	help
 	  RTU slave address (1..247).
@@ -83,7 +83,7 @@ endif # BRIGHTC_MODBUS_ENABLE_JSY_MK339
 # --- 2. CWT-TM-16PT Concentrator 1 (Disabled by default) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_1
 	bool "CWT-TM-16PT 16-channel PT100 Concentrator 1"
-	default n
+	default y
 	help
 	  Enable Modbus RTU polling for primary 16-channel PT100 concentrator on RS485-1.
 
@@ -91,7 +91,7 @@ if BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_1
 
 config BRIGHTC_MODBUS_ADDR_CWT_TM16PT_1
 	int "Modbus slave address for CWT-TM-16PT #1"
-	default 2
+	default 1
 	range 1 247
 
 endif # BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_1
@@ -115,7 +115,7 @@ endif # BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_2
 # --- 4. MBSL32DI Digital Inputs (Disabled by default) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_MBSL32DI
 	bool "MBSL32DI 32-channel Digital Input Expander"
-	default n
+	default y
 	help
 	  Enable Modbus RTU polling for 32-channel digital input module on RS485-2.
 
@@ -123,7 +123,7 @@ if BRIGHTC_MODBUS_ENABLE_MBSL32DI
 
 config BRIGHTC_MODBUS_ADDR_MBSL32DI
 	int "Modbus slave address for MBSL32DI"
-	default 4
+	default 3
 	range 1 247
 
 endif # BRIGHTC_MODBUS_ENABLE_MBSL32DI
@@ -131,7 +131,7 @@ endif # BRIGHTC_MODBUS_ENABLE_MBSL32DI
 # --- 5. Waveshare Relay Expander (Disabled by default) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY
 	bool "Waveshare 32-channel Modbus Relay Expander"
-	default n
+	default y
 	help
 	  Enable Modbus RTU control for Waveshare 32-channel relay module on RS485-2.
 
@@ -139,7 +139,7 @@ if BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY
 
 config BRIGHTC_MODBUS_ADDR_WAVESHARE_RELAY
 	int "Modbus slave address for Waveshare Relay"
-	default 5
+	default 4
 	range 1 247
 
 endif # BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY

@@ -52,6 +52,7 @@ typedef struct {
     bool                   frame_valid;         /**< True after one successful map */
 
     uint32_t scan_interval_ms;                  /**< Recommended acquisition period */
+    uint8_t  consecutive_failures;              /**< Consecutive acquisition failure counter */
 } adapter_sensor_zephyr_t;
 
 /**
