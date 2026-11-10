@@ -64,6 +64,16 @@ static const alarm_descriptor_t g_default_catalog[] = {
     { ALARM_ID_FACILITY_SURGE_PROT,"SPD",      "Surge Protective Device Trip",     ALARM_SOURCE_DIGITAL_INPUT, ALARM_SEVERITY_WARNING,  ALARM_PRIORITY_MEDIUM,    false, false, false },
     { ALARM_ID_FACILITY_PHASE_MON, "PHASE_MON","Main 3-Phase Monitor Relay",       ALARM_SOURCE_DIGITAL_INPUT, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH,      false, false, false },
 
+    /* Consolidated Air Conditioner Summary Faults (AC1..AC8) */
+    { ALARM_ID_AC1_SUMMARY_FAULT,  "AC1_FAULT", "AC Unit 1 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC2_SUMMARY_FAULT,  "AC2_FAULT", "AC Unit 2 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC3_SUMMARY_FAULT,  "AC3_FAULT", "AC Unit 3 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC4_SUMMARY_FAULT,  "AC4_FAULT", "AC Unit 4 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC5_SUMMARY_FAULT,  "AC5_FAULT", "AC Unit 5 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC6_SUMMARY_FAULT,  "AC6_FAULT", "AC Unit 6 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC7_SUMMARY_FAULT,  "AC7_FAULT", "AC Unit 7 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+    { ALARM_ID_AC8_SUMMARY_FAULT,  "AC8_FAULT", "AC Unit 8 Consolidated Summary Fault", ALARM_SOURCE_HVAC_CONTROL, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH, false, false, true  },
+
     /* Environmental / Temperatures (Aggregated for Groups 1..4 / Salas 1..4) */
     { ALARM_ID_GROUP1_TEMP_LOW,    "G1_T_LOW", "Group 1 Low Temperature Alarm",    ALARM_SOURCE_SENSOR_ANALOG, ALARM_SEVERITY_WARNING,  ALARM_PRIORITY_MEDIUM,    false, false, true  },
     { ALARM_ID_GROUP1_TEMP_HIGH,   "G1_T_HIGH","Group 1 High Temperature Alarm",   ALARM_SOURCE_SENSOR_ANALOG, ALARM_SEVERITY_CRITICAL, ALARM_PRIORITY_HIGH,      false, false, true  },
@@ -129,7 +139,14 @@ void alarm_registry_init(alarm_registry_t *self)
 
 int alarm_registry_register(alarm_registry_t *self, const alarm_descriptor_t *desc)
 {
-    if (self == NULL || desc == NULL || desc->alarm_id == ALARM_ID_NONE || desc->name == NULL) {
+    if (self == NULL || desc == NULL || desc->alarm_id == ALARM_ID_NONE ||
+        desc->name == NULL || desc->description == NULL) {
+        return -EINVAL;
+    }
+
+    if (desc->source_category >= ALARM_SOURCE_MAX ||
+        desc->default_severity > ALARM_SEVERITY_FATAL ||
+        desc->default_priority > ALARM_PRIORITY_EMERGENCY) {
         return -EINVAL;
     }
 

@@ -46,6 +46,7 @@ struct i_alarm_query_api {
     int (*get_alarm_snapshot)(void *impl, uint16_t alarm_id, alarm_snapshot_entry_t *out_snapshot);
     size_t (*get_active_alarm_ids)(void *impl, uint16_t *out_ids, size_t max_count);
     int (*get_descriptor)(void *impl, uint16_t alarm_id, alarm_descriptor_t *out_desc);
+    uint32_t (*get_active_duration)(void *impl, uint16_t alarm_id);
 };
 
 /*============================================================================*
@@ -66,7 +67,8 @@ static inline bool i_alarm_query_is_bound(const i_alarm_query_t *port)
             port->api->get_alarm_state != NULL &&
             port->api->get_alarm_snapshot != NULL &&
             port->api->get_active_alarm_ids != NULL &&
-            port->api->get_descriptor != NULL);
+            port->api->get_descriptor != NULL &&
+            port->api->get_active_duration != NULL);
 }
 
 /**
@@ -152,6 +154,18 @@ static inline int i_alarm_query_get_descriptor(const i_alarm_query_t *port,
         return -EINVAL;
     }
     return port->api->get_descriptor(port->impl, alarm_id, out_desc);
+}
+
+/**
+ * @brief Retrieve total active duration of an alarm in milliseconds (FR-03).
+ */
+static inline uint32_t i_alarm_query_get_active_duration(const i_alarm_query_t *port,
+                                                         uint16_t alarm_id)
+{
+    if (!i_alarm_query_is_bound(port)) {
+        return 0;
+    }
+    return port->api->get_active_duration(port->impl, alarm_id);
 }
 
 #ifdef __cplusplus

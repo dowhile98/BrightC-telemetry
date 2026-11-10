@@ -92,4 +92,12 @@ void adapter_alarm_detector_di_process_transition(adapter_alarm_detector_di_t *s
 
     bool is_asserted = (event->new_state == DI_STATE_ACTIVE);
     (void)ao_alarm_manager_post_condition(self->manager, alarm_id, is_asserted, 0.0f);
+
+    /* Propagate to Consolidated Summary Alarm for HVAC units (AC1..AC8) */
+    if (event->role >= DI_ROLE_UNIT_0_ALARM_HP && event->role <= DI_ROLE_UNIT_7_ALARM_VOLT) {
+        uint8_t unit_idx = (uint8_t)((event->role - DI_ROLE_UNIT_0_ALARM_HP) / 4U);
+        uint8_t contact_src = (uint8_t)((event->role - DI_ROLE_UNIT_0_ALARM_HP) % 4U);
+        uint16_t summary_id = (uint16_t)(ALARM_ID_AC1_SUMMARY_FAULT + unit_idx);
+        (void)ao_alarm_manager_post_source_condition(self->manager, summary_id, contact_src, is_asserted, 0.0f);
+    }
 }

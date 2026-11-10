@@ -298,7 +298,7 @@ typedef struct {
     uint8_t sensor_start;       /**< Start sensor flat ID (1..59; 0 = unassigned) */
     uint8_t sensor_end;         /**< End sensor flat ID (1..59; 0 = unassigned) */
     uint8_t metric_policy;      /**< Metric policy (@see sensor_metric_policy_t) */
-    uint8_t reserved[1];        /**< Reserved alignment padding */
+    int8_t  temp_low_alarm_c;   /**< Low temp alarm trip threshold in °C (default 15°C, 0 = default) */
 } config_hvac_group_t;
 
 _Static_assert(sizeof(config_hvac_group_t) == 40U, "config_hvac_group_t must be exactly 40 bytes");
@@ -429,7 +429,8 @@ static inline bool config_hvac_group_is_valid(const config_hvac_group_t *group)
         return false;
     }
 
-    if (group->temp_min > group->temp_max ||
+    if ((group->temp_low_alarm_c != 0 && (float)group->temp_low_alarm_c > group->temp_min) ||
+        group->temp_min > group->temp_max ||
         group->temp_max > group->temp_alarm ||
         group->temp_alarm > group->temp_bypass) {
         return false;

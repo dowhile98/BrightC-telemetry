@@ -68,6 +68,7 @@ typedef enum {
     ALARM_SOURCE_ELECTRICAL,        /**< 3-Phase power quality / AC line voltage */
     ALARM_SOURCE_HVAC_CONTROL,      /**< Control loop state / bypass / lockout */
     ALARM_SOURCE_SYSTEM_INFRA,      /**< Ethernet, MicroSD, Flash, Modbus bus */
+    ALARM_SOURCE_CUSTOM,            /**< Dynamically registered / application defined */
     ALARM_SOURCE_MAX                /**< Sentinel value */
 } alarm_source_category_t;
 
@@ -144,6 +145,16 @@ typedef enum {
     ALARM_ID_FACILITY_WATER_LEAK   = 0x0023,
     ALARM_ID_FACILITY_SURGE_PROT   = 0x0024,
     ALARM_ID_FACILITY_PHASE_MON    = 0x0025,
+
+    /* Consolidated Air Conditioner Summary Fault Alarms (AC1..AC8) */
+    ALARM_ID_AC1_SUMMARY_FAULT     = 0x0026,
+    ALARM_ID_AC2_SUMMARY_FAULT     = 0x0027,
+    ALARM_ID_AC3_SUMMARY_FAULT     = 0x0028,
+    ALARM_ID_AC4_SUMMARY_FAULT     = 0x0029,
+    ALARM_ID_AC5_SUMMARY_FAULT     = 0x002A,
+    ALARM_ID_AC6_SUMMARY_FAULT     = 0x002B,
+    ALARM_ID_AC7_SUMMARY_FAULT     = 0x002C,
+    ALARM_ID_AC8_SUMMARY_FAULT     = 0x002D,
 
     /* Environmental & Temperature Alarms (Groups 1..4 / Salas 1..4) */
     ALARM_ID_GROUP1_TEMP_LOW       = 0x0030,
@@ -239,6 +250,7 @@ typedef struct {
     uint64_t         triggered_timestamp_ms;    /**< Uptime when activated */
     uint64_t         cleared_timestamp_ms;      /**< Uptime when cleared */
     uint32_t         trigger_count;             /**< Cumulative activations */
+    uint32_t         active_duration_ms;        /**< Cumulative or current active duration in ms */
 } alarm_snapshot_entry_t;
 
 /*============================================================================*

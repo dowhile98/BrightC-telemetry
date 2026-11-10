@@ -85,6 +85,13 @@ void adapter_alarm_detector_hvac_process_status(adapter_alarm_detector_hvac_t *s
             (void)ao_alarm_manager_post_condition(self->manager,
                                                   lockout_alarm_ids[i],
                                                   locked, 0.0f);
+
+            /* Propagate Unit Lockout as source 4 of Consolidated AC Summary Fault */
+            uint16_t summary_id = (uint16_t)(ALARM_ID_AC1_SUMMARY_FAULT + i);
+            (void)ao_alarm_manager_post_source_condition(self->manager,
+                                                         summary_id,
+                                                         4,
+                                                         locked, 0.0f);
         }
     }
 }

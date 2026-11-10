@@ -133,6 +133,7 @@ extern "C"
                 .sensor_start = 1U,
                 .sensor_end = 5U,
                 .metric_policy = (uint8_t)SENSOR_METRIC_MAX,
+                .temp_low_alarm_c = 15,
             },
         },
         .units = {
@@ -213,6 +214,7 @@ extern "C"
                 .sensor_start = 1U,
                 .sensor_end = 8U,
                 .metric_policy = (uint8_t)SENSOR_METRIC_MAX,
+                .temp_low_alarm_c = 15,
             },
         },
         .units = {

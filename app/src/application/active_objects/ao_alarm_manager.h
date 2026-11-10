@@ -165,6 +165,24 @@ int ao_alarm_manager_post_ack(ao_alarm_manager_t *self, uint16_t alarm_id);
 int ao_alarm_manager_post_reset_latch(ao_alarm_manager_t *self, uint16_t alarm_id);
 
 /**
+ * @brief Dynamically register a new alarm descriptor at runtime (FR-23).
+ *
+ * Thread-safe API that registers the descriptor into the registry, instantiates
+ * its corresponding entity/aggregate FSM, and initializes live snapshot tracking.
+ *
+ * @param self Active Object handle.
+ * @param desc Pointer to descriptor to register.
+ * @return 0 on success, -EINVAL on invalid input, -EEXIST if already registered, -ENOSPC if full.
+ */
+int ao_alarm_manager_register_descriptor(ao_alarm_manager_t *self,
+                                         const alarm_descriptor_t *desc);
+
+/**
+ * @brief Retrieve current or total active duration of an alarm in milliseconds (FR-03).
+ */
+uint32_t ao_alarm_manager_get_active_duration(ao_alarm_manager_t *self, uint16_t alarm_id);
+
+/**
  * @brief Retrieve the fat-pointer query interface handle.
  */
 i_alarm_query_t ao_alarm_manager_get_query_port(ao_alarm_manager_t *self);

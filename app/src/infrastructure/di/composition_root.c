@@ -1121,10 +1121,12 @@ int composition_root_init_alarm(app_container_t *self)
     /* 2. Initialize Ingestion Detectors */
     adapter_alarm_detector_di_init(&self->alarm.det_di, &self->alarm.ao);
 
-    /* Temperature: default group 1 (0x000F) and group 2 (0x00F0), low 15°C, high 28°C, hyst 1.0°C */
-    const uint16_t group_masks[HVAC_MAX_GROUPS] = { 0x000FU, 0x00F0U, 0x0000U, 0x0000U };
-    adapter_alarm_detector_temp_init(&self->alarm.det_temp, &self->alarm.ao,
-                                      group_masks, 15.0f, 28.0f, 1.0f);
+    /* Temperature: initialized and bound to persistent HVAC config loaded from EEPROM */
+    adapter_alarm_detector_temp_init(&self->alarm.det_temp, &self->alarm.ao);
+    if (self->hvac.initialized)
+    {
+        (void)adapter_alarm_detector_temp_apply_hvac_config(&self->alarm.det_temp, &self->hvac.config);
+    }
 
     /* Voltage: nominal 220V, deviation 8%, hysteresis 2V */
     adapter_alarm_detector_volt_init(&self->alarm.det_volt, &self->alarm.ao,
@@ -1360,6 +1362,62 @@ static void on_indicator_alarm_feed_cb(const struct zbus_channel *chan)
 
 ZBUS_LISTENER_DEFINE(lis_indicator_alarm_feed, on_indicator_alarm_feed_cb);
 
+static void on_alarm_transition_logger_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_alarm_transition)
+    {
+        return;
+    }
+
+    const alarm_transition_event_t *ev = zbus_chan_const_msg(chan);
+    if (ev == NULL)
+    {
+        return;
+    }
+
+    const char *tr_str = "UNKNOWN";
+    switch (ev->event_type)
+    {
+    case ALARM_EVENT_ACTIVATED:      tr_str = "ACTIVATED"; break;
+    case ALARM_EVENT_CLEARED:        tr_str = "CLEARED"; break;
+    case ALARM_EVENT_ACKNOWLEDGED:   tr_str = "ACKNOWLEDGED"; break;
+    case ALARM_EVENT_LATCHED:        tr_str = "LATCHED"; break;
+    case ALARM_EVENT_SOURCE_CHANGED: tr_str = "SRC_CHANGED"; break;
+    default: break;
+    }
+
+    LOG_INF("ALARM [0x%04X] %s: state=%d sev=%d val=%.2f mask=0x%08X ts=%llu ms",
+            ev->alarm_id, tr_str, (int)ev->new_state, (int)ev->severity,
+            (double)ev->trigger_value, (unsigned int)ev->contributing_sources_mask,
+            (unsigned long long)ev->timestamp_ms);
+}
+
+ZBUS_LISTENER_DEFINE(lis_alarm_logger, on_alarm_transition_logger_cb);
+
+static void on_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_network_eth_state || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const net_state_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->alarm.initialized)
+    {
+        bool is_down = (msg->status.state != NET_IF_STATE_CONNECTED);
+        (void)ao_alarm_manager_post_condition(&s_active_container->alarm.ao,
+                                              ALARM_ID_INFRA_ETHERNET_DOWN,
+                                              is_down, 0.0f);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_alarm_net_eth_feed, on_alarm_net_eth_feed_cb);
+
 
 
 int composition_root_init(app_container_t *self)
@@ -1395,12 +1453,6 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
-    err = composition_root_init_alarm(self);
-    if (err != 0)
-    {
-        return err;
-    }
-
     err = composition_root_init_digital_inputs(self);
     if (err != 0)
     {
@@ -1408,6 +1460,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_hvac(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_alarm(self);
     if (err != 0)
     {
         return err;
@@ -1921,6 +1979,11 @@ int app_container_set_hvac_group_config(app_container_t *self, uint8_t group_id,
 
     self->hvac.config.groups[group_id] = *cfg;
 
+    if (self->alarm.initialized)
+    {
+        (void)adapter_alarm_detector_temp_set_group_from_hvac(&self->alarm.det_temp, group_id, cfg);
+    }
+
     if (self->storage.initialized)
     {
         int rc = ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, (uint16_t)group_id);
@@ -1964,6 +2027,11 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
     }
 
     self->hvac.config = *cfg;
+
+    if (self->alarm.initialized)
+    {
+        (void)adapter_alarm_detector_temp_apply_hvac_config(&self->alarm.det_temp, cfg);
+    }
 
     if (self->storage.initialized)
     {

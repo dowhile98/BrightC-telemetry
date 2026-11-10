@@ -7,6 +7,8 @@
  *
  * Evaluates periodic sensor snapshots against low/high temperature thresholds
  * and maintains per-sensor hysteresis state machines across up to HVAC_MAX_GROUPS.
+ * Sensors are assigned to groups via min/max sensor IDs (1-based, 1..64).
+ * Supports automatic configuration from persistent HVAC EEPROM settings.
  */
 
 #ifndef APP_INFRASTRUCTURE_ADAPTERS_ADAPTER_ALARM_DETECTOR_TEMP_H_
@@ -26,32 +28,80 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Sensor ID range assigned to a thermal group (1-based, 1..64).
+ */
 typedef struct {
-    ao_alarm_manager_t       *manager;
-    uint16_t                  group_sensor_masks[HVAC_MAX_GROUPS];
-    alarm_eval_temp_low_t     eval_low[16];
-    alarm_eval_temp_high_t    eval_high[16];
-    bool                      last_is_low[16];
-    bool                      last_is_high[16];
-    bool                      group_fault_active[HVAC_MAX_GROUPS];
+    uint8_t min_id; /**< Start sensor flat ID (1-based, 0 = unassigned) */
+    uint8_t max_id; /**< End sensor flat ID (1-based, 0 = unassigned) */
+} group_sensor_range_t;
+
+/**
+ * @brief Thermal group detector runtime configuration.
+ */
+typedef struct {
+    uint8_t min_id;   /**< Start sensor ID (1..64, 0 = unassigned) */
+    uint8_t max_id;   /**< End sensor ID (1..64, 0 = unassigned) */
+    float   t_low_c;  /**< Low temperature trip threshold in °C */
+    float   t_high_c; /**< High temperature trip threshold in °C */
+    float   hyst_c;   /**< Hysteresis band in °C */
+    bool    enabled;  /**< true if group is active/configured */
+} adapter_temp_group_config_t;
+
+typedef struct {
+    ao_alarm_manager_t          *manager;
+    adapter_temp_group_config_t  groups[HVAC_MAX_GROUPS];
+    alarm_eval_temp_low_t        eval_low[HVAC_MAX_GROUPS][16];
+    alarm_eval_temp_high_t       eval_high[HVAC_MAX_GROUPS][16];
+    bool                         last_is_low[HVAC_MAX_GROUPS][16];
+    bool                         last_is_high[HVAC_MAX_GROUPS][16];
+    bool                         group_fault_active[HVAC_MAX_GROUPS];
 } adapter_alarm_detector_temp_t;
 
 /**
- * @brief Initialize temperature alarm detector adapter for up to HVAC_MAX_GROUPS.
+ * @brief Initialize temperature alarm detector adapter.
+ *
+ * All groups are initially disabled until configured via
+ * adapter_alarm_detector_temp_apply_hvac_config() or
+ * adapter_alarm_detector_temp_set_group_config().
  *
  * @param self Pointer to adapter context.
  * @param mgr Pointer to Active Object alarm manager.
- * @param group_masks Array of bitmasks for sensor assignment per group (or NULL for default).
- * @param t_low_c Low temperature trip threshold in degrees Celsius.
- * @param t_high_c High temperature trip threshold in degrees Celsius.
- * @param hyst_c Hysteresis band in degrees Celsius.
  */
 void adapter_alarm_detector_temp_init(adapter_alarm_detector_temp_t *self,
-                                      ao_alarm_manager_t *mgr,
-                                      const uint16_t *group_masks,
-                                      float t_low_c,
-                                      float t_high_c,
-                                      float hyst_c);
+                                      ao_alarm_manager_t *mgr);
+
+/**
+ * @brief Configure sensor range for a specific thermal group.
+ */
+int adapter_alarm_detector_temp_set_group_range(adapter_alarm_detector_temp_t *self,
+                                                uint8_t group_idx,
+                                                uint8_t min_id,
+                                                uint8_t max_id);
+
+/**
+ * @brief Configure sensor range and temperature thresholds for a specific group.
+ */
+int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *self,
+                                                 uint8_t group_idx,
+                                                 uint8_t min_id,
+                                                 uint8_t max_id,
+                                                 float t_low_c,
+                                                 float t_high_c,
+                                                 float hyst_c);
+
+/**
+ * @brief Configure a specific group directly from HVAC group configuration.
+ */
+int adapter_alarm_detector_temp_set_group_from_hvac(adapter_alarm_detector_temp_t *self,
+                                                    uint8_t group_idx,
+                                                    const config_hvac_group_t *grp);
+
+/**
+ * @brief Apply full persistent HVAC configuration to all groups.
+ */
+int adapter_alarm_detector_temp_apply_hvac_config(adapter_alarm_detector_temp_t *self,
+                                                  const config_hvac_t *hvac_cfg);
 
 /**
  * @brief Ingest a periodic sensor snapshot.

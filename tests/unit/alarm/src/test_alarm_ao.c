@@ -130,4 +130,126 @@ ZTEST(alarm_ao_suite, test_ao_alarm_manager_dispatch_and_query)
     ao_alarm_manager_deinit(&s_alarm_mgr);
 }
 
+ZTEST(alarm_ao_suite, test_ao_alarm_manager_dynamic_registration)
+{
+    int ret;
+
+    ret = ao_alarm_manager_init(&s_alarm_mgr, s_test_alarm_stack, TEST_AO_STACK_SIZE, K_PRIO_PREEMPT(5));
+    zassert_equal(ret, 0, "Init succeeded");
+    ret = ao_alarm_manager_start(&s_alarm_mgr);
+    zassert_equal(ret, 0, "Start succeeded");
+
+    i_alarm_query_t query = ao_alarm_manager_get_query_port(&s_alarm_mgr);
+    zassert_true(i_alarm_query_is_bound(&query), "Query port bound");
+
+    alarm_descriptor_t custom_desc = {
+        .alarm_id = 0x0300,
+        .name = "CUSTOM_ALARM_TEST",
+        .description = "Dynamic Test Alarm",
+        .source_category = ALARM_SOURCE_CUSTOM,
+        .default_severity = ALARM_SEVERITY_WARNING,
+        .default_priority = ALARM_PRIORITY_LOW,
+        .is_latch_supported = false,
+        .is_ack_supported = true,
+        .is_aggregated = false
+    };
+
+    ret = ao_alarm_manager_register_descriptor(&s_alarm_mgr, &custom_desc);
+    zassert_equal(ret, 0, "Dynamic descriptor registration succeeded");
+
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, 0x0300, true, 1.0f);
+    zassert_equal(ret, 0, "Post condition true succeeded");
+
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&query, 0x0300), "Custom alarm 0x0300 must be active");
+
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, 0x0300, false, 0.0f);
+    zassert_equal(ret, 0, "Post condition false succeeded");
+
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&query, 0x0300), "Custom alarm 0x0300 must be inactive");
+
+    /* Clean shutdown */
+    ao_alarm_manager_stop(&s_alarm_mgr);
+    ao_alarm_manager_wait_stopped(&s_alarm_mgr, K_MSEC(1000));
+    ao_alarm_manager_deinit(&s_alarm_mgr);
+}
+
+ZTEST(alarm_ao_suite, test_ao_alarm_manager_active_duration)
+{
+    int ret;
+
+    ret = ao_alarm_manager_init(&s_alarm_mgr, s_test_alarm_stack, TEST_AO_STACK_SIZE, K_PRIO_PREEMPT(5));
+    zassert_equal(ret, 0, "Init succeeded");
+    ret = ao_alarm_manager_start(&s_alarm_mgr);
+    zassert_equal(ret, 0, "Start succeeded");
+
+    i_alarm_query_t query = ao_alarm_manager_get_query_port(&s_alarm_mgr);
+    zassert_true(i_alarm_query_is_bound(&query), "Query port bound");
+
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, ALARM_ID_INFRA_ETHERNET_DOWN, true, 1.0f);
+    zassert_equal(ret, 0, "Post condition true");
+
+    k_sleep(K_MSEC(100));
+
+    uint32_t dur = i_alarm_query_get_active_duration(&query, ALARM_ID_INFRA_ETHERNET_DOWN);
+    zassert_true(dur >= 90U && dur <= 500U,
+                 "Active duration must be between 90ms and 500ms (got %u)", dur);
+
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, ALARM_ID_INFRA_ETHERNET_DOWN, false, 0.0f);
+    zassert_equal(ret, 0, "Post condition false");
+
+    k_sleep(K_MSEC(50));
+
+    dur = i_alarm_query_get_active_duration(&query, ALARM_ID_INFRA_ETHERNET_DOWN);
+    zassert_equal(dur, 0U, "Cleared alarm must return 0 active duration (got %u)", dur);
+
+    /* Clean shutdown */
+    ao_alarm_manager_stop(&s_alarm_mgr);
+    ao_alarm_manager_wait_stopped(&s_alarm_mgr, K_MSEC(1000));
+    ao_alarm_manager_deinit(&s_alarm_mgr);
+}
+
+ZTEST(alarm_ao_suite, test_ao_alarm_manager_restart_and_input_validation)
+{
+    int ret;
+
+    ret = ao_alarm_manager_init(&s_alarm_mgr, s_test_alarm_stack, TEST_AO_STACK_SIZE, K_PRIO_PREEMPT(5));
+    zassert_equal(ret, 0, "Init succeeded");
+    ret = ao_alarm_manager_start(&s_alarm_mgr);
+    zassert_equal(ret, 0, "Start succeeded");
+
+    /* Test input validation */
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, ALARM_ID_NONE, true, 0.0f);
+    zassert_equal(ret, -EINVAL, "ALARM_ID_NONE must return -EINVAL");
+
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, 0x9999, true, 0.0f);
+    zassert_equal(ret, -ENOENT, "Unregistered 0x9999 must return -ENOENT");
+
+    /* Test restart */
+    ret = ao_alarm_manager_stop(&s_alarm_mgr);
+    zassert_equal(ret, 0, "Stop succeeded");
+
+    ret = ao_alarm_manager_wait_stopped(&s_alarm_mgr, K_MSEC(1000));
+    zassert_equal(ret, 0, "Wait stopped succeeded");
+    zassert_false(s_alarm_mgr.is_running, "Must not be running after wait_stopped");
+
+    ret = ao_alarm_manager_start(&s_alarm_mgr);
+    zassert_equal(ret, 0, "Restart succeeded");
+    zassert_true(s_alarm_mgr.is_running, "Must be running after restart");
+
+    i_alarm_query_t query = ao_alarm_manager_get_query_port(&s_alarm_mgr);
+    ret = ao_alarm_manager_post_condition(&s_alarm_mgr, ALARM_ID_AC1_HIGH_PRESSURE, true, 400.0f);
+    zassert_equal(ret, 0, "Post condition after restart succeeded");
+
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&query, ALARM_ID_AC1_HIGH_PRESSURE),
+                 "Alarm must be active after restart processing");
+
+    /* Finally clean shutdown with stop, wait_stopped, deinit */
+    ao_alarm_manager_stop(&s_alarm_mgr);
+    ao_alarm_manager_wait_stopped(&s_alarm_mgr, K_MSEC(1000));
+    ao_alarm_manager_deinit(&s_alarm_mgr);
+}
+
 ZTEST_SUITE(alarm_ao_suite, NULL, NULL, NULL, NULL, NULL);

@@ -38,6 +38,8 @@ static void detectors_after(void *data)
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_AC5_HIGH_PRESSURE, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_FACILITY_FIRE, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_GROUP1_TEMP_LOW, false, 0.0f);
+    ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_GROUP1_TEMP_HIGH, false, 0.0f);
+    ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_SENSOR_GROUP3_FAULT, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_GROUP2_TEMP_HIGH, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_GROUP3_TEMP_HIGH, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_LINE_UNDER_VOLTAGE, false, 0.0f);
@@ -52,6 +54,17 @@ static void detectors_after(void *data)
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_SENSOR_GROUP4_FAULT, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_GROUP2_TEMP_BOOST, false, 0.0f);
     ao_alarm_manager_post_condition(&s_mgr, ALARM_ID_INFRA_MODBUS_FAULT, false, 0.0f);
+    for (uint8_t src = 0; src < 5; src++) {
+        ao_alarm_manager_post_source_condition(&s_mgr, ALARM_ID_AC1_SUMMARY_FAULT, src, false, 0.0f);
+    }
+    const uint16_t t_low_ids[4] = { ALARM_ID_GROUP1_TEMP_LOW, ALARM_ID_GROUP2_TEMP_LOW, ALARM_ID_GROUP3_TEMP_LOW, ALARM_ID_GROUP4_TEMP_LOW };
+    const uint16_t t_high_ids[4] = { ALARM_ID_GROUP1_TEMP_HIGH, ALARM_ID_GROUP2_TEMP_HIGH, ALARM_ID_GROUP3_TEMP_HIGH, ALARM_ID_GROUP4_TEMP_HIGH };
+    for (uint8_t g = 0; g < 4; g++) {
+        for (uint8_t s = 0; s < 16; s++) {
+            ao_alarm_manager_post_source_condition(&s_mgr, t_low_ids[g], s, false, 0.0f);
+            ao_alarm_manager_post_source_condition(&s_mgr, t_high_ids[g], s, false, 0.0f);
+        }
+    }
     k_sleep(K_MSEC(40));
 }
 
@@ -123,11 +136,19 @@ ZTEST(alarm_detectors_suite, test_detector_temp_snapshot_and_fault)
 {
     adapter_alarm_detector_temp_t det_temp;
     /* 4 groups:
-     * Group 1 (mask 0x01, probe 0), Group 2 (mask 0x02, probe 1)
-     * Group 3 (mask 0x04, probe 2), Group 4 (mask 0x08, probe 3)
+     * Group 1: Probe 0 (1-based ID 1), Group 2: Probe 1 (1-based ID 2)
+     * Group 3: Probe 2 (1-based ID 3), Group 4: Probe 3 (1-based ID 4)
      * Thresholds: Low 15.0C, High 28.0C, Hyst 1.0C */
-    const uint16_t masks[HVAC_MAX_GROUPS] = { 0x0001U, 0x0002U, 0x0004U, 0x0008U };
-    adapter_alarm_detector_temp_init(&det_temp, &s_mgr, masks, 15.0f, 28.0f, 1.0f);
+    const group_sensor_range_t ranges[HVAC_MAX_GROUPS] = {
+        { .min_id = 1, .max_id = 1 }, /* Group 1: Probe 0 (1-based ID 1) */
+        { .min_id = 2, .max_id = 2 }, /* Group 2: Probe 1 (1-based ID 2) */
+        { .min_id = 3, .max_id = 3 }, /* Group 3: Probe 2 (1-based ID 3) */
+        { .min_id = 4, .max_id = 4 }, /* Group 4: Probe 3 (1-based ID 4) */
+    };
+    adapter_alarm_detector_temp_init(&det_temp, &s_mgr);
+    for (uint8_t g = 0; g < HVAC_MAX_GROUPS; g++) {
+        adapter_alarm_detector_temp_set_group_config(&det_temp, g, ranges[g].min_id, ranges[g].max_id, 15.0f, 28.0f, 1.0f);
+    }
 
     sensor_snapshot_msg_t snap = {
         .valid_mask = 0x0FU, /* Probes 0..3 valid */
@@ -304,4 +325,156 @@ ZTEST(alarm_detectors_suite, test_detector_hvac_bypass_and_lockout)
     adapter_alarm_detector_hvac_process_status(&det_hvac, &status);
     k_sleep(K_MSEC(50));
     zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_HVAC_UNIT8_LOCKOUT), "Unit 8 lockout cleared");
+}
+
+ZTEST(alarm_detectors_suite, test_detector_ac_summary_fault_aggregation)
+{
+    adapter_alarm_detector_di_t det_di;
+    adapter_alarm_detector_di_init(&det_di, &s_mgr);
+
+    adapter_alarm_detector_hvac_t det_hvac;
+    adapter_alarm_detector_hvac_init(&det_hvac, &s_mgr);
+
+    /* 1. AC1 High Pressure Contact trips via DI */
+    di_transition_event_t evt_hp = {
+        .role = DI_ROLE_UNIT_0_ALARM_HP,
+        .new_state = DI_STATE_ACTIVE,
+        .prev_state = DI_STATE_INACTIVE,
+        .timestamp_ms = 1000
+    };
+    adapter_alarm_detector_di_process_transition(&det_di, &evt_hp);
+
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_AC1_HIGH_PRESSURE),
+                 "AC1 HP must be active");
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_AC1_SUMMARY_FAULT),
+                 "AC1 Summary Fault must be active when HP trips");
+
+    /* 2. AC1 enters Lockout via HVAC status */
+    hvac_status_msg_t status;
+    memset(&status, 0, sizeof(status));
+    status.unit_state[0] = UNIT_STATE_BLOCKED_ALARM;
+    adapter_alarm_detector_hvac_process_status(&det_hvac, &status);
+
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_HVAC_UNIT1_LOCKOUT),
+                 "Unit 1 lockout must trip");
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_AC1_SUMMARY_FAULT),
+                 "AC1 Summary Fault must remain active when lockout occurs");
+
+    /* 3. Clear AC1 HP (DI_STATE_INACTIVE) */
+    evt_hp.new_state = DI_STATE_INACTIVE;
+    evt_hp.prev_state = DI_STATE_ACTIVE;
+    adapter_alarm_detector_di_process_transition(&det_di, &evt_hp);
+
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_AC1_HIGH_PRESSURE),
+                  "AC1 HP must clear");
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_AC1_SUMMARY_FAULT),
+                 "AC1 Summary Fault must STILL be active because Lockout is still active");
+
+    /* 4. Clear AC1 Lockout (UNIT_STATE_RUNNING) */
+    status.unit_state[0] = UNIT_STATE_RUNNING;
+    adapter_alarm_detector_hvac_process_status(&det_hvac, &status);
+
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_HVAC_UNIT1_LOCKOUT),
+                  "Unit 1 lockout must clear");
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_AC1_SUMMARY_FAULT),
+                  "AC1 Summary Fault must now be CLEARED");
+}
+
+ZTEST(alarm_detectors_suite, test_detector_temp_eeprom_hvac_config_integration)
+{
+    adapter_alarm_detector_temp_t det_temp;
+    /* Initialize with defaults */
+    adapter_alarm_detector_temp_init(&det_temp, &s_mgr);
+
+    /* Simulate persistent HVAC configuration loaded from EEPROM:
+     * 2 active groups:
+     * - Group 0: probes 1..2, temp_alarm = 26.0C
+     * - Group 1: probes 3..4, temp_alarm = 31.0C
+     * - Groups 2 and 3 unconfigured (0 probes)
+     */
+    config_hvac_t hvac_cfg;
+    memset(&hvac_cfg, 0, sizeof(hvac_cfg));
+    hvac_cfg.total_groups = 2U;
+    hvac_cfg.groups[0].sensor_start = 1U;
+    hvac_cfg.groups[0].sensor_end = 2U;
+    hvac_cfg.groups[0].temp_low_alarm_c = 14; /* Configurable low temp alarm in EEPROM */
+    hvac_cfg.groups[0].temp_min = 20.0f;
+    hvac_cfg.groups[0].temp_alarm = 26.0f;    /* High temp boost/alarm in EEPROM */
+
+    hvac_cfg.groups[1].sensor_start = 3U;
+    hvac_cfg.groups[1].sensor_end = 4U;
+    hvac_cfg.groups[1].temp_low_alarm_c = 16; /* Configurable low temp alarm in EEPROM */
+    hvac_cfg.groups[1].temp_min = 22.0f;
+    hvac_cfg.groups[1].temp_alarm = 31.0f;
+
+    int ret = adapter_alarm_detector_temp_apply_hvac_config(&det_temp, &hvac_cfg);
+    zassert_equal(ret, 0, "apply_hvac_config must succeed");
+
+    /* Send snapshot:
+     * Probe 0 (Group 0) at 27.0C (> 26.0C trip) -> Group 1 High Temp trips!
+     * Probe 2 (Group 1) at 27.0C (< 31.0C trip) -> Group 2 High Temp does NOT trip!
+     */
+    sensor_snapshot_msg_t snap = {
+        .valid_mask = 0x0FU, /* Probes 0..3 valid */
+        .temperatures = { 27.0f, 24.0f, 27.0f, 25.0f },
+        .timestamp_ms = 1000,
+        .sequence = 1
+    };
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP1_TEMP_HIGH),
+                 "Group 1 High Temp must trip (27.0C > 26.0C)");
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP2_TEMP_HIGH),
+                  "Group 2 High Temp must NOT trip (27.0C < 31.0C)");
+
+    /* Probe 2 rises to 32.0C (> 31.0C trip) -> Group 2 High Temp trips! */
+    snap.temperatures[2] = 32.0f;
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP2_TEMP_HIGH),
+                 "Group 2 High Temp must trip (32.0C > 31.0C)");
+
+    /* Unconfigured Group 3 sensor probe (ID 9, probe 8) invalid:
+     * Must NOT trip Group 3 Sensor Fault because Group 3 is disabled in EEPROM config!
+     */
+    snap.valid_mask = 0x0FU; /* bit 8 is 0 (invalid) */
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_SENSOR_GROUP3_FAULT),
+                  "Unconfigured Group 3 must NOT trigger sensor fault");
+
+    /* Low temp alarm test with configured EEPROM thresholds:
+     * Probe 0 drops to 13.5C (< 14C threshold) -> Group 1 Low Temp trips!
+     */
+    snap.temperatures[0] = 13.5f;
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP1_TEMP_LOW),
+                 "Group 1 Low Temp must trip (13.5C < 14C configured)");
+
+    /* Probe 0 warms to 16.0C (>= 15C cleared) */
+    snap.temperatures[0] = 16.0f;
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP1_TEMP_LOW),
+                  "Group 1 Low Temp clears (16.0C >= 15C)");
+
+    /* Dynamic runtime group update:
+     * Set Group 0 temp_alarm to 30.0C via adapter_alarm_detector_temp_set_group_from_hvac.
+     * With probe 0 at 27.0C, it is now below trip (<= 29.0C with 1C hyst), so it clears!
+     */
+    hvac_cfg.groups[0].temp_alarm = 30.0f;
+    ret = adapter_alarm_detector_temp_set_group_from_hvac(&det_temp, 0U, &hvac_cfg.groups[0]);
+    zassert_equal(ret, 0, "set_group_from_hvac must succeed");
+
+    /* Re-evaluate snapshot with new threshold */
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP1_TEMP_HIGH),
+                  "Group 1 High Temp must clear after temp_alarm raised to 30.0C");
 }

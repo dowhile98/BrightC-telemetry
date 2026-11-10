@@ -20,16 +20,16 @@
 | **Phase 2: Detectors & Adapters** | `adapter_alarm_detector_di.c`<br>`adapter_alarm_detector_temp.c`<br>`adapter_alarm_detector_volt.c`<br>`adapter_alarm_detector_hvac.c` | 100% | Ingestion adapters mapping DI contacts (AC1..AC8 + facility), temperature snapshots across 4 groups, JSY-MK-339 3-phase readings with meter comm fault, and HVAC bypass/lockouts |
 | **Phase 2: Active Object & Zbus** | `ao_alarm_manager.c`<br>`alarm_channels.c` | 100% | Canonical 5-phase Active Object coordinator, Zbus publishing (`chan_alarm_transition`, `chan_system_alarm`), edge-transition filtering, and thread-safe snapshot cache |
 | **Phase 2: Composition Root & DI** | `composition_root.c`<br>`composition_root.h` | 100% | Subsystem wiring, file-scope MPU stack guard, Zbus listeners (`lis_alarm_di_feed`, `lis_alarm_sensor_feed`, `lis_alarm_hvac_feed`, `lis_indicator_alarm_feed`), DIP query port getters |
-| **Phase 2: Unit & Integration Tests**| `tests/unit/alarm/` | 100% | 12/12 unit tests passing on `native_sim` (Entity, Aggregate, Evaluators, Detectors, AO lifecycle, dispatch & query) |
+| **Phase 2: Unit & Integration Tests**| `tests/unit/alarm/` | 100% | 17/17 unit tests passing on `native_sim` (Entity, Aggregate, Evaluators, Detectors, AO lifecycle, restart, active duration, dynamic registration, AC summary aggregation) |
 
 ---
 
 ## 2. Test & Verification Summary
 
-- **Unit Test Suite (`tests/unit/alarm`)**: 12/12 tests PASS on `native_sim` (0 failures).
+- **Unit Test Suite (`tests/unit/alarm`)**: 17/17 tests PASS on `native_sim` (0 failures).
   - `alarm_domain_suite`: 6/6 tests PASS.
-  - `alarm_ao_suite`: 2/2 tests PASS.
-  - `alarm_detectors_suite`: 4/4 tests PASS (covers 8 AC contacts, 4 Groups temperature & bypass, worst-case phase voltage, meter comm fault).
+  - `alarm_ao_suite`: 5/5 tests PASS (Lifecycle, Dispatch & Query, Active Duration, Dynamic Registration, Restart & Input Validation).
+  - `alarm_detectors_suite`: 6/6 tests PASS (AC Contacts DI mapping, EEPROM HVAC config integration, AC summary fault aggregation, HVAC Bypass & Lockout, Group Temp range snapshot & sensor fault, Phase voltage & meter comm fault).
 - **Subsystem Regression Tests**: All existing test suites pass with zero regressions:
   - `tests/unit/digital_input`: 17/17 tests PASS (100%).
   - `tests/unit/indicators`: 8/8 tests PASS (100%).
@@ -80,3 +80,25 @@
      - Propagated `is_valid = false` reading from `ao_modbus.c` to `adapter_alarm_detector_volt` when JSY-MK-339 poll fails to reliably trigger `ALARM_ID_ENERGY_METER_COMM_FAULT`.
      - Corrected RS485-2 bus assignment for MBSL32DI and Waveshare Relay in `modbus_device_table.h`.
   5. *Full Regression & Target Compilation*: Verified all 6 suites PASS (alarm, di, ind, hvac, sensor, modbus) and primary target `brightc-controllerv3` builds cleanly (16.25% Flash, 37.30% RAM).
+
+- **2026-11-10 (Test Suite Enhancement & Invariant Hardening)**:
+  1. *Temperature Detector Test Ranges*: Fixed `test_detector_temp_snapshot_and_fault` in `test_alarm_detectors.c` by updating parameter from bitmask to `group_sensor_range_t ranges[HVAC_MAX_GROUPS]`.
+  2. *AC Summary Fault Aggregation Test*: Added `test_detector_ac_summary_fault_aggregation` verifying multi-source aggregation across AC1 HP DI trips and HVAC lockout state transitions.
+  3. *Dynamic Registration Test*: Added `test_ao_alarm_manager_dynamic_registration` verifying runtime descriptor addition with `ALARM_SOURCE_CUSTOM` and subsequent condition posting.
+  4. *Active Duration Test*: Added `test_ao_alarm_manager_active_duration` verifying millisecond duration while active and 0ms when cleared.
+  5. *Restart & Input Validation Test*: Added `test_ao_alarm_manager_restart_and_input_validation` testing error return codes (`-EINVAL`, `-ENOENT`) and thread stop/restart lifecycle.
+  6. *Thread Lifecycle Hardening*: Hardened `ao_alarm_manager_wait_stopped` and `ao_alarm_manager_deinit` with clean `k_thread_join` synchronization. 16/16 alarm unit tests pass 100%.
+
+- **2026-11-10 (Persistent EEPROM Configuration Integration for Thermal Groups)**:
+  1. *EEPROM HVAC Config Binding*: Removed hardcoded default sensor ranges in `composition_root.c`. The temperature detector now loads group sensor ranges (`sensor_start`, `sensor_end`) and high temperature thresholds (`temp_alarm`) directly from the persistent HVAC configuration stored in EEPROM (`self->hvac.config`).
+  2. *Independent Per-Group Thermal Evaluation*: Extended `adapter_alarm_detector_temp` with `adapter_temp_group_config_t` and `eval_low/eval_high[HVAC_MAX_GROUPS][16]`, enabling independent sensor ranges, trip thresholds, and hysteresis per room/group.
+  3. *Unconfigured Group Isolation*: Groups not enabled in EEPROM (`total_groups` or unassigned sensors) are cleanly disabled, preventing false temperature alarms or spurious sensor fault assertions.
+  4. *Runtime Dynamic Reconfiguration*: Added `adapter_alarm_detector_temp_set_group_from_hvac()` and `adapter_alarm_detector_temp_apply_hvac_config()`, hooked into `app_container_set_hvac_group_config()` and `app_container_set_hvac_config()` to immediately update alarm detection thresholds whenever configuration changes at runtime.
+  5. *Initialization Order Optimization*: Reordered subsystem initialization in `composition_root.c` so `hvac` (which loads EEPROM configuration) initializes before `alarm`.
+  6. *Unit Test Verification*: Added `test_detector_temp_eeprom_hvac_config_integration` in `test_alarm_detectors.c`. Total 17/17 alarm tests pass 100%. Target STM32H743 builds cleanly (ROM 16.34%, RAM 37.55%).
+
+- **2026-11-10 (Elimination of Literal Thresholds & Configurable `temp_low_alarm_c` in EEPROM)**:
+  1. *Per-Group Low Temp Alarm Persistence*: Added `int8_t temp_low_alarm_c` to `config_hvac_group_t` (in place of `reserved[1]`), preserving the 40-byte binary layout and allowing persistent low temperature alarm thresholds per room/group (default 15°C, range -50..50°C).
+  2. *Clean Zero-Literal Initialization*: Refactored `adapter_alarm_detector_temp_init(&det_temp, &ao)` to accept purely context and manager handle, eliminating all hardcoded literals (`15.0f`, `28.0f`, `1.0f`) from `composition_root.c`.
+  3. *Dynamic Group Binding*: High temperature alarm threshold is mapped 1:1 to `temp_alarm` (temp boost setpoint) from each group's persistent EEPROM configuration, while low temperature alarm threshold is mapped to `temp_low_alarm_c`.
+  4. *Test Verification*: Validated in `test_alarm_detectors.c` (17/17 PASS), all regression suites pass (100%), target firmware STM32H743 builds cleanly (ROM 16.34%, RAM 37.55%).
