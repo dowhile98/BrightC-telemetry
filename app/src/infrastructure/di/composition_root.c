@@ -1135,6 +1135,12 @@ int composition_root_init_alarm(app_container_t *self)
     /* HVAC: bypass & lockout detector */
     adapter_alarm_detector_hvac_init(&self->alarm.det_hvac, &self->alarm.ao);
 
+    if (self->hvac.initialized && self->indicators.initialized)
+    {
+        (void)ao_system_indicator_set_buzzer_muted(&self->indicators.ao,
+                                                   self->hvac.config.alarm_buzzer_muted != 0U);
+    }
+
     self->alarm.initialized = true;
     LOG_INF("alarm management subsystem initialised");
     return 0;
@@ -2099,4 +2105,49 @@ ao_alarm_manager_t *app_container_get_alarm_manager_ao(app_container_t *self)
         return NULL;
     }
     return (ao_alarm_manager_t *)&self->alarm.ao;
+}
+
+int app_container_set_alarm_buzzer_mute(app_container_t *self, bool mute)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->hvac.initialized)
+    {
+        self->hvac.config.alarm_buzzer_muted = mute ? 1U : 0U;
+    }
+
+    if (self->indicators.initialized)
+    {
+        (void)ao_system_indicator_set_buzzer_muted(&self->indicators.ao, mute);
+    }
+
+    if (self->storage.initialized)
+    {
+        (void)ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_HVAC, 0U);
+    }
+
+    return 0;
+}
+
+bool app_container_is_alarm_buzzer_muted(const app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return false;
+    }
+
+    if (self->indicators.initialized)
+    {
+        return ao_system_indicator_is_buzzer_muted(&self->indicators.ao);
+    }
+
+    if (self->hvac.initialized)
+    {
+        return (self->hvac.config.alarm_buzzer_muted != 0U);
+    }
+
+    return false;
 }

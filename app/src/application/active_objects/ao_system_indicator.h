@@ -110,6 +110,9 @@ typedef struct {
     bool                       last_hw_led_on;
     bool                       last_hw_buzzer_on;
     uint32_t                   last_hw_buzzer_freq;
+
+    /* Alarm Buzzer Mute State */
+    bool                       buzzer_muted;
 } ao_system_indicator_t;
 
 /**
@@ -176,6 +179,23 @@ int ao_system_indicator_post_command(ao_system_indicator_t *self, const indicato
  * @brief Request the smart industrial startup chime sequence.
  */
 int ao_system_indicator_trigger_startup_chime(ao_system_indicator_t *self);
+
+/**
+ * @brief Set alarm buzzer mute status.
+ *
+ * @param[in,out] self   Indicator active object instance.
+ * @param[in]     muted  true to mute alarm acoustic patterns, false for audible.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_system_indicator_set_buzzer_muted(ao_system_indicator_t *self, bool muted);
+
+/**
+ * @brief Query whether alarm buzzer is currently muted.
+ *
+ * @param[in] self Indicator active object instance.
+ * @return true if muted, false otherwise.
+ */
+bool ao_system_indicator_is_buzzer_muted(const ao_system_indicator_t *self);
 
 /**
  * @brief Query the current status of indicators.

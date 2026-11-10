@@ -460,3 +460,56 @@ ZTEST(system_indicators_suite, test_ao_indicator_lifecycle)
     /* Deinit */
     zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
 }
+
+/*============================================================================*
+ * 9. Alarm Buzzer Mute Tests
+ *============================================================================*/
+
+ZTEST(system_indicators_suite, test_ao_indicator_alarm_buzzer_mute)
+{
+    i_led_t led = fake_led_get_port();
+    i_buzzer_t buzzer = fake_buzzer_get_port();
+
+    zassert_equal(ao_system_indicator_set_buzzer_muted(NULL, true), -EINVAL, "NULL check");
+    zassert_false(ao_system_indicator_is_buzzer_muted(NULL), "NULL check");
+
+    zassert_equal(ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
+                                           s_test_ao_indicator_stack,
+                                           K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack)),
+                  0, "Init");
+
+    zassert_false(ao_system_indicator_is_buzzer_muted(&s_test_ao_indicator), "Default unmuted");
+
+    /* Assert critical alarm (continuous buzzer) */
+    alarm_msg_t crit = {
+        .alarm_id = 10,
+        .level = ALARM_LEVEL_CRITICAL,
+        .is_active = true,
+        .timestamp_ms = 1000,
+    };
+    ao_indicator_event_t evt = {
+        .type = AO_INDICATOR_EVT_ALARM,
+        .data.alarm = crit,
+    };
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt);
+
+    /* Step unmuted: buzzer must be playing */
+    fake_buzzer_reset();
+    ao_system_indicator_step(&s_test_ao_indicator, 1000);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "Buzzer should be sounding for critical alarm when unmuted");
+
+    /* Now mute buzzer */
+    zassert_equal(ao_system_indicator_set_buzzer_muted(&s_test_ao_indicator, true), 0, "Set muted");
+    zassert_true(ao_system_indicator_is_buzzer_muted(&s_test_ao_indicator), "Must be muted");
+
+    /* Step again: buzzer must be stopped */
+    ao_system_indicator_step(&s_test_ao_indicator, 1025);
+    zassert_false(fake_buzzer_get_state()->is_sounding, "Buzzer must be silenced when muted");
+
+    /* Unmute */
+    zassert_equal(ao_system_indicator_set_buzzer_muted(&s_test_ao_indicator, false), 0, "Unmute");
+    ao_system_indicator_step(&s_test_ao_indicator, 1050);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "Buzzer should resume when unmuted");
+
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
+}

@@ -21,6 +21,8 @@
 #include "common/config_types.h"
 #include "common/digital_input_types.h"
 #include "common/hvac_types.h"
+#include "common/indicator_types.h"
+#include "common/alarm_types.h"
 #include "common/modbus_types.h"
 #include "common/sensor_types.h"
 #include "application/zbus/sensor_channels.h"
@@ -204,6 +206,31 @@ typedef struct {
     size_t      free_heap_bytes;
     size_t      total_heap_bytes;
 } app_facade_system_info_t;
+
+/**
+ * @brief Alarm subsystem summary status presentation view.
+ */
+typedef struct {
+    size_t        active_count;
+    size_t        total_registered;
+    size_t        acknowledged_count;
+    alarm_level_t highest_level;
+    bool          buzzer_muted;
+} app_facade_alarm_status_t;
+
+/**
+ * @brief Active alarm list item presentation view.
+ */
+typedef struct {
+    uint16_t         alarm_id;
+    alarm_level_t    level;
+    alarm_state_t    state;
+    alarm_category_t category;
+    const char      *name;
+    float            trigger_val;
+    uint32_t         active_duration_ms;
+    bool             acknowledged;
+} app_facade_alarm_item_t;
 
 /* =========================================================================
  * Lifecycle Management
@@ -561,6 +588,69 @@ int app_facade_system_get_info(app_facade_system_info_t *out_info);
  * @return Does not return on success; negative errno on failure.
  */
 int app_facade_system_reboot(void);
+
+/* =========================================================================
+ * Alarm Management Service APIs
+ * ========================================================================= */
+
+/**
+ * @brief Retrieve overall alarm subsystem summary status.
+ *
+ * @param[out] out_status Destination status structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_alarm_get_status(app_facade_alarm_status_t *out_status);
+
+/**
+ * @brief Retrieve list of currently active or acknowledged alarms.
+ *
+ * @param[out] out_items Destination buffer for alarm items.
+ * @param[in]  max_items Maximum entries to write to buffer.
+ * @return Number of items written.
+ */
+size_t app_facade_alarm_get_active_list(app_facade_alarm_item_t *out_items, size_t max_items);
+
+/**
+ * @brief Retrieve catalog of registered alarm descriptors.
+ *
+ * @param[out] out_catalog Destination array of descriptor pointers.
+ * @param[in]  max_items   Maximum entries to populate.
+ * @return Number of pointers written.
+ */
+size_t app_facade_alarm_get_catalog(const alarm_descriptor_t **out_catalog, size_t max_items);
+
+/**
+ * @brief Retrieve live snapshot and static descriptor for a specific alarm ID.
+ *
+ * @param[in]  alarm_id     Target alarm identifier.
+ * @param[out] out_snapshot Destination snapshot structure.
+ * @param[out] out_desc     Optional pointer to receive descriptor reference (can be NULL).
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_alarm_get_snapshot(uint16_t alarm_id, alarm_snapshot_entry_t *out_snapshot, const alarm_descriptor_t **out_desc);
+
+/**
+ * @brief Acknowledge an active alarm condition by ID.
+ *
+ * @param[in] alarm_id Target alarm identifier.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_alarm_ack(uint16_t alarm_id);
+
+/**
+ * @brief Set or clear persistent alarm buzzer mute status.
+ *
+ * @param[in] muted true to mute alarm acoustic patterns, false for audible.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_alarm_set_buzzer_mute(bool muted);
+
+/**
+ * @brief Check whether alarm buzzer is currently muted.
+ *
+ * @return true if muted, false otherwise.
+ */
+bool app_facade_alarm_is_buzzer_muted(void);
 
 #ifdef __cplusplus
 }

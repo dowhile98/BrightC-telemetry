@@ -101,6 +101,7 @@ extern "C"
         .total_units = 4U,
         .total_groups = 1U,
         .bypass_alarm_contact_type = (uint8_t)HVAC_ALARM_CONTACT_NC,
+        .alarm_buzzer_muted = 0U,
         .fire_interlock = {
             .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17,
             .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
@@ -190,6 +191,7 @@ extern "C"
         .total_units = 8U,
         .total_groups = 1U,
         .bypass_alarm_contact_type = (uint8_t)HVAC_ALARM_CONTACT_NC,
+        .alarm_buzzer_muted = 0U,
         .fire_interlock = {.backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 4U},
         .bypass_switch = {.backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_GPIO, .device_id = 0U, .channel = (uint16_t)ONCHIP_DI_SW_BYPASS},
         .groups = {
@@ -314,6 +316,7 @@ extern "C"
         .operation_mode = (uint8_t)HVAC_MODE_TELEMETRY_ONLY,
         .total_units = 0U,
         .total_groups = 0U,
+        .alarm_buzzer_muted = 0U,
     };
 
     /* ========================================================================= */

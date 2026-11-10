@@ -325,7 +325,8 @@ typedef struct {
     hvac_io_endpoint_t    bypass_switch;             /**< Front-panel physical bypass switch endpoint */
     config_hvac_group_t   groups[HVAC_MAX_GROUPS];     /**< Group configuration array */
     hvac_unit_hw_config_t units[HVAC_MAX_UNITS_TOTAL]; /**< Hardware unit routing array */
-    uint8_t               reserved[16];              /**< Future expansion padding */
+    uint8_t               alarm_buzzer_muted;        /**< 1 = Buzzer muted for alarms, 0 = audible alarms */
+    uint8_t               reserved[15];              /**< Future expansion padding */
 } config_hvac_t;
 
 /* ========================================================================= */
@@ -460,6 +461,10 @@ static inline bool config_hvac_group_is_valid(const config_hvac_group_t *group)
 static inline bool config_hvac_is_valid(const config_hvac_t *cfg)
 {
     if (cfg == NULL) {
+        return false;
+    }
+
+    if (cfg->alarm_buzzer_muted > 1U) {
         return false;
     }
 

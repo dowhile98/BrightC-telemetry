@@ -81,6 +81,41 @@ static const char *modbus_parity_str(uint8_t parity)
     }
 }
 
+static const char *alarm_level_str(alarm_level_t level)
+{
+    switch (level) {
+    case ALARM_LEVEL_NONE:     return "NONE";
+    case ALARM_LEVEL_INFO:     return "INFO";
+    case ALARM_LEVEL_WARNING:  return "WARNING";
+    case ALARM_LEVEL_CRITICAL: return "CRITICAL";
+    default:                   return "UNKNOWN";
+    }
+}
+
+static const char *alarm_state_str(alarm_state_t state)
+{
+    switch (state) {
+    case ALARM_STATE_INACTIVE:     return "INACTIVE";
+    case ALARM_STATE_ACTIVE:       return "ACTIVE";
+    case ALARM_STATE_ACKNOWLEDGED: return "ACKNOWLEDGED";
+    case ALARM_STATE_LATCHED:      return "LATCHED";
+    default:                       return "UNKNOWN";
+    }
+}
+
+static const char *alarm_category_str(alarm_category_t cat)
+{
+    switch (cat) {
+    case ALARM_SOURCE_DIGITAL_INPUT: return "DIGITAL_IN";
+    case ALARM_SOURCE_SENSOR_ANALOG: return "ANALOG_SENSOR";
+    case ALARM_SOURCE_ELECTRICAL:    return "ELECTRICAL";
+    case ALARM_SOURCE_HVAC_CONTROL:  return "HVAC_CONTROL";
+    case ALARM_SOURCE_SYSTEM_INFRA:  return "SYSTEM_INFRA";
+    case ALARM_SOURCE_CUSTOM:        return "CUSTOM";
+    default:                         return "UNKNOWN";
+    }
+}
+
 /* =========================================================================
  * HVAC Shell Commands
  * ========================================================================= */
@@ -1066,3 +1101,212 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_sys,
 );
 
 SHELL_CMD_REGISTER(sys, &sub_sys, "System diagnostics commands", NULL);
+
+/* =========================================================================
+ * Alarm Management Shell Commands
+ * ========================================================================= */
+
+static int cmd_alarm_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    app_facade_alarm_status_t status;
+    int err = app_facade_alarm_get_status(&status);
+    if (err != 0) {
+        shell_error(sh, "Failed to retrieve alarm status: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Alarm Subsystem Status ===");
+    shell_print(sh, "  Active Alarms:      %zu", status.active_count);
+    shell_print(sh, "  Highest Severity:   %s", alarm_level_str(status.highest_level));
+    shell_print(sh, "  Acknowledged Count: %zu", status.acknowledged_count);
+    shell_print(sh, "  Total Registered:   %zu", status.total_registered);
+    shell_print(sh, "  Alarm Buzzer:       %s", status.buzzer_muted ? "MUTED" : "AUDIBLE");
+
+    return 0;
+}
+
+static int cmd_alarm_list(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    app_facade_alarm_item_t items[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+    size_t count = app_facade_alarm_get_active_list(items, ARRAY_SIZE(items));
+
+    if (count == 0U) {
+        shell_print(sh, "No active alarms.");
+        return 0;
+    }
+
+    shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
+    shell_print(sh, "| ID     | Name                 | Level    | Category      | Value    | Active(s)  | Acked |");
+    shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
+
+    for (size_t i = 0U; i < count; i++) {
+        uint32_t active_s = items[i].active_duration_ms / 1000U;
+        shell_print(sh, "| 0x%04X | %-20.20s | %-8s | %-13s | %8.2f | %10u | %-5s |",
+                    items[i].alarm_id,
+                    items[i].name ? items[i].name : "UNKNOWN",
+                    alarm_level_str(items[i].level),
+                    alarm_category_str(items[i].category),
+                    (double)items[i].trigger_val,
+                    active_s,
+                    items[i].acknowledged ? "YES" : "NO");
+    }
+    shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
+
+    return 0;
+}
+
+static int cmd_alarm_catalog(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+    size_t count = app_facade_alarm_get_catalog(catalog, ARRAY_SIZE(catalog));
+
+    shell_print(sh, "=== Registered Alarm Catalog (%zu descriptors) ===", count);
+    shell_print(sh, "+--------+----------------+---------------+----------+-------+-------+-------+--------------------------------+");
+    shell_print(sh, "| ID     | Name           | Category      | Severity | Latch | Ack   | Agg   | Description                    |");
+    shell_print(sh, "+--------+----------------+---------------+----------+-------+-------+-------+--------------------------------+");
+
+    for (size_t i = 0U; i < count; i++) {
+        const alarm_descriptor_t *desc = catalog[i];
+        if (desc == NULL) {
+            continue;
+        }
+
+        const char *sev_str = "INFO";
+        if (desc->default_severity == ALARM_SEVERITY_FATAL || desc->default_severity == ALARM_SEVERITY_CRITICAL) {
+            sev_str = "CRITICAL";
+        } else if (desc->default_severity == ALARM_SEVERITY_WARNING) {
+            sev_str = "WARNING";
+        }
+
+        shell_print(sh, "| 0x%04X | %-14.14s | %-13s | %-8s | %-5s | %-5s | %-5s | %-30.30s |",
+                    desc->alarm_id,
+                    desc->name ? desc->name : "",
+                    alarm_category_str(desc->source_category),
+                    sev_str,
+                    desc->is_latch_supported ? "YES" : "NO",
+                    desc->is_ack_supported ? "YES" : "NO",
+                    desc->is_aggregated ? "YES" : "NO",
+                    desc->description ? desc->description : "");
+    }
+    shell_print(sh, "+--------+----------------+---------------+----------+-------+-------+-------+--------------------------------+");
+
+    return 0;
+}
+
+static int cmd_alarm_snapshot(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        shell_error(sh, "Usage: alarm snapshot <id> (e.g. 0x0001 or 1)");
+        return -EINVAL;
+    }
+
+    char *endptr = NULL;
+    unsigned long val = strtoul(argv[1], &endptr, 0);
+    if (endptr == argv[1] || val > 0xFFFFU) {
+        shell_error(sh, "Invalid alarm ID: %s", argv[1]);
+        return -EINVAL;
+    }
+    uint16_t id = (uint16_t)val;
+
+    alarm_snapshot_entry_t snap = {0};
+    const alarm_descriptor_t *desc = NULL;
+    int err = app_facade_alarm_get_snapshot(id, &snap, &desc);
+    if (err != 0) {
+        shell_error(sh, "Failed to get snapshot for alarm 0x%04X: %d", id, err);
+        return err;
+    }
+
+    shell_print(sh, "=== Alarm Snapshot [0x%04X: %s] ===", id, desc ? desc->name : "UNKNOWN");
+    if (desc != NULL && desc->description != NULL) {
+        shell_print(sh, "  Description:     %s", desc->description);
+        shell_print(sh, "  Category:        %s", alarm_category_str(desc->source_category));
+    }
+    shell_print(sh, "  State:           %s", alarm_state_str(snap.state));
+    shell_print(sh, "  Severity:        %u", (unsigned int)snap.severity);
+    shell_print(sh, "  Trigger Count:   %u", snap.trigger_count);
+    shell_print(sh, "  Trigger Value:   %.2f", (double)snap.last_trigger_value);
+    shell_print(sh, "  Active Duration: %u ms", snap.active_duration_ms);
+    shell_print(sh, "  Sources Mask:    0x%08X", snap.contributing_sources_mask);
+    shell_print(sh, "  Triggered At:    %llu ms uptime", (unsigned long long)snap.triggered_timestamp_ms);
+    shell_print(sh, "  Cleared At:      %llu ms uptime", (unsigned long long)snap.cleared_timestamp_ms);
+
+    return 0;
+}
+
+static int cmd_alarm_ack(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        shell_error(sh, "Usage: alarm ack <id> (e.g. 0x0001 or 1)");
+        return -EINVAL;
+    }
+
+    char *endptr = NULL;
+    unsigned long val = strtoul(argv[1], &endptr, 0);
+    if (endptr == argv[1] || val > 0xFFFFU) {
+        shell_error(sh, "Invalid alarm ID: %s", argv[1]);
+        return -EINVAL;
+    }
+    uint16_t id = (uint16_t)val;
+
+    int err = app_facade_alarm_ack(id);
+    if (err != 0) {
+        shell_error(sh, "Failed to acknowledge alarm 0x%04X: %d", id, err);
+        return err;
+    }
+
+    shell_print(sh, "Alarm 0x%04X acknowledged successfully.", id);
+    return 0;
+}
+
+static int cmd_alarm_mute(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        bool muted = app_facade_alarm_is_buzzer_muted();
+        shell_print(sh, "Alarm buzzer is currently: %s", muted ? "MUTED" : "AUDIBLE");
+        return 0;
+    }
+
+    bool new_mute = false;
+    if (strcmp(argv[1], "on") == 0 || strcmp(argv[1], "1") == 0 || strcmp(argv[1], "true") == 0) {
+        new_mute = true;
+    } else if (strcmp(argv[1], "off") == 0 || strcmp(argv[1], "0") == 0 || strcmp(argv[1], "false") == 0) {
+        new_mute = false;
+    } else if (strcmp(argv[1], "toggle") == 0) {
+        new_mute = !app_facade_alarm_is_buzzer_muted();
+    } else {
+        shell_error(sh, "Usage: alarm mute [on|off|toggle]");
+        return -EINVAL;
+    }
+
+    int err = app_facade_alarm_set_buzzer_mute(new_mute);
+    if (err != 0) {
+        shell_error(sh, "Failed to update alarm buzzer mute state: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "Alarm buzzer mute set to %s (persisted to EEPROM).",
+                new_mute ? "MUTED" : "AUDIBLE");
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_alarm,
+    SHELL_CMD(status, NULL, "Overall alarm subsystem status", cmd_alarm_status),
+    SHELL_CMD(list, NULL, "List active and acknowledged alarms", cmd_alarm_list),
+    SHELL_CMD(active, NULL, "Alias for alarm list", cmd_alarm_list),
+    SHELL_CMD(catalog, NULL, "Catalog of all registered alarm descriptors", cmd_alarm_catalog),
+    SHELL_CMD_ARG(snapshot, NULL, "Detailed snapshot for alarm ID: alarm snapshot <id>", cmd_alarm_snapshot, 2, 0),
+    SHELL_CMD_ARG(ack, NULL, "Acknowledge active alarm: alarm ack <id>", cmd_alarm_ack, 2, 0),
+    SHELL_CMD_ARG(mute, NULL, "Query or set alarm buzzer mute: alarm mute [on|off|toggle]", cmd_alarm_mute, 1, 1),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_CMD_REGISTER(alarm, &sub_alarm, "Alarm management subsystem commands", NULL);

@@ -310,6 +310,12 @@ int ao_system_indicator_step(ao_system_indicator_t *self, uint32_t now_ms)
         }
     }
 
+    if (self->buzzer_muted &&
+        (desired_buzzer == BUZZER_PATTERN_ALARM_CONTINUOUS ||
+         desired_buzzer == BUZZER_PATTERN_ALARM_INTERMITTENT)) {
+        buzzer_sound_active = false;
+    }
+
     if (buzzer_sound_active != self->last_hw_buzzer_on ||
         (buzzer_sound_active && (desired_freq != self->last_hw_buzzer_freq))) {
         if (buzzer_sound_active) {
@@ -415,6 +421,7 @@ int ao_system_indicator_init(ao_system_indicator_t *self,
     self->highest_alarm_level = ALARM_LEVEL_NONE;
     self->target_led_state = LED_STATE_OFF;
     self->target_buzzer_pattern = BUZZER_PATTERN_SILENT;
+    self->buzzer_muted = false;
 
     k_sem_init(&self->stopped_sem, 0, 1);
     self->is_initialized = true;
@@ -548,6 +555,25 @@ int ao_system_indicator_trigger_startup_chime(ao_system_indicator_t *self)
         .type = AO_INDICATOR_EVT_STARTUP_CHIME,
     };
     return k_msgq_put(self->queue, &evt, K_NO_WAIT);
+}
+
+int ao_system_indicator_set_buzzer_muted(ao_system_indicator_t *self, bool muted)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+    self->buzzer_muted = muted;
+    return 0;
+}
+
+bool ao_system_indicator_is_buzzer_muted(const ao_system_indicator_t *self)
+{
+    if (self == NULL) {
+        return false;
+    }
+
+    return self->buzzer_muted;
 }
 
 int ao_system_indicator_get_status(const ao_system_indicator_t *self, indicator_status_t *out_status)

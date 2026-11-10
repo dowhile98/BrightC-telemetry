@@ -1025,3 +1025,188 @@ int app_facade_system_reboot(void)
     sys_reboot(SYS_REBOOT_COLD);
     return 0;
 }
+
+/* =========================================================================
+ * Alarm Management Service APIs
+ * ========================================================================= */
+
+int app_facade_alarm_get_status(app_facade_alarm_status_t *out_status)
+{
+    if (s_app == NULL || out_status == NULL) {
+        return -EINVAL;
+    }
+
+    const i_alarm_query_t *query = app_container_get_alarm_query(s_app);
+    if (query == NULL || !i_alarm_query_is_bound(query)) {
+        return -ENODEV;
+    }
+
+    ao_alarm_manager_t *ao = app_container_get_alarm_manager_ao(s_app);
+
+    memset(out_status, 0, sizeof(*out_status));
+    out_status->active_count = i_alarm_query_get_active_count(query);
+
+    alarm_severity_t sev = i_alarm_query_get_highest_active_severity(query);
+    if (out_status->active_count == 0U) {
+        out_status->highest_level = ALARM_LEVEL_NONE;
+    } else if (sev == ALARM_SEVERITY_FATAL || sev == ALARM_SEVERITY_CRITICAL) {
+        out_status->highest_level = ALARM_LEVEL_CRITICAL;
+    } else if (sev == ALARM_SEVERITY_WARNING) {
+        out_status->highest_level = ALARM_LEVEL_WARNING;
+    } else {
+        out_status->highest_level = ALARM_LEVEL_INFO;
+    }
+
+    if (ao != NULL) {
+        out_status->total_registered = alarm_registry_get_count(&ao->registry);
+    }
+
+    /* Count acknowledged alarms among active ones */
+    uint16_t ids[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+    size_t count = i_alarm_query_get_active_alarm_ids(query, ids, ARRAY_SIZE(ids));
+    size_t acked = 0U;
+    for (size_t i = 0U; i < count; i++) {
+        alarm_state_t state = ALARM_STATE_INACTIVE;
+        if (i_alarm_query_get_alarm_state(query, ids[i], &state) == 0 &&
+            state == ALARM_STATE_ACKNOWLEDGED) {
+            acked++;
+        }
+    }
+    out_status->acknowledged_count = acked;
+    out_status->buzzer_muted = app_container_is_alarm_buzzer_muted(s_app);
+
+    return 0;
+}
+
+size_t app_facade_alarm_get_active_list(app_facade_alarm_item_t *out_items, size_t max_items)
+{
+    if (s_app == NULL || out_items == NULL || max_items == 0U) {
+        return 0U;
+    }
+
+    const i_alarm_query_t *query = app_container_get_alarm_query(s_app);
+    if (query == NULL || !i_alarm_query_is_bound(query)) {
+        return 0U;
+    }
+
+    uint16_t ids[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+    size_t count = i_alarm_query_get_active_alarm_ids(query, ids, ARRAY_SIZE(ids));
+    if (count > max_items) {
+        count = max_items;
+    }
+
+    for (size_t i = 0U; i < count; i++) {
+        uint16_t id = ids[i];
+        alarm_snapshot_entry_t snap = {0};
+        alarm_descriptor_t desc = {0};
+
+        (void)i_alarm_query_get_alarm_snapshot(query, id, &snap);
+        (void)i_alarm_query_get_descriptor(query, id, &desc);
+
+        out_items[i].alarm_id = id;
+        out_items[i].state = snap.state;
+        out_items[i].category = desc.source_category;
+        out_items[i].name = desc.name ? desc.name : "UNKNOWN";
+        out_items[i].trigger_val = snap.last_trigger_value;
+        out_items[i].active_duration_ms = i_alarm_query_get_active_duration(query, id);
+        out_items[i].acknowledged = (snap.state == ALARM_STATE_ACKNOWLEDGED);
+
+        if (snap.severity == ALARM_SEVERITY_FATAL || snap.severity == ALARM_SEVERITY_CRITICAL) {
+            out_items[i].level = ALARM_LEVEL_CRITICAL;
+        } else if (snap.severity == ALARM_SEVERITY_WARNING) {
+            out_items[i].level = ALARM_LEVEL_WARNING;
+        } else {
+            out_items[i].level = ALARM_LEVEL_INFO;
+        }
+    }
+
+    return count;
+}
+
+size_t app_facade_alarm_get_catalog(const alarm_descriptor_t **out_catalog, size_t max_items)
+{
+    if (s_app == NULL || out_catalog == NULL || max_items == 0U) {
+        return 0U;
+    }
+
+    ao_alarm_manager_t *ao = app_container_get_alarm_manager_ao(s_app);
+    if (ao == NULL) {
+        return 0U;
+    }
+
+    size_t total = alarm_registry_get_count(&ao->registry);
+    size_t to_copy = (total < max_items) ? total : max_items;
+
+    for (size_t i = 0U; i < to_copy; i++) {
+        out_catalog[i] = &ao->registry.descriptors[i];
+    }
+
+    return to_copy;
+}
+
+int app_facade_alarm_get_snapshot(uint16_t alarm_id,
+                                  alarm_snapshot_entry_t *out_snapshot,
+                                  const alarm_descriptor_t **out_desc)
+{
+    if (s_app == NULL || out_snapshot == NULL) {
+        return -EINVAL;
+    }
+
+    const i_alarm_query_t *query = app_container_get_alarm_query(s_app);
+    if (query == NULL || !i_alarm_query_is_bound(query)) {
+        return -ENODEV;
+    }
+
+    int ret = i_alarm_query_get_alarm_snapshot(query, alarm_id, out_snapshot);
+    if (ret != 0) {
+        return ret;
+    }
+
+    if (out_desc != NULL) {
+        ao_alarm_manager_t *ao = app_container_get_alarm_manager_ao(s_app);
+        if (ao != NULL) {
+            int idx = alarm_registry_find_index(&ao->registry, alarm_id);
+            if (idx >= 0) {
+                *out_desc = &ao->registry.descriptors[idx];
+            } else {
+                *out_desc = NULL;
+            }
+        } else {
+            *out_desc = NULL;
+        }
+    }
+
+    return 0;
+}
+
+int app_facade_alarm_ack(uint16_t alarm_id)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    ao_alarm_manager_t *ao = app_container_get_alarm_manager_ao(s_app);
+    if (ao == NULL) {
+        return -ENODEV;
+    }
+
+    return ao_alarm_manager_post_ack(ao, alarm_id);
+}
+
+int app_facade_alarm_set_buzzer_mute(bool muted)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    return app_container_set_alarm_buzzer_mute(s_app, muted);
+}
+
+bool app_facade_alarm_is_buzzer_muted(void)
+{
+    if (s_app == NULL) {
+        return false;
+    }
+
+    return app_container_is_alarm_buzzer_muted(s_app);
+}

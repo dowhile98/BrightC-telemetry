@@ -102,3 +102,25 @@
   2. *Clean Zero-Literal Initialization*: Refactored `adapter_alarm_detector_temp_init(&det_temp, &ao)` to accept purely context and manager handle, eliminating all hardcoded literals (`15.0f`, `28.0f`, `1.0f`) from `composition_root.c`.
   3. *Dynamic Group Binding*: High temperature alarm threshold is mapped 1:1 to `temp_alarm` (temp boost setpoint) from each group's persistent EEPROM configuration, while low temperature alarm threshold is mapped to `temp_low_alarm_c`.
   4. *Test Verification*: Validated in `test_alarm_detectors.c` (17/17 PASS), all regression suites pass (100%), target firmware STM32H743 builds cleanly (ROM 16.34%, RAM 37.55%).
+
+- **2026-11-10 (Shell CLI Support & Persistent Alarm Buzzer Mute)**:
+  1. *Persistent Alarm Buzzer Mute in EEPROM*:
+     - In `config_hvac_t`: Replaced `reserved[16]` with `uint8_t alarm_buzzer_muted;` and `uint8_t reserved[15];`, preserving exact binary layout.
+     - Added validation check `cfg->alarm_buzzer_muted > 1U` in `config_hvac_is_valid()`.
+     - Explicitly initialized `.alarm_buzzer_muted = 0U` in all default profiles (`k_default_hvac_config_hybrid_4units`, `k_default_hvac_config_control_only_8units`, `k_default_hvac_config_telemetry_only`).
+  2. *System Indicator Active Object Integration*:
+     - Added `bool buzzer_muted;` to `ao_system_indicator_t` and public APIs `ao_system_indicator_set_buzzer_muted()` and `ao_system_indicator_is_buzzer_muted()`.
+     - In `ao_system_indicator_step()`, silenced buzzer when muted for `BUZZER_PATTERN_ALARM_CONTINUOUS` and `BUZZER_PATTERN_ALARM_INTERMITTENT`, keeping beeps and chime functional.
+     - Added unit test `test_ao_indicator_alarm_buzzer_mute` in `tests/unit/indicators/src/test_system_indicators.c` (9/9 PASS).
+  3. *Composition Root & DI Wiring*:
+     - Implemented `app_container_set_alarm_buzzer_mute()` and `app_container_is_alarm_buzzer_muted()` updating RAM config, indicators AO, and marking `CONFIG_DOMAIN_HVAC` dirty for EEPROM persistence.
+     - In `composition_root_init_alarm()`, restored persisted buzzer mute setting into indicators AO upon boot.
+  4. *Clean Architecture Application Facade*:
+     - Added DTOs `app_facade_alarm_status_t` and `app_facade_alarm_item_t`.
+     - Implemented facade service functions: `app_facade_alarm_get_status()`, `app_facade_alarm_get_active_list()`, `app_facade_alarm_get_catalog()`, `app_facade_alarm_get_snapshot()`, `app_facade_alarm_ack()`, `app_facade_alarm_set_buzzer_mute()`, and `app_facade_alarm_is_buzzer_muted()`.
+  5. *Zephyr Shell CLI Presentation*:
+     - Implemented `alarm` subcommands in `shell_brightc.c`: `status`, `list`/`active`, `catalog`, `snapshot <id>`, `ack <id>`, `mute [on|off|toggle]`.
+     - Interacts strictly with `app_facade.h` adhering to Clean Architecture.
+  6. *Target Compilation & Verification*:
+     - Target STM32H743 builds cleanly: Flash 347,584 B (16.57%), RAM 196,892 B (37.55%).
+     - All unit tests pass: `test-alarm` (17/17), `test-ind` (9/9), `test-hvac` (59/59). All architectural invariants (1, 2, 3, 5, 6) verified with 0 violations.

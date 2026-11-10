@@ -422,6 +422,26 @@ const i_alarm_query_t *app_container_get_alarm_query(const app_container_t *self
  */
 ao_alarm_manager_t *app_container_get_alarm_manager_ao(app_container_t *self);
 
+/**
+ * @brief Set or clear persistent alarm buzzer mute status.
+ *
+ * Updates RAM configuration, immediately adjusts system indicators,
+ * and marks HVAC domain dirty for persistence.
+ *
+ * @param[in,out] self Container instance.
+ * @param[in]     mute true to mute alarm buzzer, false to unmute.
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_set_alarm_buzzer_mute(app_container_t *self, bool mute);
+
+/**
+ * @brief Check whether alarm buzzer is currently muted.
+ *
+ * @param[in] self Container instance.
+ * @return true if muted, false otherwise.
+ */
+bool app_container_is_alarm_buzzer_muted(const app_container_t *self);
+
 
 /**
  * @brief Dynamically update HVAC group configuration at runtime.

@@ -72,6 +72,9 @@ typedef enum {
     ALARM_SOURCE_MAX                /**< Sentinel value */
 } alarm_source_category_t;
 
+/** Alias for alarm_source_category_t */
+typedef alarm_source_category_t alarm_category_t;
+
 /**
  * @brief State transition event types (ON_PRESS / ON_RELEASE semantics).
  */

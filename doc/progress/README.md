@@ -23,7 +23,7 @@
 | **Self-Test & Diagnostics** | [`selftest_progress.md`](selftest_progress.md) | **0%** | Spec approved. Pending POST registry, rail/bus sanity checks | 2026-11-05 |
 | **OTA & MCUboot** | [`ota_mcuboot_progress.md`](ota_mcuboot_progress.md) | **0%** | Spec approved. Pending Sysbuild MCUboot, QSPI W25Q16, MCUmgr | 2026-11-05 |
 | **Industrial HVAC Control** | [`hvac_control_progress.md`](hvac_control_progress.md) | **100%** | Full domain FSMs, Multi-Room Range Engine, Facade & Shell, ao_hvac, 59 unit tests | 2026-11-09 |
-| **Alarm Management** | [`alarm_management_progress.md`](alarm_management_progress.md) | **100%** | Centralized AO, discrete & multi-source aggregate FSMs, 4 thermal groups / salas, 8 HVAC units, hysteresis evaluators, 4 detector adapters, Zbus channels, DIP query port, 17 unit tests | 2026-11-10 |
+| **Alarm Management** | [`alarm_management_progress.md`](alarm_management_progress.md) | **100%** | Centralized AO, discrete & multi-source aggregate FSMs, 4 thermal groups / salas, 8 HVAC units, hysteresis evaluators, 4 detector adapters, Zbus channels, DIP query port, Shell CLI presentation, persistent buzzer mute, 17 unit tests | 2026-11-10 |
 
 ---
 
