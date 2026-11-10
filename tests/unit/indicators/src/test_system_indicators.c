@@ -4,6 +4,7 @@
  */
 
 #include <zephyr/ztest.h>
+#include <zephyr/zbus/zbus.h>
 #include <errno.h>
 
 #include "common/indicator_types.h"
@@ -17,6 +18,9 @@ K_THREAD_STACK_DEFINE(s_test_ao_indicator_stack, 1536);
 static struct k_msgq s_test_indicator_msgq;
 static uint8_t s_test_indicator_queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
 static ao_system_indicator_t s_test_ao_indicator;
+
+static void test_indicator_alarm_feed_cb(const struct zbus_channel *chan) { ARG_UNUSED(chan); }
+ZBUS_LISTENER_DEFINE(lis_indicator_alarm_feed, test_indicator_alarm_feed_cb);
 
 static void *system_indicators_setup(void)
 {

@@ -67,6 +67,22 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
                         self->bus_id, target->device_id,
                         (double)reading.total_active_power_kw,
                         reading.total_active_energy_kwh);
+                if (self->jsy_mk339_cb != NULL)
+                {
+                    self->jsy_mk339_cb(self->jsy_mk339_cb_ctx, target->device_id, &reading);
+                }
+            }
+        }
+        else
+        {
+            if (self->jsy_mk339_cb != NULL)
+            {
+                energy_reading_t invalid_reading;
+                (void)memset(&invalid_reading, 0, sizeof(invalid_reading));
+                invalid_reading.device_id = target->device_id;
+                invalid_reading.is_valid = false;
+                invalid_reading.timestamp_us = (uint64_t)k_ticks_to_us_near64(k_uptime_ticks());
+                self->jsy_mk339_cb(self->jsy_mk339_cb_ctx, target->device_id, &invalid_reading);
             }
         }
         return res;
@@ -179,10 +195,34 @@ static void ao_modbus_thread(void *p1, void *p2, void *p3)
                 (void)i_slave_registry_record(self->registry, target.device_id, result,
                                               (uint64_t)k_uptime_get());
 
-                if (result != MODBUS_RESULT_OK)
+                if (result == MODBUS_RESULT_OK)
+                {
+                    self->consecutive_fails = 0U;
+                    if (self->bus_fault_active)
+                    {
+                        self->bus_fault_active = false;
+                        LOG_INF("bus %u: Modbus communication recovered", self->bus_id);
+                        if (self->bus_fault_cb != NULL)
+                        {
+                            self->bus_fault_cb(self->bus_fault_cb_ctx, self->bus_id, false);
+                        }
+                    }
+                }
+                else
                 {
                     LOG_WRN("bus %u: dev %u (addr %u) poll failed: %d",
                             self->bus_id, target.device_id, target.slave_addr, (int)result);
+                    self->consecutive_fails++;
+                    if (self->consecutive_fails >= MODBUS_CONSECUTIVE_FAILS_THRESHOLD && !self->bus_fault_active)
+                    {
+                        self->bus_fault_active = true;
+                        LOG_ERR("bus %u: consecutive poll failures reached threshold (%u), signaling bus fault",
+                                self->bus_id, self->consecutive_fails);
+                        if (self->bus_fault_cb != NULL)
+                        {
+                            self->bus_fault_cb(self->bus_fault_cb_ctx, self->bus_id, true);
+                        }
+                    }
                 }
 
                 if (AO_MODBUS_INTER_POLL_DELAY_MS > 0U)
@@ -261,6 +301,10 @@ int ao_modbus_init(ao_modbus_t *self, uint8_t bus_id, const i_slave_registry_t *
     self->mbsl32di_cb_ctx = NULL;
     self->cwt_tm16pt_cb = NULL;
     self->cwt_tm16pt_cb_ctx = NULL;
+    self->bus_fault_cb = NULL;
+    self->bus_fault_cb_ctx = NULL;
+    self->consecutive_fails = 0U;
+    self->bus_fault_active = false;
 
     k_sem_init(&self->stopped_sem, 0, 1);
     self->is_initialized = true;
@@ -378,5 +422,23 @@ void ao_modbus_set_cwt_tm16pt_callback(ao_modbus_t *self, ao_modbus_cwt_tm16pt_c
     {
         self->cwt_tm16pt_cb = cb;
         self->cwt_tm16pt_cb_ctx = ctx;
+    }
+}
+
+void ao_modbus_set_jsy_mk339_callback(ao_modbus_t *self, ao_modbus_jsy_mk339_cb_t cb, void *ctx)
+{
+    if (self != NULL)
+    {
+        self->jsy_mk339_cb = cb;
+        self->jsy_mk339_cb_ctx = ctx;
+    }
+}
+
+void ao_modbus_set_bus_fault_callback(ao_modbus_t *self, ao_modbus_bus_fault_cb_t cb, void *ctx)
+{
+    if (self != NULL)
+    {
+        self->bus_fault_cb = cb;
+        self->bus_fault_cb_ctx = ctx;
     }
 }

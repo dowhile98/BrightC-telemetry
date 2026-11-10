@@ -13,7 +13,7 @@ ZBUS_CHAN_DEFINE(
     hvac_status_msg_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_OBSERVERS(lis_alarm_hvac_feed),
     ZBUS_MSG_INIT(0)
 );
 

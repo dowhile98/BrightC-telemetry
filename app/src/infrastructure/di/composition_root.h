@@ -42,6 +42,12 @@
 #include "interfaces/i_sensor_matrix.h"
 #include "interfaces/i_slave_registry.h"
 #include "interfaces/i_wifi_control.h"
+#include "interfaces/i_alarm_query.h"
+#include "application/active_objects/ao_alarm_manager.h"
+#include "infrastructure/adapters/adapter_alarm_detector_di.h"
+#include "infrastructure/adapters/adapter_alarm_detector_temp.h"
+#include "infrastructure/adapters/adapter_alarm_detector_volt.h"
+#include "infrastructure/adapters/adapter_alarm_detector_hvac.h"
 
 #ifdef CONFIG_NANOMODBUS
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
@@ -182,6 +188,17 @@ struct app_container {
         bool initialized;                              /**< Subsystem initialization status */
     } sensor;
 
+    /* Subsystem 9: Central Alarm Management Subsystem */
+    struct {
+        i_alarm_query_t query_port;                    /**< Alarm query port handle */
+        ao_alarm_manager_t ao;                         /**< Central Alarm Manager Active Object */
+        adapter_alarm_detector_di_t det_di;            /**< DI / Contact alarm detector adapter */
+        adapter_alarm_detector_temp_t det_temp;        /**< Temperature hysteresis detector adapter */
+        adapter_alarm_detector_volt_t det_volt;        /**< 3-phase AC voltage detector adapter */
+        adapter_alarm_detector_hvac_t det_hvac;        /**< HVAC bypass and lockout detector adapter */
+        bool initialized;                              /**< Subsystem initialization status */
+    } alarm;
+
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
     config_calibration_t calibration_cfg;
@@ -255,6 +272,16 @@ int composition_root_init_indicators(app_container_t *self);
  * @return 0 on success, negative errno on failure.
  */
 int composition_root_init_hvac(app_container_t *self);
+
+/**
+ * @brief Initialize the Centralized Alarm Management Subsystem.
+ *
+ * Configures the Active Object, domain evaluators, registries, and detector adapters.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_alarm(app_container_t *self);
 
 /**
  * @brief Initialize the Sensor Matrix Ingestion subsystem.
@@ -378,6 +405,23 @@ const i_buzzer_t *app_container_get_buzzer(const app_container_t *self);
  * @return Pointer to ao_hvac_t, or NULL if uninitialized.
  */
 ao_hvac_t *app_container_get_hvac_ao(app_container_t *self);
+
+/**
+ * @brief Get the abstract Alarm Query port handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to alarm query port, or NULL if uninitialized / invalid.
+ */
+const i_alarm_query_t *app_container_get_alarm_query(const app_container_t *self);
+
+/**
+ * @brief Get the Central Alarm Manager Active Object handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_alarm_manager_t, or NULL if uninitialized.
+ */
+ao_alarm_manager_t *app_container_get_alarm_manager_ao(app_container_t *self);
+
 
 /**
  * @brief Dynamically update HVAC group configuration at runtime.

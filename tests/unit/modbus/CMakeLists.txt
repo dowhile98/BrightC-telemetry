@@ -51,6 +51,16 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c
     ${APP_DIR}/app/src/application/services/app_facade.c
     ${APP_DIR}/tests/fakes/src/fake_sensor_matrix.c
+    ${APP_DIR}/app/src/domain/alarm/alarm_entity.c
+    ${APP_DIR}/app/src/domain/alarm/alarm_aggregate.c
+    ${APP_DIR}/app/src/domain/alarm/alarm_evaluator.c
+    ${APP_DIR}/app/src/domain/alarm/alarm_registry.c
+    ${APP_DIR}/app/src/infrastructure/adapters/adapter_alarm_detector_di.c
+    ${APP_DIR}/app/src/infrastructure/adapters/adapter_alarm_detector_temp.c
+    ${APP_DIR}/app/src/infrastructure/adapters/adapter_alarm_detector_volt.c
+    ${APP_DIR}/app/src/infrastructure/adapters/adapter_alarm_detector_hvac.c
+    ${APP_DIR}/app/src/application/active_objects/ao_alarm_manager.c
+    ${APP_DIR}/app/src/application/zbus/alarm_channels.c
 )
 
 target_include_directories(app PRIVATE

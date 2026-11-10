@@ -44,6 +44,9 @@ static void test_hvac_di_feed_cb(const struct zbus_channel *chan)
 
 ZBUS_LISTENER_DEFINE(lis_hvac_di_feed, test_hvac_di_feed_cb);
 
+static void test_alarm_di_feed_cb(const struct zbus_channel *chan) { ARG_UNUSED(chan); }
+ZBUS_LISTENER_DEFINE(lis_alarm_di_feed, test_alarm_di_feed_cb);
+
 static void *digital_input_suite_setup(void)
 {
     k_msgq_init(&s_test_ao_di_msgq, s_test_ao_di_queue_buf,

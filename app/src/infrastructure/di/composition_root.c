@@ -9,6 +9,8 @@
 #include "application/zbus/sensor_channels.h"
 #include "application/zbus/digital_input_channels.h"
 #include "application/zbus/hvac_channels.h"
+#include "application/zbus/indicator_channels.h"
+#include "application/zbus/alarm_channels.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -72,6 +74,7 @@ static K_THREAD_STACK_DEFINE(s_ao_indicator_stack, AO_INDICATOR_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_hvac_stack, AO_HVAC_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_sensor_stack, AO_SENSOR_MATRIX_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_alarm_stack, CONFIG_AO_ALARM_MANAGER_STACK_SIZE);
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
@@ -866,6 +869,38 @@ static void on_modbus_cwt_tm16pt_reading(void *ctx, uint8_t device_id, const tem
     }
 }
 
+static void on_modbus_jsy_mk339_reading(void *ctx, uint8_t device_id, const energy_reading_t *reading)
+{
+    ARG_UNUSED(device_id);
+    app_container_t *self = (app_container_t *)ctx;
+    if (self == NULL || reading == NULL)
+    {
+        return;
+    }
+
+    if (self->alarm.initialized)
+    {
+        adapter_alarm_detector_volt_process_reading(&self->alarm.det_volt, reading);
+    }
+}
+
+static void on_modbus_bus_fault(void *ctx, uint8_t bus_id, bool is_fault)
+{
+    ARG_UNUSED(bus_id);
+    app_container_t *self = (app_container_t *)ctx;
+    if (self == NULL)
+    {
+        return;
+    }
+
+    if (self->alarm.initialized)
+    {
+        (void)ao_alarm_manager_post_condition(&self->alarm.ao,
+                                              ALARM_ID_INFRA_MODBUS_FAULT,
+                                              is_fault, 0.0f);
+    }
+}
+
 int composition_root_wire(app_container_t *self)
 {
     if (self == NULL)
@@ -932,6 +967,8 @@ int composition_root_wire(app_container_t *self)
         {
             ao_modbus_set_mbsl32di_callback(&self->modbus.ao[bus], on_modbus_mbsl32di_reading, self);
             ao_modbus_set_cwt_tm16pt_callback(&self->modbus.ao[bus], on_modbus_cwt_tm16pt_reading, self);
+            ao_modbus_set_jsy_mk339_callback(&self->modbus.ao[bus], on_modbus_jsy_mk339_reading, self);
+            ao_modbus_set_bus_fault_callback(&self->modbus.ao[bus], on_modbus_bus_fault, self);
         }
     }
 
@@ -1055,10 +1092,63 @@ int composition_root_init_sensor_matrix(app_container_t *self)
     return 0;
 }
 
+
+int composition_root_init_alarm(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->alarm.initialized)
+    {
+        return 0;
+    }
+
+    /* 1. Initialize Active Object */
+    int err = ao_alarm_manager_init(&self->alarm.ao,
+                                    s_ao_alarm_stack,
+                                    K_THREAD_STACK_SIZEOF(s_ao_alarm_stack),
+                                    7);
+    if (err != 0)
+    {
+        LOG_ERR("ao_alarm_manager_init failed (%d)", err);
+        return err;
+    }
+
+    self->alarm.query_port = ao_alarm_manager_get_query_port(&self->alarm.ao);
+
+    /* 2. Initialize Ingestion Detectors */
+    adapter_alarm_detector_di_init(&self->alarm.det_di, &self->alarm.ao);
+
+    /* Temperature: default group 1 (0x000F) and group 2 (0x00F0), low 15°C, high 28°C, hyst 1.0°C */
+    const uint16_t group_masks[HVAC_MAX_GROUPS] = { 0x000FU, 0x00F0U, 0x0000U, 0x0000U };
+    adapter_alarm_detector_temp_init(&self->alarm.det_temp, &self->alarm.ao,
+                                      group_masks, 15.0f, 28.0f, 1.0f);
+
+    /* Voltage: nominal 220V, deviation 8%, hysteresis 2V */
+    adapter_alarm_detector_volt_init(&self->alarm.det_volt, &self->alarm.ao,
+                                      220.0f, 8.0f, 2.0f);
+
+    /* HVAC: bypass & lockout detector */
+    adapter_alarm_detector_hvac_init(&self->alarm.det_hvac, &self->alarm.ao);
+
+    self->alarm.initialized = true;
+    LOG_INF("alarm management subsystem initialised");
+    return 0;
+}
+
 /* =========================================================================
  * Zbus Observers & Listeners
  * ========================================================================= */
 
+/*
+ * Note on Invariant 6: Zephyr Zbus listener callbacks (ZBUS_LISTENER_DEFINE) have a fixed
+ * C signature `void (*)(const struct zbus_channel *chan)` that passes no user_data context.
+ * s_active_container holds strictly an instance reference to the active container (allocated
+ * in main.c or test suites) to route Zbus notifications to the appropriate subsystems,
+ * without maintaining any mutable operational state at file scope.
+ */
 static app_container_t *s_active_container = NULL;
 
 static void on_hvac_sensor_feed_cb(const struct zbus_channel *chan)
@@ -1186,6 +1276,91 @@ static void on_hvac_event_cb(const struct zbus_channel *chan)
 
 ZBUS_LISTENER_DEFINE(lis_hvac_event_logger, on_hvac_event_cb);
 
+static void on_alarm_di_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_digital_input_state || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const di_transition_event_t *ev = zbus_chan_const_msg(chan);
+    if (ev == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->alarm.initialized)
+    {
+        adapter_alarm_detector_di_process_transition(&s_active_container->alarm.det_di, ev);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_alarm_di_feed, on_alarm_di_feed_cb);
+
+static void on_alarm_sensor_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_sensor_snapshot || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const sensor_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->alarm.initialized)
+    {
+        adapter_alarm_detector_temp_process_snapshot(&s_active_container->alarm.det_temp, msg);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_alarm_sensor_feed, on_alarm_sensor_feed_cb);
+
+static void on_alarm_hvac_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_hvac_status || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const hvac_status_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->alarm.initialized)
+    {
+        adapter_alarm_detector_hvac_process_status(&s_active_container->alarm.det_hvac, msg);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_alarm_hvac_feed, on_alarm_hvac_feed_cb);
+
+static void on_indicator_alarm_feed_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_system_alarm || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const alarm_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->indicators.initialized)
+    {
+        (void)ao_system_indicator_post_alarm(&s_active_container->indicators.ao, msg);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_indicator_alarm_feed, on_indicator_alarm_feed_cb);
+
+
 
 int composition_root_init(app_container_t *self)
 {
@@ -1215,6 +1390,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_indicators(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_alarm(self);
     if (err != 0)
     {
         return err;
@@ -1311,6 +1492,16 @@ int composition_root_start(app_container_t *self)
 
         /* Trigger startup chime on system boot */
         (void)ao_system_indicator_trigger_startup_chime(&self->indicators.ao);
+    }
+
+    if (self->alarm.initialized)
+    {
+        int err = ao_alarm_manager_start(&self->alarm.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("alarm active object start failed (%d)", err);
+            return err;
+        }
     }
 
     if (self->di.initialized)
@@ -1434,6 +1625,21 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
+    /* 5b. Stop alarm manager (wait up to 500 ms) */
+    if (self->alarm.initialized)
+    {
+        rc = ao_alarm_manager_stop(&self->alarm.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_alarm_manager_stop returned %d", rc);
+        }
+        rc = ao_alarm_manager_wait_stopped(&self->alarm.ao, K_MSEC(500));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_alarm_manager_wait_stopped returned %d", rc);
+        }
+    }
+
     /* 6. Stop system indicators (wait up to 200 ms) */
     if (self->indicators.initialized)
     {
@@ -1529,6 +1735,16 @@ int composition_root_deinit(app_container_t *self)
             LOG_WRN("ao_digital_input_deinit returned %d", rc);
         }
         self->di.initialized = false;
+    }
+
+    if (self->alarm.initialized)
+    {
+        rc = ao_alarm_manager_deinit(&self->alarm.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_alarm_manager_deinit returned %d", rc);
+        }
+        self->alarm.initialized = false;
     }
 
     if (self->indicators.initialized)
@@ -1797,3 +2013,22 @@ int app_container_apply_profile(app_container_t *self, hvac_operation_mode_t mod
     return 0;
 }
 
+
+
+const i_alarm_query_t *app_container_get_alarm_query(const app_container_t *self)
+{
+    if (self == NULL || !self->alarm.initialized)
+    {
+        return NULL;
+    }
+    return &self->alarm.query_port;
+}
+
+ao_alarm_manager_t *app_container_get_alarm_manager_ao(app_container_t *self)
+{
+    if (self == NULL || !self->alarm.initialized)
+    {
+        return NULL;
+    }
+    return (ao_alarm_manager_t *)&self->alarm.ao;
+}

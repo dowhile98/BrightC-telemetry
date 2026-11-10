@@ -43,6 +43,16 @@ target_sources(app PRIVATE
     src/infrastructure/adapters/adapter_hvac_actuator.c
     src/application/active_objects/ao_hvac.c
     src/application/services/app_facade.c
+    src/domain/alarm/alarm_entity.c
+    src/domain/alarm/alarm_aggregate.c
+    src/domain/alarm/alarm_evaluator.c
+    src/domain/alarm/alarm_registry.c
+    src/application/zbus/alarm_channels.c
+    src/application/active_objects/ao_alarm_manager.c
+    src/infrastructure/adapters/adapter_alarm_detector_di.c
+    src/infrastructure/adapters/adapter_alarm_detector_temp.c
+    src/infrastructure/adapters/adapter_alarm_detector_volt.c
+    src/infrastructure/adapters/adapter_alarm_detector_hvac.c
 )
 
 if(CONFIG_SHELL)

@@ -13,7 +13,7 @@ ZBUS_CHAN_DEFINE(
     di_transition_event_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_OBSERVERS(lis_alarm_di_feed),
     ZBUS_MSG_INIT(
         .role = DI_ROLE_FAN_1_AUX,
         .new_state = DI_STATE_INACTIVE,

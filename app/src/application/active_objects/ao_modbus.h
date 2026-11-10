@@ -20,6 +20,7 @@
 #include "interfaces/i_modbus_client.h"
 #include "interfaces/i_slave_registry.h"
 #include "interfaces/i_temperature_bank.h"
+#include "common/energy_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -82,6 +83,12 @@ typedef void (*ao_modbus_mbsl32di_cb_t)(void *ctx, uint8_t device_id, uint32_t r
 /** Callback invoked when CWT-TM-16PT temperature bank is read. */
 typedef void (*ao_modbus_cwt_tm16pt_cb_t)(void *ctx, uint8_t device_id, const temperature_bank_16ch_t *bank);
 
+/** Callback invoked when JSY-MK-339 electrical reading is parsed. */
+typedef void (*ao_modbus_jsy_mk339_cb_t)(void *ctx, uint8_t device_id, const energy_reading_t *reading);
+
+/** Callback invoked when bus health or consecutive failures change state. */
+typedef void (*ao_modbus_bus_fault_cb_t)(void *ctx, uint8_t bus_id, bool is_fault);
+
 /**
  * @brief One polling thread and everything it needs.
  */
@@ -100,6 +107,14 @@ typedef struct {
 
     ao_modbus_cwt_tm16pt_cb_t cwt_tm16pt_cb; /**< Callback for temperature bank */
     void *cwt_tm16pt_cb_ctx;                 /**< Callback user context */
+
+    ao_modbus_jsy_mk339_cb_t jsy_mk339_cb;   /**< Callback for energy meter */
+    void *jsy_mk339_cb_ctx;                   /**< Callback user context */
+
+    ao_modbus_bus_fault_cb_t bus_fault_cb;   /**< Callback for bus fault state changes */
+    void *bus_fault_cb_ctx;                  /**< Callback user context */
+    uint32_t consecutive_fails;              /**< Consecutive poll failures on this bus */
+    bool bus_fault_active;                   /**< Whether bus fault alarm condition is active */
 
     /* Synchronization */
     struct k_sem stopped_sem;      /**< Signaled when inner loop exits */
@@ -170,6 +185,16 @@ void ao_modbus_set_mbsl32di_callback(ao_modbus_t *self, ao_modbus_mbsl32di_cb_t 
  * @brief Register callback for CWT-TM-16PT temperature bank readings.
  */
 void ao_modbus_set_cwt_tm16pt_callback(ao_modbus_t *self, ao_modbus_cwt_tm16pt_cb_t cb, void *ctx);
+
+/**
+ * @brief Register callback for JSY-MK-339 electrical energy readings.
+ */
+void ao_modbus_set_jsy_mk339_callback(ao_modbus_t *self, ao_modbus_jsy_mk339_cb_t cb, void *ctx);
+
+/**
+ * @brief Register callback for Modbus bus fault state changes.
+ */
+void ao_modbus_set_bus_fault_callback(ao_modbus_t *self, ao_modbus_bus_fault_cb_t cb, void *ctx);
 
 #ifdef __cplusplus
 }

@@ -13,7 +13,7 @@ ZBUS_CHAN_DEFINE(
     sensor_snapshot_msg_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS(lis_hvac_sensor_feed),
+    ZBUS_OBSERVERS(lis_hvac_sensor_feed, lis_alarm_sensor_feed),
     ZBUS_MSG_INIT(0)
 );
 

@@ -13,7 +13,7 @@ ZBUS_CHAN_DEFINE(
     alarm_msg_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_OBSERVERS(lis_indicator_alarm_feed),
     ZBUS_MSG_INIT(
         .alarm_id = 0,
         .level = ALARM_LEVEL_NONE,

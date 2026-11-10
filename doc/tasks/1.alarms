@@ -1,0 +1,930 @@
+# PROMPT — Análisis, arquitectura y diseño del subsistema extensible de gestión de alarmas para BrightC (Zephyr)
+
+## 1. Rol y objetivo
+
+Actúa como un arquitecto senior de firmware embebido especializado en sistemas industriales, Zephyr RTOS, C/C++, Clean Architecture, diseño orientado a eventos y sistemas de supervisión y control.
+
+Necesitamos analizar, diseñar y posteriormente implementar un **subsistema centralizado de gestión de alarmas (Alarm Management Subsystem)** para BrightC, basado en Zephyr RTOS.
+
+El trabajo debe comenzar con un análisis comparativo de dos implementaciones existentes y, a partir de sus funcionalidades, comportamiento y limitaciones, definir una arquitectura robusta, modular, desacoplada y extensible.
+
+**No comiences implementando código. Primero analiza los proyectos y presenta una propuesta de arquitectura.**
+
+El subsistema deberá centralizar la gestión del ciclo de vida de las alarmas y proporcionar información a los demás subsistemas de BrightC, sin depender directamente de ellos.
+
+Su responsabilidad principal será conocer y mantener el estado de las alarmas, detectar sus transiciones de activación y desactivación, y comunicar esos cambios a los consumidores interesados.
+
+A medida que el producto evolucione se incorporarán nuevas alarmas, por lo que el diseño no debe depender de una lista cerrada de alarmas ni requerir modificaciones estructurales cada vez que se agregue una nueva.
+
+---
+
+# 2. Proyectos de referencia
+
+Analiza exhaustivamente los siguientes proyectos:
+
+**Proyecto 1 — Implementación anterior estable**
+
+`/media/jeffry/jqb/GitHub/BrightC-V3/Firmware/BrightC_ETH_CycloneTCP_FileX`
+
+**Proyecto 2 — Implementación inicial en Zephyr**
+
+`/media/jeffry/jqb/brightc_/brightc_firmware`
+
+El primer proyecto representa una versión anterior estable y debe utilizarse como referencia para recuperar y comprender el comportamiento funcional existente.
+
+El segundo proyecto representa la implementación inicial sobre Zephyr y debe utilizarse para conocer la arquitectura actual, las decisiones ya tomadas y las funcionalidades que se encuentran implementadas o pendientes.
+
+## 2.1. Análisis del proyecto anterior
+
+Identifica:
+
+- Cómo se definen las alarmas.
+- Qué tipos de alarmas existen.
+- Cómo se detecta su activación.
+- Cómo se detecta su desactivación.
+- Cómo se mantiene su estado.
+- Cómo se relacionan con las entradas digitales.
+- Cómo se generan las alarmas por condiciones de temperatura y tensión.
+- Cómo se manejan las alarmas de bypass y fallos de equipos.
+- Cómo se notifican los cambios a otros componentes.
+- Qué mecanismos se utilizan para activar sonidos.
+- Cómo se exponen las alarmas mediante interfaces externas.
+- Qué comportamientos dependen de otros módulos.
+- Qué problemas de diseño, acoplamiento o mantenimiento existen.
+
+No te limites a buscar nombres de variables o funciones. Reconstruye el flujo funcional completo de cada alarma.
+
+## 2.2. Análisis de la implementación Zephyr
+
+Identifica:
+
+- Qué módulos de alarmas existen actualmente.
+- Cómo se organizan sus responsabilidades.
+- Qué funcionalidades fueron migradas.
+- Qué funcionalidades todavía no se migraron.
+- Cómo se detectan las condiciones.
+- Cómo se representan los estados.
+- Cómo se notifican los cambios.
+- Qué relación existe con el subsistema System Indicators.
+- Qué relación existe con entradas digitales, sensores, control de aires y bypass.
+- Qué dependencias tiene respecto a otros módulos.
+- Qué oportunidades de mejora presenta la arquitectura actual.
+
+## 2.3. Comparación entre proyectos
+
+Genera una matriz comparativa:
+
+| Funcionalidad | Proyecto anterior | Proyecto Zephyr | Brecha / observación | Recomendación |
+|---|---|---|---|---|
+
+Clasifica los hallazgos en:
+
+- Funcionalidad existente y correcta.
+- Funcionalidad existente que necesita mejoras.
+- Funcionalidad perdida durante la migración.
+- Funcionalidad incompleta.
+- Deficiencia arquitectónica.
+- Funcionalidad nueva requerida.
+- Comportamiento que necesita validación.
+
+No asumas que el proyecto anterior es arquitectónicamente correcto por ser estable. Tampoco descartes comportamientos funcionales que ya están probados en producción.
+
+El objetivo es preservar lo que funciona y mejorar lo que sea necesario.
+
+---
+
+# 3. Alcance y responsabilidades del subsistema
+
+El subsistema Alarm Management debe ser el responsable central de gestionar el ciclo de vida de las alarmas de BrightC.
+
+Debe poder:
+
+1. Registrar y administrar las alarmas disponibles.
+2. Conocer el estado actual de cada alarma.
+3. Detectar la transición de inactiva a activa.
+4. Detectar la transición de activa a inactiva.
+5. Registrar cuándo ocurrió cada transición.
+6. Mantener la información de las alarmas activas.
+7. Notificar a los consumidores cuando una alarma se activa.
+8. Notificar a los consumidores cuando una alarma se desactiva.
+9. Proporcionar consultas sobre el estado actual de las alarmas.
+10. Permitir incorporar nuevas alarmas sin modificar la arquitectura central.
+11. Soportar diferentes estrategias de activación y desactivación.
+12. Evitar notificaciones duplicadas por una misma condición persistente.
+13. Mantener una separación clara entre detección, gestión y presentación de alarmas.
+
+## 3.1. Separación de responsabilidades
+
+Es fundamental diferenciar:
+
+**A. Detección de condiciones**
+
+Cada función o módulo responsable de una condición debe evaluar cuándo esta se cumple.
+
+Ejemplos:
+
+- El módulo de supervisión de temperatura detecta una temperatura anormal.
+- El módulo de supervisión de tensión detecta una tensión fuera de rango.
+- El módulo de control detecta que el sistema entró en bypass.
+- El módulo de adquisición detecta que un sensor dejó de estar disponible.
+
+Estos módulos conocen las condiciones que les corresponden, pero no deben implementar individualmente toda la lógica de distribución de alarmas.
+
+**B. Gestión de alarmas**
+
+El subsistema Alarm Management recibe los cambios de estado y administra el ciclo de vida de las alarmas.
+
+Debe centralizar:
+
+- Identificación.
+- Estado activo/inactivo.
+- Transiciones.
+- Marcas temporales.
+- Información de origen.
+- Notificaciones.
+- Consulta de estado.
+
+**C. Consumo de alarmas**
+
+Otros subsistemas reciben las transiciones o consultan el estado actual para realizar sus respectivas funciones.
+
+Por ejemplo:
+
+- System Indicators.
+- Persistent Logging.
+- SNMP.
+- HMI.
+- Web Server.
+- Modbus Server.
+- Diagnóstico del sistema.
+
+Ninguno de estos consumidores debe implementar su propia detección de las condiciones que originan las alarmas.
+
+Tampoco deben depender de detalles internos de los módulos que detectan las condiciones.
+
+---
+
+# 4. Ciclo de vida de una alarma
+
+Esta es una de las partes centrales del diseño.
+
+Cada alarma debe tener un estado actual y generar notificaciones cuando dicho estado cambia.
+
+Como mínimo, debe contemplarse:
+
+- INACTIVE: condición normal, alarma inactiva.
+- ACTIVE: condición anormal, alarma activa.
+
+El subsistema debe reconocer dos transiciones fundamentales:
+
+| Transición | Significado | Evento |
+|---|---|---|
+| INACTIVE → ACTIVE | La condición de alarma se cumple | ON_PRESS / ACTIVATED |
+| ACTIVE → INACTIVE | La condición de alarma desaparece | ON_RELEASE / CLEARED |
+
+Los nombres definitivos deberán ajustarse a las convenciones del proyecto.
+
+## 4.1. Comportamiento ON_PRESS
+
+Cuando una alarma pasa de inactiva a activa, el subsistema debe:
+
+1. Actualizar su estado.
+2. Registrar la marca temporal de activación.
+3. Generar una notificación de activación.
+4. Informar a los consumidores suscritos.
+5. Permitir consultar la nueva condición activa.
+
+## 4.2. Comportamiento ON_RELEASE
+
+Cuando una alarma pasa de activa a inactiva, el subsistema debe:
+
+1. Actualizar su estado.
+2. Registrar la marca temporal de desactivación.
+3. Generar una notificación de desactivación.
+4. Informar a los consumidores suscritos.
+5. Permitir consultar que la alarma ya no está activa.
+
+## 4.3. Reglas importantes
+
+- Una alarma activa no debe generar repetidamente eventos de activación mientras su condición permanezca activa.
+- Una alarma inactiva no debe generar repetidamente eventos de desactivación.
+- Cada cambio real de estado debe producir una única transición lógica.
+- El sistema debe permitir consultar el estado actual, independientemente de si un consumidor recibió o perdió una notificación.
+- Debe existir una estrategia para consumidores que se registren después de que una alarma ya esté activa.
+- Debe analizarse cómo manejar eventos pendientes y notificaciones perdidas.
+- Debe evitarse que un consumidor lento bloquee la detección o gestión de alarmas.
+
+Analiza también si es conveniente contemplar estados adicionales como ACKNOWLEDGED, LATCHED o INHIBITED.
+
+No los incorpores automáticamente: explica qué problema resuelve cada uno y si realmente pertenece al alcance de BrightC.
+
+En particular, diferencia el reconocimiento de una alarma por parte del operador de la desaparición de la condición que la originó. Reconocer una alarma no debe desactivarla automáticamente.
+
+---
+
+# 5. Catálogo inicial de alarmas
+
+Analiza y recupera las alarmas existentes en ambos proyectos.
+
+El siguiente catálogo constituye la referencia funcional inicial, pero no debe considerarse cerrado.
+
+## 5.1. Alarmas por contactos de los aires acondicionados
+
+Existen entradas de contacto asociadas a los equipos de aire acondicionado.
+
+Cada aire acondicionado dispone de cuatro contactos de alarma.
+
+El sistema debe contemplar:
+
+- Identificación del equipo de aire acondicionado.
+- Identificación de cada contacto.
+- Estado normal y estado de alarma.
+- Activación de alarma.
+- Desactivación de alarma.
+- Identificación de la fuente.
+- Asociación de la alarma con el equipo correspondiente.
+
+Revisa cómo están asignadas estas entradas en ambos proyectos.
+
+No inventes el significado de los cuatro contactos: recupera su definición real del código o de la documentación.
+
+Las alarmas deben poder identificarse individualmente y consultarse sin tener que interpretar directamente el estado físico de las entradas.
+
+## 5.2. Alarma de baja temperatura
+
+La alarma se genera cuando cualquiera de los sensores de temperatura asignados al grupo de control de aires presenta una temperatura inferior al límite configurado.
+
+Ejemplo:
+
+- Umbral de activación: 15 °C.
+- Umbral de desactivación: 15 °C + histéresis configurada.
+
+El valor de 15 °C es ilustrativo, no un valor fijo obligatorio.
+
+Comportamiento esperado:
+
+- Si cualquiera de los sensores asignados cruza el umbral inferior, la alarma se activa.
+- La alarma permanece activa mientras al menos uno de los sensores continúe cumpliendo la condición.
+- Se desactiva cuando todos los sensores válidos asociados al grupo hayan superado el umbral de recuperación.
+- Debe evitarse el rebote de la alarma mediante histéresis.
+
+Analiza especialmente cómo se agregan las condiciones de varios sensores para producir una alarma de grupo.
+
+Distingue la alarma de baja temperatura de una alarma por sensor desconectado o inválido.
+
+## 5.3. Alarma de alta temperatura
+
+La alarma se genera cuando cualquiera de los sensores asignados al grupo de control de aires supera el límite correspondiente.
+
+Considerar los parámetros existentes en el proyecto:
+
+- Temperatura de alarma.
+- Temperatura BOOST, si corresponde.
+- Histéresis.
+
+Comportamiento esperado:
+
+- La alarma se activa cuando al menos un sensor supera el umbral aplicable.
+- La alarma permanece activa mientras exista al menos un sensor que mantenga la condición.
+- Se desactiva cuando todos los sensores válidos asociados hayan regresado por debajo del umbral de recuperación.
+
+Analiza la relación entre temperatura de alarma, temperatura BOOST y las condiciones reales del sistema de control.
+
+No asumas que ambos umbrales son equivalentes.
+
+Determina si deben existir alarmas independientes o una única alarma con diferentes niveles de severidad. Justifica la decisión a partir del comportamiento del firmware existente y los requisitos del producto.
+
+## 5.4. Alarma de bajo voltaje
+
+La alarma se genera cuando el voltaje de línea cae por debajo del límite inferior configurado.
+
+Ejemplo:
+
+- Tensión nominal: 220 V.
+- Umbral inferior: 220 V - 8 %.
+
+El porcentaje es configurable.
+
+La alarma se desactiva cuando la tensión supera el umbral de recuperación, considerando una histéresis configurable.
+
+Analiza:
+
+- Qué medición se utiliza.
+- Cómo se determina la tensión nominal.
+- Si se evalúan líneas individualmente.
+- Cómo se comporta el sistema cuando existen múltiples mediciones.
+- Cómo se evita el rebote.
+- Qué sucede cuando la medición deja de ser válida.
+
+## 5.5. Alarma de alto voltaje
+
+La alarma se genera cuando el voltaje supera el límite superior configurado.
+
+Ejemplo:
+
+- Tensión nominal: 220 V.
+- Umbral superior: 220 V + 8 %.
+
+Debe contar con una condición de recuperación con histéresis.
+
+Aplica los mismos criterios de análisis que para bajo voltaje.
+
+## 5.6. Alarma de bypass
+
+Se activa cuando el sistema entra en modo BYPASS, independientemente de la causa que provocó la transición.
+
+Debe analizarse cómo se relaciona con:
+
+- Modo automático.
+- Modo inteligente.
+- Modo bypass.
+- Fallos de los equipos.
+- Condiciones de seguridad.
+- Transiciones del sistema de control.
+
+La alarma debe reflejar el estado real del sistema, no simplemente la recepción de una orden para entrar en bypass.
+
+Se debe registrar su activación y desactivación.
+
+## 5.7. Alarma por fallo de aires acondicionados
+
+Debe analizarse el comportamiento existente y definir cómo se representa la condición de fallo de cada aire acondicionado.
+
+Considerar:
+
+- Fallo individual de un equipo.
+- Condiciones provenientes de sus contactos.
+- Fallos que afectan al grupo.
+- Recuperación del equipo.
+- Diferenciación entre una alarma individual y una alarma general.
+
+No dupliques innecesariamente alarmas que ya están representadas por los contactos individuales.
+
+Determina qué información adicional justifica una alarma agregada de fallo de aires.
+
+## 5.8. Alarmas por desconexión o indisponibilidad de sensores
+
+El sistema debe detectar cuando un sensor asignado al grupo de control de aires deja de estar disponible o proporciona mediciones inválidas.
+
+Analiza las diferentes condiciones posibles:
+
+- Sensor desconectado.
+- Lectura fuera de rango.
+- Fallo de comunicación con el sensor, si aplica.
+- Valor inválido.
+- Ausencia persistente de actualización.
+- Recuperación del sensor.
+
+Distingue una alarma por fallo de sensor de una alarma de temperatura.
+
+La desconexión de un sensor no debe interpretarse como una temperatura normal ni como una condición válida para desactivar otra alarma.
+
+Define cómo afecta la indisponibilidad de sensores a las alarmas agregadas del grupo.
+
+## 5.9. Alarmas de infraestructura y disponibilidad
+
+Contemplar la incorporación de alarmas relacionadas con el estado del propio equipo:
+
+- Ethernet desconectado.
+- Tarjeta SD no presente.
+- Tarjeta SD retirada.
+- Fallo de almacenamiento.
+- Fallo de comunicaciones.
+- Otros subsistemas no disponibles.
+
+Estas alarmas deberán ser generadas por los módulos responsables de supervisar cada recurso y notificadas al gestor central.
+
+Distinguir entre:
+
+- Condición de desconexión.
+- Condición de fallo.
+- Condición de indisponibilidad.
+- Recuperación.
+
+La arquitectura debe permitir incorporar estas alarmas sin modificar el núcleo del gestor.
+
+---
+
+# 6. Alarmas agregadas y múltiples fuentes
+
+Analiza cuidadosamente el comportamiento de las alarmas que dependen de varias fuentes.
+
+Ejemplo: alarma de baja temperatura.
+
+Si existen cinco sensores asignados al grupo:
+
+- Sensor 1: normal.
+- Sensor 2: normal.
+- Sensor 3: alarma.
+- Sensor 4: normal.
+- Sensor 5: normal.
+
+La alarma de grupo debe permanecer activa.
+
+Si el sensor 3 se recupera, pero el sensor 5 pasa a condición de alarma, la alarma de grupo debe continuar activa.
+
+No debe generarse una secuencia artificial de desactivación y reactivación de la alarma de grupo.
+
+Analiza si conviene separar:
+
+1. Alarmas individuales por sensor.
+2. Condiciones de alarma por fuente.
+3. Alarmas agregadas por grupo.
+
+Determina cómo se debe mantener la trazabilidad de las fuentes que mantienen activa una alarma agregada.
+
+La arquitectura debe permitir conocer qué sensores o condiciones están contribuyendo a mantener activa una alarma.
+
+Aplica el mismo análisis a otras alarmas que dependan de múltiples condiciones.
+
+---
+
+# 7. Distribución de alarmas a otros subsistemas
+
+Una de las responsabilidades más importantes del gestor es permitir que otros subsistemas reaccionen a los cambios de estado.
+
+El Alarm Management no debe conocer ni implementar las funciones particulares de esos consumidores.
+
+Debe proporcionar un mecanismo desacoplado de publicación y suscripción de eventos.
+
+Analiza y define cómo se integrará con los siguientes consumidores:
+
+## 7.1. System Indicators
+
+El subsistema System Indicators debe recibir información sobre las alarmas para actualizar los indicadores visuales y acústicos.
+
+Por ejemplo:
+
+- Cuando se activa una alarma, debe notificarse el evento.
+- Cuando se desactiva una alarma, debe notificarse la liberación.
+- Debe poder determinarse si existe alguna alarma activa.
+- Debe poder conocerse la prioridad o severidad de las alarmas activas, si se define ese atributo.
+
+El sonido debe gestionarse desde System Indicators, no desde Alarm Management.
+
+El gestor de alarmas únicamente informa las condiciones y transiciones.
+
+Analiza cómo debe manejarse:
+
+- Activación del sonido.
+- Mantenimiento del sonido mientras existan alarmas activas.
+- Desactivación del sonido cuando corresponda.
+- Prioridades.
+- Múltiples alarmas simultáneas.
+- Diferenciación entre alarmas críticas e informativas.
+
+No dupliques la lógica del subsistema System Indicators.
+
+## 7.2. Persistent Logging
+
+El sistema de logs persistentes debe poder registrar:
+
+- Activación de una alarma.
+- Desactivación de una alarma.
+- Identificador de alarma.
+- Fecha y hora.
+- Información de origen.
+- Datos contextuales relevantes.
+
+El gestor debe entregar eventos suficientemente descriptivos para permitir su persistencia.
+
+No acoples el gestor de alarmas al sistema de archivos ni al almacenamiento físico.
+
+## 7.3. SNMP Traps
+
+El subsistema SNMP debe poder recibir las notificaciones necesarias para generar traps cuando se produzcan las transiciones correspondientes.
+
+Analiza las diferencias entre:
+
+- Alarma activa.
+- Alarma recuperada.
+- Estado actual de alarmas.
+- Eventos que deben generar traps.
+
+No asumas que todos los consumidores deben recibir todos los tipos de notificación.
+
+El mecanismo debe permitir que SNMP decida qué transiciones generan traps y bajo qué políticas.
+
+Un trap no debe confundirse con el estado actual de una alarma. Debe ser posible consultar posteriormente el estado mediante la interfaz SNMP correspondiente, cuando esté definida.
+
+## 7.4. HMI
+
+La HMI debe poder consultar:
+
+- Alarmas activas.
+- Alarmas inactivas cuando se requiera historial.
+- Identificación.
+- Descripción.
+- Severidad.
+- Fecha y hora de activación.
+- Fecha y hora de recuperación.
+- Origen.
+- Estado de reconocimiento, si se implementa.
+
+El gestor debe ofrecer información coherente sin depender de la interfaz HMI.
+
+## 7.5. Web Server
+
+El Web Server debe poder consultar el estado de las alarmas y reflejar los cambios.
+
+No debe implementar su propia lógica de detección.
+
+## 7.6. Modbus Server
+
+El Modbus Server debe poder exponer los estados de las alarmas mediante sus registros correspondientes.
+
+Analiza cómo se proporcionará:
+
+- Estado actual de cada alarma.
+- Alarmas activas.
+- Estados agregados.
+- Información de diagnóstico relacionada.
+
+La asignación concreta de registros Modbus queda fuera del alcance inicial y deberá definirse posteriormente.
+
+El subsistema de alarmas debe ofrecer una interfaz estable para que el servidor Modbus consulte los estados.
+
+---
+
+# 8. Modelo de eventos y notificaciones
+
+Define un modelo conceptual de eventos que represente las transiciones de las alarmas.
+
+Como mínimo, debe permitir identificar:
+
+- ID de alarma.
+- Tipo de transición.
+- Estado resultante.
+- Marca temporal.
+- Severidad o prioridad, si aplica.
+- Origen de la alarma.
+- Información contextual.
+- Identificación de la fuente, cuando exista.
+
+Analiza si es necesario distinguir entre:
+
+- AlarmActivated.
+- AlarmCleared.
+- AlarmAcknowledged.
+- AlarmUpdated.
+- AlarmSourceAdded.
+- AlarmSourceRemoved.
+
+No implementes todos estos eventos automáticamente. Justifica cuáles son necesarios para el alcance actual.
+
+## 8.1. Semántica de notificación
+
+Es fundamental que cada consumidor pueda aplicar su propia política.
+
+Ejemplo:
+
+| Consumidor | Activación | Desactivación | Estado actual |
+|---|---|---|---|
+| System Indicators | Actualizar indicadores / sonido | Actualizar indicadores / sonido | Sí |
+| Persistent Logging | Registrar | Registrar | No necesariamente |
+| SNMP Traps | Evaluar envío de trap | Evaluar envío de trap | Consulta independiente |
+| HMI | Actualizar | Actualizar | Sí |
+| Web Server | Actualizar | Actualizar | Sí |
+| Modbus Server | Actualizar estado | Actualizar estado | Sí |
+
+No fuerces a todos los consumidores a utilizar el mismo mecanismo.
+
+Diferencia notificaciones orientadas a eventos de consultas orientadas a estado.
+
+## 8.2. Entrega y confiabilidad de notificaciones
+
+Analiza:
+
+- Qué sucede si un consumidor no está disponible.
+- Qué sucede si una cola está llena.
+- Qué sucede si un consumidor tarda demasiado.
+- Cómo se evita bloquear la gestión de alarmas.
+- Si se requiere una cola de eventos.
+- Si se requieren notificaciones síncronas o asíncronas.
+- Cómo se manejan las notificaciones perdidas.
+- Cómo puede un consumidor reconstruir el estado actual.
+
+No asumas que la publicación de un evento garantiza que todos los consumidores lo hayan procesado.
+
+Define qué garantías necesita cada consumidor y qué responsabilidades corresponden al productor y al consumidor.
+
+---
+
+# 9. Extensibilidad y registro de alarmas
+
+El diseño debe permitir incorporar nuevas alarmas de manera sencilla.
+
+Ejemplos futuros:
+
+- Fallo de Ethernet.
+- SD retirada.
+- Fallo de almacenamiento.
+- Fallo de sensores.
+- Fallo de módulos de expansión.
+- Fallo de comunicaciones.
+- Condiciones anormales de alimentación.
+- Fallos internos del equipo.
+- Nuevas condiciones de control.
+- Nuevas alarmas de temperatura o presión.
+
+Analiza y propone un modelo de definición de alarmas que permita declarar:
+
+- Identificador único.
+- Nombre.
+- Descripción.
+- Categoría.
+- Severidad.
+- Origen.
+- Estado inicial.
+- Política de activación y recuperación.
+- Disponibilidad de reconocimiento.
+- Información contextual.
+
+El registro de alarmas debe ser extensible sin tener que modificar continuamente la lógica central.
+
+Evalúa alternativas como:
+
+- Registro estático de definiciones.
+- Registro dinámico durante la inicialización.
+- Catálogo central de identificadores.
+- Definiciones distribuidas por módulos funcionales.
+
+Recomienda la alternativa más apropiada para un firmware industrial en Zephyr.
+
+No diseñes una abstracción excesiva ni introduzcas mecanismos dinámicos innecesarios. Prioriza simplicidad, seguridad de tipos, trazabilidad y facilidad de mantenimiento.
+
+---
+
+# 10. Arquitectura propuesta
+
+Una vez realizado el análisis, diseña la arquitectura del subsistema.
+
+Evalúa una separación conceptual similar a:
+
+1. Alarm Sources: módulos que detectan condiciones.
+2. Alarm Manager: núcleo responsable del estado y ciclo de vida.
+3. Alarm Event Publisher: mecanismo de distribución de transiciones.
+4. Alarm State Query: interfaz de consulta del estado actual.
+5. Alarm Consumers: módulos que reaccionan a los eventos o consultan el estado.
+
+Esta separación es una hipótesis inicial, no una arquitectura obligatoria. Contrástala con el código y recomienda la estructura más adecuada.
+
+La arquitectura debe respetar:
+
+- Clean Architecture.
+- SOLID, sin sobreabstracción.
+- Bajo acoplamiento.
+- Alta cohesión.
+- Responsabilidades únicas.
+- Independencia de los consumidores.
+- Extensibilidad.
+- Testabilidad.
+- Compatibilidad con Zephyr RTOS.
+- Ausencia de dependencias circulares.
+
+No introduzcas Singleton ni variables globales mutables innecesarias.
+
+Evita que Alarm Management dependa de:
+
+- HMI.
+- Web Server.
+- SNMP.
+- Modbus.
+- File System.
+- System Indicators.
+
+Estos módulos deben depender de contratos o interfaces del gestor, no al contrario.
+
+Define claramente quién es responsable de detectar, administrar, publicar, almacenar y presentar una alarma.
+
+---
+
+# 11. Casos de uso y escenarios de funcionamiento
+
+Documenta y analiza, como mínimo, los siguientes escenarios:
+
+### Escenario 1 — Activación y recuperación de una alarma
+
+1. Una condición anormal es detectada.
+2. El módulo responsable informa la activación.
+3. Alarm Management actualiza el estado.
+4. Se publica el evento de activación.
+5. Los consumidores interesados reciben la notificación.
+6. La condición desaparece.
+7. Se informa la recuperación.
+8. Alarm Management actualiza el estado.
+9. Se publica el evento de desactivación.
+
+### Escenario 2 — Varias alarmas simultáneas
+
+Se activan varias alarmas al mismo tiempo.
+
+Verificar que:
+
+- Todas mantengan su identidad.
+- Ninguna sobrescriba a otra.
+- System Indicators pueda conocer el conjunto de alarmas activas.
+- Los consumidores reciban eventos independientes.
+- La recuperación de una alarma no afecte a las demás.
+
+### Escenario 3 — Alarma agregada de temperatura
+
+Varios sensores pertenecen al mismo grupo.
+
+Uno o más sensores entran en alarma y luego se recuperan.
+
+Verificar que la alarma de grupo no tenga transiciones artificiales mientras permanezca alguna fuente en condición anormal.
+
+### Escenario 4 — Sensor desconectado
+
+Un sensor deja de proporcionar datos válidos.
+
+Verificar que:
+
+- Se genere la alarma correspondiente.
+- Se identifique el sensor afectado.
+- No se interprete su ausencia como una temperatura normal.
+- Se determine cómo afecta la evaluación del grupo.
+- Se genere la recuperación al volver a estar disponible.
+
+### Escenario 5 — Recuperación de un consumidor
+
+Un consumidor deja de recibir eventos temporalmente y posteriormente vuelve a estar disponible.
+
+Analizar cómo puede recuperar el estado actual de las alarmas sin depender exclusivamente de eventos anteriores.
+
+### Escenario 6 — Alarma activa durante el arranque
+
+El equipo arranca mientras una condición que genera alarma ya está presente.
+
+Definir cómo se reconstruye el estado inicial y cómo se notifican los consumidores.
+
+Evitar asumir que todas las alarmas comienzan necesariamente inactivas.
+
+### Escenario 7 — Incorporación de una nueva alarma
+
+Se agrega una nueva condición de fallo de infraestructura.
+
+Determinar qué cambios deben realizarse y demostrar que no es necesario modificar el núcleo del Alarm Manager.
+
+---
+
+# 12. Concurrencia, sincronización y comportamiento en Zephyr
+
+Analiza las condiciones de concurrencia del subsistema.
+
+Puede haber diferentes módulos notificando alarmas mientras otros consultan su estado.
+
+Determina:
+
+- Cómo se serializan las transiciones.
+- Cómo se protege el estado compartido.
+- Cómo se evita la corrupción de información.
+- Cómo se manejan eventos simultáneos.
+- Cómo se garantiza que un evento corresponda al cambio de estado real.
+- Cómo se evita que los consumidores bloqueen al gestor.
+- Cómo se gestiona la capacidad de las colas.
+- Qué política se utiliza ante desbordamiento.
+
+Evalúa los mecanismos disponibles en Zephyr, pero no selecciones todavía una implementación sin justificarla.
+
+No es necesario utilizar un mecanismo de mensajería complejo si una solución más simple satisface los requisitos.
+
+Prioriza determinismo, previsibilidad y facilidad de prueba.
+
+---
+
+# 13. Pruebas y verificabilidad
+
+Diseña una estrategia de pruebas antes de implementar.
+
+Considera:
+
+- Activación de una alarma.
+- Desactivación de una alarma.
+- Ausencia de eventos duplicados.
+- Histéresis.
+- Varias alarmas simultáneas.
+- Alarmas agregadas.
+- Recuperación de fuentes.
+- Sensores inválidos.
+- Consumidores desconectados.
+- Colas llenas.
+- Arranque con condiciones de alarma presentes.
+- Registro de nuevas alarmas.
+- Consulta de estado.
+- Concurrencia.
+- Integración con System Indicators.
+
+Propón pruebas unitarias y de integración que puedan ejecutarse sin hardware cuando sea posible.
+
+Las pruebas deben verificar el comportamiento observable del subsistema, no detalles internos de implementación.
+
+---
+
+# 14. Entregables de la primera etapa
+
+**En esta primera etapa NO debes implementar código.**
+
+Entrega los siguientes documentos:
+
+1. `alarm_management_analysis.md`
+   - Comparación de los dos proyectos.
+   - Funcionalidades existentes.
+   - Brechas.
+   - Comportamientos que deben preservarse.
+   - Problemas detectados.
+
+2. `alarm_management_requirements.md`
+   - Requisitos funcionales.
+   - Requisitos no funcionales.
+   - Catálogo inicial de alarmas.
+   - Semántica de activación y desactivación.
+   - Requisitos de extensibilidad.
+
+3. `alarm_management_architecture.md`
+   - Arquitectura propuesta.
+   - Responsabilidades.
+   - Interfaces conceptuales.
+   - Modelo de eventos.
+   - Modelo de estados.
+   - Integración con consumidores.
+   - Diagramas.
+
+4. `alarm_management_test_plan.md`
+   - Casos de prueba.
+   - Escenarios.
+   - Criterios de aceptación.
+   - Pruebas unitarias y de integración.
+
+Incluye diagramas Mermaid editables:
+
+- Diagrama de arquitectura.
+- Diagrama del ciclo de vida de una alarma.
+- Diagrama de secuencia de activación.
+- Diagrama de secuencia de desactivación.
+- Diagrama de interacción con consumidores.
+- Diagrama de alarmas agregadas.
+- Diagrama de estados.
+
+---
+
+# 15. Segunda etapa: implementación (no iniciar todavía)
+
+Una vez revisada y aprobada la arquitectura, se podrá pasar a la implementación.
+
+En esa etapa se deberá:
+
+- Integrar el subsistema en la arquitectura existente.
+- Implementar las interfaces definidas.
+- Migrar las alarmas existentes.
+- Incorporar las alarmas nuevas.
+- Integrar System Indicators.
+- Integrar los consumidores correspondientes.
+- Agregar pruebas unitarias.
+- Agregar pruebas de integración.
+- Actualizar documentación Doxygen.
+- Actualizar la documentación de arquitectura.
+
+No comenzar esta segunda etapa sin haber presentado primero la arquitectura y sus decisiones pendientes.
+
+---
+
+# 16. Forma de trabajo y criterios de aceptación
+
+Trabaja como un ingeniero responsable del subsistema, no como un generador de código.
+
+No te limites a producir documentos descriptivos: inspecciona el código real y contrasta cada afirmación con la implementación.
+
+Utiliza herramientas, MCP, skills y recursos disponibles cuando aporten valor al análisis.
+
+Si encuentras una funcionalidad incompleta, no la presentes como implementada.
+
+Si encuentras una condición cuya semántica no está clara, documenta la duda y propón alternativas.
+
+No inventes el significado de entradas, contactos o alarmas.
+
+No elimines funcionalidades existentes sin justificarlo.
+
+No implementes cambios durante esta primera etapa.
+
+## Criterio de éxito
+
+La arquitectura estará lista para aprobación cuando:
+
+1. Se conozca cómo funcionan las alarmas en ambos proyectos.
+2. Se hayan identificado las funcionalidades que deben preservarse.
+3. Exista un modelo único y coherente de ciclo de vida de alarmas.
+4. Las transiciones de activación y desactivación estén claramente definidas.
+5. Las alarmas agregadas y múltiples fuentes estén contempladas.
+6. Los consumidores estén desacoplados del gestor.
+7. System Indicators pueda gestionar correctamente el sonido y los indicadores.
+8. Los sistemas de logging, SNMP, HMI, Web y Modbus puedan consumir la información.
+9. La incorporación de nuevas alarmas no requiera rediseñar el núcleo.
+10. Se hayan definido los comportamientos ante concurrencia, fallos y notificaciones perdidas.
+11. Exista un plan de pruebas verificable.
+12. No se hayan introducido dependencias arquitectónicas innecesarias.
+
+**Principio rector: Alarm Management es el propietario del estado y del ciclo de vida de las alarmas; los módulos funcionales detectan las condiciones que las originan y los consumidores deciden qué hacer con sus transiciones y estados.**
+
+Primero comprende y define la arquitectura. Después implementa.

@@ -146,3 +146,29 @@ endif # BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY
 
 endmenu
 
+
+menu "BrightC Alarm Management Subsystem"
+
+config ALARM_MANAGER_MAX_ALARMS
+	int "Maximum tracked alarms in catalog"
+	default 128
+	range 32 256
+	help
+	  Maximum number of discrete and aggregated alarm descriptors and live
+	  entities supported by the central alarm manager.
+
+config AO_ALARM_MANAGER_QUEUE_DEPTH
+	int "Active Object message queue depth"
+	default 64
+	range 16 256
+	help
+	  Capacity of the asynchronous condition event queue for ao_alarm_manager.
+
+config AO_ALARM_MANAGER_STACK_SIZE
+	int "Alarm Manager thread stack size"
+	default 2048
+	range 1024 8192
+	help
+	  Stack storage size allocated for the ao_alarm_manager thread.
+
+endmenu
