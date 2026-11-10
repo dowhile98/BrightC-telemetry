@@ -278,23 +278,26 @@ hvac_tri_state_t hvac_unit_entity_get_tri_state(const hvac_unit_entity_t *self)
     tri.relay_aa = (self->state == UNIT_STATE_RUNNING);
     tri.relay_sm = (self->state != UNIT_STATE_BYPASS);
 
+    /*
+     * relay_g (ventilador, relé NC: G=1 apaga el ventilador, G=0 lo enciende):
+     * - Fuego: G=1 siempre (fail-safe, nunca ventilar en FIRE).
+     * - Compresor en marcha o post-purga: G=0 (ventilador encendido).
+     * - Sin enable_fan_delay: G=0 salvo fuego.
+     * - Con enable_fan_delay en OFF/STARTING/BLOCKED_ALARM/FAULT: G=1
+     *   (ventilador apagado fuera de operación de compresor).
+     * - Bypass: G=0 (relés desenergizados).
+     */
     if (self->state == UNIT_STATE_BYPASS) {
         tri.relay_g = false;
     } else if (self->fan_state == HVAC_FAN_STATE_FIRE) {
         tri.relay_g = true;
-    } else if (self->state == UNIT_STATE_RUNNING || self->state == UNIT_STATE_STOPPING) {
+    } else if (self->state == UNIT_STATE_RUNNING ||
+               self->state == UNIT_STATE_STOPPING) {
         tri.relay_g = false;
-    } else if (self->fan_state == HVAC_FAN_STATE_SMART_IDLE_ON) {
-        tri.relay_g = true;
-    } else if (self->enable_fan_delay &&
-               (self->state == UNIT_STATE_OFF ||
-                self->state == UNIT_STATE_STARTING ||
-                self->state == UNIT_STATE_BLOCKED_ALARM ||
-                self->state == UNIT_STATE_FAULT) &&
-               (self->fan_state != HVAC_FAN_STATE_COMPRESSOR_RUNNING)) {
-        tri.relay_g = true;
+    } else if (!self->enable_fan_delay) {
+        tri.relay_g = false;
     } else {
-        tri.relay_g = false;
+        tri.relay_g = true;
     }
 
     return tri;

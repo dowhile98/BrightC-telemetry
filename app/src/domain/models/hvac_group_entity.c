@@ -25,15 +25,18 @@ static bool is_unit_available(const hvac_unit_entity_t *unit)
     if (unit == NULL) {
         return false;
     }
+    /* Estados permanentes: nunca disponibles para un nuevo turno */
     if (unit->state == UNIT_STATE_FAULT ||
         unit->state == UNIT_STATE_BLOCKED_ALARM ||
         unit->state == UNIT_STATE_BYPASS) {
         return false;
     }
-    if (unit->high_pressure_alarm ||
-        unit->low_pressure_alarm ||
-        unit->supply_fault_alarm ||
-        unit->voltage_fault_alarm) {
+    /* Una unidad en marcha o arrancando con alarma crítica activa no es
+     * disponible; una unidad en reposo (OFF) sí puede ser considerada para
+     * arranque aunque tenga alarmas históricas. */
+    if ((unit->state == UNIT_STATE_RUNNING || unit->state == UNIT_STATE_STARTING) &&
+        (unit->high_pressure_alarm || unit->low_pressure_alarm ||
+         unit->supply_fault_alarm || unit->voltage_fault_alarm)) {
         return false;
     }
     return true;
