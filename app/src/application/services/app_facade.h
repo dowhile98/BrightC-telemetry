@@ -94,6 +94,8 @@ typedef struct {
     uint8_t            metric_policy;
     uint16_t           rotation_interval_days;
     uint32_t           rotation_timer_s;
+    bool               enable_fan_delay;
+    uint16_t           fan_delay_s;
 } app_facade_hvac_group_view_t;
 
 /**
@@ -322,6 +324,20 @@ int app_facade_hvac_configure_group_units(uint8_t group_id,
  * @return 0 on success, negative errno on failure.
  */
 int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days);
+
+/**
+ * @brief Configure Relay G fan control (enable_fan_delay) and post-purge delay for an HVAC group.
+ *
+ * When enable is false (default), Relay G remains de-energized (0 = NC closed, fan always enabled).
+ * When enable is true, Relay G energizes (1 = NC open, fan OFF) when the AC unit is idle/stopped
+ * after the post-purge delay (fan_delay_s).
+ *
+ * @param[in] group_id     Zero-indexed HVAC group ID (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in] enable       true to turn off fan when AC is idle, false to keep fan always enabled.
+ * @param[in] fan_delay_s  Post-cooling fan purge delay in seconds (0 to retain current value).
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_hvac_set_group_fan_control(uint8_t group_id, bool enable, uint16_t fan_delay_s);
 
 /**
  * @brief Inject a temporary test temperature across all HVAC groups.

@@ -124,9 +124,30 @@ int adapter_hvac_actuator_set_bypass_alarm(void *impl, bool active)
         return 0;
     }
 
+    relay_state_t r_state;
+    if (self->bypass_alarm_contact_type == HVAC_ALARM_CONTACT_NO) {
+        r_state = active ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN;
+    } else {
+        /* Default NC (Ref 1 & Ref 2 hardware polarity):
+         * Smart mode (!active) -> RELAY_STATE_CLOSED (1), Bypass (active) -> RELAY_STATE_OPEN (0)
+         */
+        r_state = active ? RELAY_STATE_OPEN : RELAY_STATE_CLOSED;
+    }
+
     return i_relay_set_state(&self->local_relay_port,
                              (relay_channel_t)RELAY_CH_ALARM_OUT_1,
-                             active ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN);
+                             r_state);
+}
+
+int adapter_hvac_actuator_set_bypass_alarm_contact_type(adapter_hvac_actuator_t *self,
+                                                        hvac_alarm_contact_type_t contact_type)
+{
+    if (self == NULL || !hvac_alarm_contact_type_is_valid((uint8_t)contact_type)) {
+        return -EINVAL;
+    }
+
+    self->bypass_alarm_contact_type = contact_type;
+    return 0;
 }
 
 static const i_hvac_unit_api_t s_actuator_api = {
@@ -146,6 +167,7 @@ int adapter_hvac_actuator_init(adapter_hvac_actuator_t *self,
     }
 
     memset(self, 0, sizeof(*self));
+    self->bypass_alarm_contact_type = HVAC_ALARM_CONTACT_NC;
 
     if (hw_config != NULL && count > 0U) {
         size_t n = (count < HVAC_MAX_UNITS_TOTAL) ? count : HVAC_MAX_UNITS_TOTAL;

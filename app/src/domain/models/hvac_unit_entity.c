@@ -32,12 +32,12 @@ void hvac_unit_entity_init(hvac_unit_entity_t *self,
     memset(self, 0, sizeof(*self));
     self->unit_id = unit_id;
     self->state = UNIT_STATE_OFF;
-    self->fan_state = HVAC_FAN_STATE_DISABLED;
+    self->enable_fan_delay = enable_fan_delay;
+    self->fan_state = enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
     self->max_allowed_faults = (max_faults > 0U) ? max_faults : 3U;
     self->startup_delay_s = startup_delay_s;
     self->fan_delay_s = fan_delay_s;
     self->pressure_retry_s = (pressure_retry_s > 0U) ? pressure_retry_s : 180U;
-    self->enable_fan_delay = enable_fan_delay;
 }
 
 void hvac_unit_entity_update_alarms(hvac_unit_entity_t *self,
@@ -57,6 +57,11 @@ void hvac_unit_entity_update_alarms(hvac_unit_entity_t *self,
 
     if (has_active_alarm(self)) {
         if (self->state == UNIT_STATE_RUNNING || self->state == UNIT_STATE_STARTING) {
+            self->state = UNIT_STATE_BLOCKED_ALARM;
+            self->fan_state = self->enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
+            self->startup_timer_s = 0U;
+            self->fan_delay_timer_s = 0U;
+            self->retry_timer_s = self->pressure_retry_s;
             hvac_unit_entity_increment_fault(self);
         }
     }
@@ -75,17 +80,13 @@ void hvac_unit_entity_increment_fault(hvac_unit_entity_t *self)
     }
 
     self->fault_counter++;
-    self->startup_timer_s = 0;
-    self->fan_delay_timer_s = 0;
 
     if (self->fault_counter >= self->max_allowed_faults) {
         self->state = UNIT_STATE_FAULT;
-        self->fan_state = HVAC_FAN_STATE_DISABLED;
-        self->retry_timer_s = 0;
-    } else {
-        self->state = UNIT_STATE_BLOCKED_ALARM;
-        self->fan_state = HVAC_FAN_STATE_DISABLED;
-        self->retry_timer_s = self->pressure_retry_s;
+        self->fan_state = self->enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
+        self->startup_timer_s = 0U;
+        self->fan_delay_timer_s = 0U;
+        self->retry_timer_s = 0U;
     }
 }
 
@@ -111,7 +112,7 @@ void hvac_unit_entity_tick_1s(hvac_unit_entity_t *self)
             self->fan_delay_timer_s--;
         }
         if (self->fan_delay_timer_s == 0U) {
-            self->fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
+            self->fan_state = self->enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
             self->state = UNIT_STATE_OFF;
         }
         break;
@@ -123,6 +124,7 @@ void hvac_unit_entity_tick_1s(hvac_unit_entity_t *self)
         if (self->retry_timer_s == 0U) {
             if (!has_active_alarm(self)) {
                 self->state = UNIT_STATE_OFF;
+                self->fan_state = self->enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
             }
         }
         break;
@@ -166,12 +168,15 @@ bool hvac_unit_entity_request_start_staggered(hvac_unit_entity_t *self, uint16_t
         return true;
     }
 
+    self->fan_delay_timer_s = 0U;
+
     if (delay_s == 0U) {
         self->state = UNIT_STATE_RUNNING;
         self->fan_state = HVAC_FAN_STATE_COMPRESSOR_RUNNING;
         self->startup_timer_s = 0U;
     } else {
         self->state = UNIT_STATE_STARTING;
+        self->fan_state = self->enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
         self->startup_timer_s = delay_s;
     }
 
@@ -184,7 +189,22 @@ void hvac_unit_entity_request_stop(hvac_unit_entity_t *self, bool enable_fan_del
         return;
     }
 
+    self->enable_fan_delay = enable_fan_delay;
+
     if (self->state == UNIT_STATE_BYPASS) {
+        self->state = UNIT_STATE_OFF;
+        self->fan_state = enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
+        self->startup_timer_s = 0U;
+        self->fan_delay_timer_s = 0U;
+        return;
+    }
+
+    if (self->state == UNIT_STATE_FAULT || self->state == UNIT_STATE_BLOCKED_ALARM) {
+        self->fan_state = enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
+        return;
+    }
+
+    if (!enable_fan_delay) {
         self->state = UNIT_STATE_OFF;
         self->fan_state = HVAC_FAN_STATE_DISABLED;
         self->startup_timer_s = 0U;
@@ -192,24 +212,25 @@ void hvac_unit_entity_request_stop(hvac_unit_entity_t *self, bool enable_fan_del
         return;
     }
 
-    if (self->state == UNIT_STATE_FAULT || self->state == UNIT_STATE_BLOCKED_ALARM) {
-        return;
-    }
-
-    if (self->state == UNIT_STATE_RUNNING || self->state == UNIT_STATE_STARTING) {
-        if (enable_fan_delay && (self->fan_delay_s > 0U)) {
+    if (self->state == UNIT_STATE_RUNNING) {
+        if (self->fan_delay_s > 0U) {
             self->state = UNIT_STATE_STOPPING;
             self->fan_state = HVAC_FAN_STATE_WAIT_DELAY;
             self->fan_delay_timer_s = self->fan_delay_s;
         } else {
             self->state = UNIT_STATE_OFF;
-            self->fan_state = HVAC_FAN_STATE_DISABLED;
+            self->fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
             self->fan_delay_timer_s = 0U;
         }
         self->startup_timer_s = 0U;
-    } else if ((self->state == UNIT_STATE_STOPPING || self->state == UNIT_STATE_OFF) && !enable_fan_delay) {
+    } else if (self->state == UNIT_STATE_STARTING) {
+        /* Compressor never turned on: return directly to OFF without post-purge delay */
         self->state = UNIT_STATE_OFF;
-        self->fan_state = HVAC_FAN_STATE_DISABLED;
+        self->fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
+        self->startup_timer_s = 0U;
+        self->fan_delay_timer_s = 0U;
+    } else if (self->state == UNIT_STATE_OFF) {
+        self->fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
         self->fan_delay_timer_s = 0U;
     }
 }
@@ -237,10 +258,11 @@ void hvac_unit_entity_set_manual(hvac_unit_entity_t *self, bool turn_on)
             self->state = UNIT_STATE_RUNNING;
             self->fan_state = HVAC_FAN_STATE_COMPRESSOR_RUNNING;
             self->startup_timer_s = 0U;
+            self->fan_delay_timer_s = 0U;
         }
     } else {
         self->state = UNIT_STATE_OFF;
-        self->fan_state = HVAC_FAN_STATE_DISABLED;
+        self->fan_state = self->enable_fan_delay ? HVAC_FAN_STATE_SMART_IDLE_ON : HVAC_FAN_STATE_DISABLED;
         self->startup_timer_s = 0U;
         self->fan_delay_timer_s = 0U;
     }
@@ -255,10 +277,25 @@ hvac_tri_state_t hvac_unit_entity_get_tri_state(const hvac_unit_entity_t *self)
     hvac_tri_state_t tri;
     tri.relay_aa = (self->state == UNIT_STATE_RUNNING);
     tri.relay_sm = (self->state != UNIT_STATE_BYPASS);
-    tri.relay_g = (self->fan_state == HVAC_FAN_STATE_SMART_IDLE_ON) &&
-                  (self->state != UNIT_STATE_BYPASS) &&
-                  (self->state != UNIT_STATE_FAULT) &&
-                  (self->state != UNIT_STATE_BLOCKED_ALARM);
+
+    if (self->state == UNIT_STATE_BYPASS) {
+        tri.relay_g = false;
+    } else if (self->fan_state == HVAC_FAN_STATE_FIRE) {
+        tri.relay_g = true;
+    } else if (self->state == UNIT_STATE_RUNNING || self->state == UNIT_STATE_STOPPING) {
+        tri.relay_g = false;
+    } else if (self->fan_state == HVAC_FAN_STATE_SMART_IDLE_ON) {
+        tri.relay_g = true;
+    } else if (self->enable_fan_delay &&
+               (self->state == UNIT_STATE_OFF ||
+                self->state == UNIT_STATE_STARTING ||
+                self->state == UNIT_STATE_BLOCKED_ALARM ||
+                self->state == UNIT_STATE_FAULT) &&
+               (self->fan_state != HVAC_FAN_STATE_COMPRESSOR_RUNNING)) {
+        tri.relay_g = true;
+    } else {
+        tri.relay_g = false;
+    }
 
     return tri;
 }

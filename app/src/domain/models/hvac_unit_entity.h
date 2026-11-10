@@ -26,13 +26,18 @@ extern "C" {
 #endif
 
 /**
- * @brief Fan purge sub-state machine states.
+ * @brief Fan control and post-purge sub-state machine states.
+ *
+ * Physical Relay G uses an NC contact in series with the thermostat G line:
+ * - relay_g = 0 (LOW): Fan enabled / ON.
+ * - relay_g = 1 (HIGH): Fan cut / OFF.
  */
 typedef enum {
-    HVAC_FAN_STATE_DISABLED = 0,       /**< Fan purge inactive or disabled */
-    HVAC_FAN_STATE_COMPRESSOR_RUNNING, /**< Compressor active (relay_g = 0) */
-    HVAC_FAN_STATE_WAIT_DELAY,         /**< Compressor off, waiting purge timer (relay_g = 0) */
-    HVAC_FAN_STATE_SMART_IDLE_ON,      /**< Purge timer elapsed, continuous idle fan (relay_g = 1) */
+    HVAC_FAN_STATE_DISABLED = 0,       /**< Fan control disabled (relay_g = 0: fan always enabled) */
+    HVAC_FAN_STATE_COMPRESSOR_RUNNING, /**< Compressor or forced fan active (relay_g = 0: fan ON) */
+    HVAC_FAN_STATE_WAIT_DELAY,         /**< Compressor off, waiting purge timer (relay_g = 0: fan ON) */
+    HVAC_FAN_STATE_SMART_IDLE_ON,      /**< Purge elapsed or idle with fan control ON (relay_g = 1: fan OFF) */
+    HVAC_FAN_STATE_FIRE,               /**< Fire emergency shutdown (relay_g = 1: fan forced OFF) */
 } hvac_fan_substate_t;
 
 /**

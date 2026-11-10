@@ -20,7 +20,8 @@ static void hvac_unit_before(void *data)
 {
     ARG_UNUSED(data);
     fake_hvac_unit_reset();
-    hvac_unit_entity_init(&s_test_unit, 0U, 3U, 5U, 60U, 180U, true);
+    /* Default enable_fan_delay = false (Fan always enabled, relay_g = 0) */
+    hvac_unit_entity_init(&s_test_unit, 0U, 3U, 5U, 60U, 180U, false);
 }
 
 ZTEST_SUITE(hvac_unit_suite, NULL, NULL, hvac_unit_before, NULL, NULL);
@@ -233,7 +234,63 @@ ZTEST(hvac_unit_suite, test_unit_eviction_after_max_faults)
     bool relay_g = false;
     hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
     zassert_false(relay_aa, "Compressor must remain OFF");
-    zassert_false(relay_g, "Fan must remain OFF");
+    zassert_false(relay_g, "With enable_fan_delay=false, relay_g remains 0");
+}
+
+ZTEST(hvac_unit_suite, test_unit_relay_g_truth_table_all_states)
+{
+    bool relay_aa = false;
+    bool relay_sm = false;
+    bool relay_g = false;
+
+    /* 1. Default enable_fan_delay = false: relay_g = 0 in OFF, STARTING, RUNNING, BLOCKED_ALARM, FAULT */
+    hvac_unit_entity_init(&s_test_unit, 0U, 2U, 10U, 5U, 180U, false);
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && !relay_aa && !relay_g, "OFF (fan_ctrl=0): SM=1, AA=0, G=0");
+
+    (void)hvac_unit_entity_request_start_staggered(&s_test_unit, 10U);
+    zassert_equal(s_test_unit.state, UNIT_STATE_STARTING, "STARTING");
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && !relay_aa && !relay_g, "STARTING (fan_ctrl=0): SM=1, AA=0, G=0");
+
+    /* 2. Configured enable_fan_delay = true:
+     *    - OFF:           SM=1, AA=0, G=1 (Fan OFF)
+     *    - STARTING:      SM=1, AA=0, G=1 (Fan OFF during startup delay)
+     *    - RUNNING:       SM=1, AA=1, G=0 (Compressor ON, Fan ON)
+     *    - STOPPING:      SM=1, AA=0, G=0 (Compressor OFF, Fan ON during post-purge)
+     *    - OFF (expired): SM=1, AA=0, G=1 (Fan OFF after post-purge)
+     *    - BLOCKED_ALARM: SM=1, AA=0, G=1 (Fan OFF)
+     *    - FAULT:         SM=1, AA=0, G=1 (Fan OFF)
+     *    - BYPASS:        SM=0, AA=0, G=0
+     *    - FIRE:          SM=1, AA=0, G=1 (Emergency fan & compressor cut)
+     */
+    hvac_unit_entity_init(&s_test_unit, 0U, 2U, 10U, 5U, 180U, true);
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && !relay_aa && relay_g, "OFF (fan_ctrl=1): SM=1, AA=0, G=1");
+
+    (void)hvac_unit_entity_request_start_staggered(&s_test_unit, 10U);
+    zassert_equal(s_test_unit.state, UNIT_STATE_STARTING, "STARTING");
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && !relay_aa && relay_g, "STARTING (fan_ctrl=1): SM=1, AA=0, G=1");
+
+    for (int i = 0; i < 10; i++) {
+        hvac_unit_entity_tick_1s(&s_test_unit);
+    }
+    zassert_equal(s_test_unit.state, UNIT_STATE_RUNNING, "RUNNING");
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && relay_aa && !relay_g, "RUNNING (fan_ctrl=1): SM=1, AA=1, G=0");
+
+    /* Alarm while enable_fan_delay = true -> BLOCKED_ALARM cuts fan (G=1) */
+    hvac_unit_entity_update_alarms(&s_test_unit, true, false, false, false);
+    zassert_equal(s_test_unit.state, UNIT_STATE_BLOCKED_ALARM, "BLOCKED_ALARM");
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && !relay_aa && relay_g, "BLOCKED_ALARM (fan_ctrl=1): SM=1, AA=0, G=1");
+
+    /* Second fault -> FAULT cuts fan (G=1) */
+    hvac_unit_entity_increment_fault(&s_test_unit);
+    zassert_equal(s_test_unit.state, UNIT_STATE_FAULT, "FAULT");
+    hvac_unit_entity_get_relays(&s_test_unit, &relay_aa, &relay_sm, &relay_g);
+    zassert_true(relay_sm && !relay_aa && relay_g, "FAULT (fan_ctrl=1): SM=1, AA=0, G=1");
 }
 
 ZTEST(hvac_unit_suite, test_idle_unit_increment_fault_guard)

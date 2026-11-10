@@ -157,6 +157,8 @@ int app_facade_hvac_get_status(app_facade_hvac_status_t *out_status)
         out_status->groups[g].metric_policy = s_app->hvac.config.groups[g].metric_policy;
         out_status->groups[g].rotation_interval_days = ao->groups[g].rotation_interval_days;
         out_status->groups[g].rotation_timer_s = ao->groups[g].rotation_timer_s;
+        out_status->groups[g].enable_fan_delay = ao->groups[g].enable_fan_delay;
+        out_status->groups[g].fan_delay_s = s_app->hvac.config.groups[g].fan_delay_s;
     }
 
     for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
@@ -208,14 +210,14 @@ int app_facade_hvac_set_mode(uint8_t group_id, hvac_mode_t mode)
         break;
 
     case HVAC_MODE_FAN_ONLY:
-        /* Run fan purge: manual override with compressor off, fan purge enabled */
+        /* Run fan only: manual override with compressor off (AA=0), fan enabled (G=0) */
         (void)ao_hvac_set_manual(ao, group_id, true);
         k_mutex_lock(&ao->lock, K_FOREVER);
         for (uint8_t u = 0U; u < ao->groups[group_id].unit_count; u++) {
             if (ao->groups[group_id].units[u] != NULL) {
                 hvac_unit_entity_t *unit = ao->groups[group_id].units[u];
                 hvac_unit_entity_set_manual(unit, false);
-                unit->fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
+                unit->fan_state = HVAC_FAN_STATE_COMPRESSOR_RUNNING;
             }
         }
         k_mutex_unlock(&ao->lock);
@@ -313,22 +315,7 @@ int app_facade_hvac_set_unit_manual(uint8_t unit_id, bool enable, bool run_compr
         return -EAGAIN;
     }
 
-    ao_hvac_t *ao = &s_app->hvac.ao;
-    k_mutex_lock(&ao->lock, K_FOREVER);
-    if (enable) {
-        hvac_unit_entity_set_manual(&ao->units[unit_id], run_compressor);
-        if (!run_compressor && run_fan) {
-            ao->units[unit_id].fan_state = HVAC_FAN_STATE_SMART_IDLE_ON;
-        } else if (!run_compressor && !run_fan) {
-            ao->units[unit_id].fan_state = HVAC_FAN_STATE_DISABLED;
-        }
-    } else {
-        /* Restore to OFF/auto */
-        hvac_unit_entity_request_stop(&ao->units[unit_id], false);
-    }
-    k_mutex_unlock(&ao->lock);
-
-    return 0;
+    return ao_hvac_set_unit_manual(&s_app->hvac.ao, unit_id, enable, run_compressor, run_fan);
 }
 
 int app_facade_hvac_configure_group_sensors(uint8_t group_id,
@@ -410,6 +397,24 @@ int app_facade_hvac_set_group_rotation(uint8_t group_id, uint16_t days)
 
     config_hvac_group_t group_cfg = s_app->hvac.config.groups[group_id];
     group_cfg.rotation_interval_days = days;
+
+    return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
+}
+
+int app_facade_hvac_set_group_fan_control(uint8_t group_id, bool enable, uint16_t fan_delay_s)
+{
+    if (s_app == NULL || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+    if (!s_app->hvac.initialized) {
+        return -EAGAIN;
+    }
+
+    config_hvac_group_t group_cfg = s_app->hvac.config.groups[group_id];
+    group_cfg.enable_fan_delay = enable ? 1U : 0U;
+    if (fan_delay_s > 0U) {
+        group_cfg.fan_delay_s = fan_delay_s;
+    }
 
     return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
 }

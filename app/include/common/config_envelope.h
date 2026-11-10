@@ -32,7 +32,8 @@ extern "C" {
 
 #define CONFIG_ENVELOPE_MAGIC           0x4243544CU  /**< ASCII 'BCTL' (BrightC Telemetry) */
 #define CONFIG_ENVELOPE_VERSION_V1      1U
-#define CONFIG_ENVELOPE_VERSION_CURRENT CONFIG_ENVELOPE_VERSION_V1
+#define CONFIG_ENVELOPE_VERSION_V2      2U
+#define CONFIG_ENVELOPE_VERSION_CURRENT CONFIG_ENVELOPE_VERSION_V2
 
 /**
  * @brief Common binary envelope header preceding persisted configuration payloads.
@@ -160,7 +161,7 @@ static inline int config_envelope_unpack(config_domain_t expected_domain,
         return -EBADMSG;
     }
 
-    if (hdr.version != CONFIG_ENVELOPE_VERSION_V1) {
+    if (hdr.version != CONFIG_ENVELOPE_VERSION_CURRENT) {
         return -EBADMSG;
     }
 

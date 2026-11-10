@@ -10,6 +10,7 @@
   - [`2026-11-06-firmware-audit-second-pass.md`](./2026-11-06-firmware-audit-second-pass.md) (auditoría general; P0-01/P0-02 ya resueltos)
   - [`2026-11-06-architecture-refactor-hvac-telemetry-isolation.md`](./2026-11-06-architecture-refactor-hvac-telemetry-isolation.md) (ADR del rediseño)
   - [`2026-11-07-digital-input-pipeline-zbus-decoupling.md`](./2026-11-07-digital-input-pipeline-zbus-decoupling.md) (pipeline DI que alimenta el interlock de fuego)
+  - [`2026-11-09-hvac-control-delay-sequence-pinout-review.md`](./2026-11-09-hvac-control-delay-sequence-pinout-review.md) (revisión de segunda pasada sobre pinout, delays, secuencia y tabla de verdad física del relé G)
 
 ## Rúbrica de severidad
 
@@ -204,6 +205,8 @@ Diferencias estructurales relevantes:
 **Reproducción propuesta (no ejecutada).** `hvac manual 0 on comp_off fan_on` → el estado reporta `G=1` y el canal G del adaptador nunca pasa a `RELAY_STATE_CLOSED`. El test actual `tests/unit/hvac/src/test_adapter_hvac_actuator.c:76-101` **afirma `relay_g == OPEN` en los tres estados**, es decir, codifica la regresión y no la detectará.
 
 **Corrección propuesta.** Reintroducir el tri-state como value object (`struct` de tres bits) o añadir la dimensión de ventilador al comando; que el adaptador derive G de `fan_state` (incluyendo `WAIT_DELAY`/`SMART_IDLE_ON`) y que la detección de cambio cubra también G. Ajustar `request_stop()`/salida de bypass para restaurar `SMART_IDLE_ON` cuando corresponda. Actualizar el test para exigir G cerrado en post-purga y en `fan_only`.
+
+> **Actualización 2026-11-09 (ver [`2026-11-09-hvac-control-delay-sequence-pinout-review.md` §3](./2026-11-09-hvac-control-delay-sequence-pinout-review.md)):** En el hardware de la tarjeta BrightC V3 (`BrightC_ETH_CycloneTCP_FileX`, `brightc_io_manager_thread_entry.cpp:402-433`), el relé **G** tiene su contacto **Normalmente Cerrado (NC)** en serie con la línea `G` del termostato: `relay_g = 0` (`LOW`, desenergizado) mantiene el **ventilador habilitado/encendido**, mientras que `relay_g = 1` (`HIGH`, energizado, `SMART_IDLE_ON` o `FIRE`) abre el contacto y **apaga/corta el ventilador** cuando el aire acondicionado no está encendido. Por defecto, el control de ventilador debe venir en **OFF** (`enable_fan_delay = 0` → `relay_g = 0`, ventilador siempre habilitado salvo en alarma de incendio), y cuando se activa (`enable_fan_delay = 1`), tras los `fan_delay_s` de post-purga (`relay_g = 0`), energiza `relay_g = 1` para apagar el ventilador mientras la unidad esté apagada (`OFF`, `STARTING`, `BLOCKED_ALARM`, `FAULT`).
 
 ---
 

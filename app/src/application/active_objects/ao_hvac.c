@@ -21,6 +21,20 @@
 
 LOG_MODULE_REGISTER(ao_hvac, LOG_LEVEL_INF);
 
+static const char *ao_hvac_unit_state_name(hvac_unit_state_t state)
+{
+    switch (state) {
+    case UNIT_STATE_OFF:          return "OFF";
+    case UNIT_STATE_STARTING:     return "STARTING";
+    case UNIT_STATE_RUNNING:      return "RUNNING";
+    case UNIT_STATE_STOPPING:     return "STOPPING";
+    case UNIT_STATE_BLOCKED_ALARM:return "BLOCKED_ALARM";
+    case UNIT_STATE_FAULT:        return "FAULT";
+    case UNIT_STATE_BYPASS:       return "BYPASS";
+    default:                      return "UNKNOWN";
+    }
+}
+
 static void ao_hvac_thread_entry(void *p1, void *p2, void *p3)
 {
     ao_hvac_t *self = (ao_hvac_t *)p1;
@@ -124,7 +138,7 @@ int ao_hvac_init(ao_hvac_t *self,
         /* Ensure all remaining units are initialized safely */
         for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
             if (!self->unit_active[u]) {
-                hvac_unit_entity_init(&self->units[u], u, 3U, 10U, 30U, 180U, true);
+                hvac_unit_entity_init(&self->units[u], u, 3U, 10U, 30U, 180U, false);
             }
         }
     } else {
@@ -134,13 +148,14 @@ int ao_hvac_init(ao_hvac_t *self,
         self->config.groups[0].sensor_mask = 0xFFFFU;
         self->config.groups[0].unit_mask = 0xFFU;
         self->config.groups[0].active_turn_count = 1U;
+        self->config.groups[0].enable_fan_delay = 0U;
 
         self->group_active[0] = true;
         hvac_group_entity_init(&self->groups[0], 0U);
 
         for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
             self->unit_active[u] = true;
-            hvac_unit_entity_init(&self->units[u], u, 3U, 10U, 30U, 180U, true);
+            hvac_unit_entity_init(&self->units[u], u, 3U, 10U, 30U, 180U, false);
             (void)hvac_group_entity_add_unit(&self->groups[0], &self->units[u]);
         }
     }
@@ -258,13 +273,15 @@ int ao_hvac_step(ao_hvac_t *self)
 
     for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
         if (self->group_active[g]) {
+            /* Tick 1s first so timers from previous step advance before evaluating current step */
+            hvac_group_entity_tick_1s(&self->groups[g]);
+
             if (in_grace_period && (self->group_metrics[g].valid_sensors == 0U)) {
                 /* In boot grace window without valid sensor data: keep group in IDLE and do not trip SENSOR_FAULT */
                 self->groups[g].state = GROUP_STATE_IDLE;
             } else {
                 hvac_group_entity_evaluate(&self->groups[g], &self->group_metrics[g]);
             }
-            hvac_group_entity_tick_1s(&self->groups[g]);
 
             hvac_group_state_t g_after = self->groups[g].state;
             bool manual_after = self->groups[g].is_manual_active;
@@ -313,6 +330,16 @@ int ao_hvac_step(ao_hvac_t *self)
         if (self->unit_active[u]) {
             hvac_unit_state_t u_after = self->units[u].state;
             if (u_after != self->prev_unit_state[u]) {
+                hvac_tri_state_t transition_tri = hvac_unit_entity_get_tri_state(&self->units[u]);
+                LOG_INF("HVAC unit %u state: %s -> %s (AA=%u SM=%u G=%u, startup=%us fan_delay=%us)",
+                        (unsigned int)(u + 1U),
+                        ao_hvac_unit_state_name(self->prev_unit_state[u]),
+                        ao_hvac_unit_state_name(u_after),
+                        (unsigned int)transition_tri.relay_aa,
+                        (unsigned int)transition_tri.relay_sm,
+                        (unsigned int)transition_tri.relay_g,
+                        (unsigned int)self->units[u].startup_timer_s,
+                        (unsigned int)self->units[u].fan_delay_timer_s);
                 if (u_after == UNIT_STATE_FAULT) {
                     publish_hvac_event(0U, u, HVAC_EVENT_UNIT_FAULT);
                 }
@@ -692,6 +719,9 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
         for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
             (void)adapter_hvac_actuator_set_hw_config(self->actuator_adapter, u, &cfg->units[u]);
         }
+        (void)adapter_hvac_actuator_set_bypass_alarm_contact_type(
+            self->actuator_adapter,
+            (hvac_alarm_contact_type_t)cfg->bypass_alarm_contact_type);
     }
     k_mutex_unlock(&self->lock);
 
@@ -749,15 +779,27 @@ int ao_hvac_set_group_rotation(ao_hvac_t *self, uint8_t group_id, uint16_t days)
 
 int ao_hvac_set_unit_manual(ao_hvac_t *self, uint8_t unit_id, bool enable, bool run_compressor, bool run_fan)
 {
-    ARG_UNUSED(run_fan);
     if (self == NULL || !self->is_initialized || unit_id >= HVAC_MAX_UNITS_TOTAL) {
         return -EINVAL;
     }
     k_mutex_lock(&self->lock, K_FOREVER);
     if (enable) {
         hvac_unit_entity_set_manual(&self->units[unit_id], run_compressor);
+        if (!run_compressor) {
+            self->units[unit_id].fan_state = run_fan
+                                                 ? HVAC_FAN_STATE_COMPRESSOR_RUNNING
+                                                 : HVAC_FAN_STATE_SMART_IDLE_ON;
+        }
     } else {
-        hvac_unit_entity_request_stop(&self->units[unit_id], false);
+        bool enable_fan_delay = false;
+        for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+            if (self->group_active[g] && ((self->config.groups[g].unit_mask & (1U << unit_id)) != 0U)) {
+                enable_fan_delay = self->groups[g].enable_fan_delay;
+                break;
+            }
+        }
+        hvac_unit_entity_set_manual(&self->units[unit_id], false);
+        hvac_unit_entity_request_stop(&self->units[unit_id], enable_fan_delay);
     }
     k_mutex_unlock(&self->lock);
     return 0;

@@ -124,6 +124,9 @@ static int cmd_hvac_status(const struct shell *sh, size_t argc, char **argv)
         shell_print(sh, "  Rotation:     %ud (Elapsed: %ud %uh %um)",
                     status.groups[g].rotation_interval_days,
                     days, hours, mins);
+        shell_print(sh, "  Fan Control:  %s (purge delay=%u s)",
+                    status.groups[g].enable_fan_delay ? "ON (cut fan when AC off)" : "OFF (fan always enabled)",
+                    status.groups[g].fan_delay_s);
         if (status.groups[g].bypass_causes_mask != 0) {
             shell_warn(sh, "  Bypass Mask:  0x%08X", status.groups[g].bypass_causes_mask);
         }
@@ -355,6 +358,41 @@ static int cmd_hvac_rotation(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_hvac_fan_ctrl(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 3) {
+        shell_error(sh, "Usage: hvac fan_ctrl <grp> <on|off> [fan_delay_s]");
+        return -EINVAL;
+    }
+
+    uint8_t group_id = (uint8_t)strtoul(argv[1], NULL, 10);
+    bool enable;
+    if (strcmp(argv[2], "on") == 0 || strcmp(argv[2], "1") == 0) {
+        enable = true;
+    } else if (strcmp(argv[2], "off") == 0 || strcmp(argv[2], "0") == 0) {
+        enable = false;
+    } else {
+        shell_error(sh, "Invalid fan_ctrl mode: %s (expected on or off)", argv[2]);
+        return -EINVAL;
+    }
+
+    uint16_t fan_delay_s = 0U;
+    if (argc >= 4) {
+        fan_delay_s = (uint16_t)strtoul(argv[3], NULL, 10);
+    }
+
+    int err = app_facade_hvac_set_group_fan_control(group_id, enable, fan_delay_s);
+    if (err != 0) {
+        shell_error(sh, "Failed to configure fan control (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "Group %u fan control (Relay G) set to %s",
+                group_id,
+                enable ? "ON (cut fan when AC off after post-purge)" : "OFF (fan always enabled)");
+    return 0;
+}
+
 static int cmd_hvac_relay(const struct shell *sh, size_t argc, char **argv)
 {
     if (argc < 3) {
@@ -468,6 +506,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_hvac,
     SHELL_CMD_ARG(sensors, NULL, "Set group sensor range: hvac sensors <grp> <start> <end> [max|avg|min]", cmd_hvac_sensors, 4, 1),
     SHELL_CMD_ARG(config, NULL, "Configure group units: hvac config <grp> <active_turn> [unit_mask_hex]", cmd_hvac_config, 3, 1),
     SHELL_CMD_ARG(rotation, NULL, "Set group rotation interval: hvac rotation <grp> <days (e.g. 7, 15, 20, 30)>", cmd_hvac_rotation, 3, 0),
+    SHELL_CMD_ARG(fan_ctrl, NULL, "Configure Relay G fan control: hvac fan_ctrl <grp> <on|off> [delay_s]", cmd_hvac_fan_ctrl, 3, 1),
     SHELL_CMD_ARG(rotate, NULL, "Force unit rotation turn: hvac rotate <grp>", cmd_hvac_rotate, 2, 0),
     SHELL_CMD_ARG(manual, NULL, "Manual override: hvac manual <unit> <on|off> [comp_on|comp_off] [fan_on|fan_off]", cmd_hvac_manual, 3, 2),
     SHELL_CMD_ARG(relay, NULL, "Directly drive relay: hvac relay <ch 0..17> <0|1>", cmd_hvac_relay, 3, 0),

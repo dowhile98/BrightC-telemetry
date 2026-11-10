@@ -129,7 +129,9 @@ int adapter_di_gpio_read(void *ctx,
         if (spec->port == NULL || !gpio_is_ready_dt(spec)) {
             return -ENODEV;
         }
-        int val = gpio_pin_get_dt(spec);
+        /* Read physical raw pin level (true = 3.3V, false = GND) so that
+         * di_normalize_raw_level() applies active_level/contact_type once. */
+        int val = gpio_pin_get(spec->port, spec->pin);
         if (val < 0) {
             return val;
         }

@@ -192,8 +192,9 @@ ZTEST(ao_hvac_suite, test_fire_emergency_priority)
     hvac_status_msg_t status;
     (void)ao_hvac_get_status(&s_ao, &status);
     zassert_equal(status.group_state[0], GROUP_STATE_FIRE, "Group must be in FIRE state");
-    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), HVAC_TRI_STATE_OFF, "Unit 0 must shut down immediately");
-    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), HVAC_TRI_STATE_OFF, "Unit 1 must shut down immediately");
+    const hvac_tri_state_t fire_tri = { .relay_aa = false, .relay_sm = true, .relay_g = true };
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(0), fire_tri, "Unit 0 compressor & fan must shut down immediately (G=1)");
+    zassert_tri_equal(fake_hvac_unit_get_unit_state(1), fire_tri, "Unit 1 compressor & fan must shut down immediately (G=1)");
 }
 
 ZTEST(ao_hvac_suite, test_unit_alarm_and_zbus_publishing)
@@ -1219,7 +1220,9 @@ ZTEST(ao_hvac_suite, test_bypass_alarm_relay_cool_boost_and_sensor_recovery)
     zassert_true(fake_hvac_unit_is_bypass_alarm_active(),
                  "Bypass alarm relay must be active in high temp bypass");
 
-    /* Cool down to 23.0 C (<= temp_max 24.0 C): clears high temp bypass */
+    /* Cool down to 23.0 C (<= temp_max 24.0 C, but > temp_min 20.0 C):
+     * H-07: High-temp bypass remains active until all temperatures drop <= temp_min
+     */
     metrics.highest_temp = 23.0f;
     ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
     zassert_equal(ret, 0, "set_group_metrics failed");
@@ -1229,8 +1232,23 @@ ZTEST(ao_hvac_suite, test_bypass_alarm_relay_cool_boost_and_sensor_recovery)
 
     ret = ao_hvac_get_status(&s_ao, &status);
     zassert_equal(ret, 0, "get_status failed");
+    zassert_not_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_HIGH_TEMP, 0U,
+                      "BYPASS_CAUSE_HIGH_TEMP must remain active at 23.0 C (> temp_min 20.0 C)");
+    zassert_true(fake_hvac_unit_is_bypass_alarm_active(),
+                 "Bypass alarm relay must remain active above temp_min");
+
+    /* Cool down to 19.5 C (<= temp_min 20.0 C): clears high temp bypass */
+    metrics.highest_temp = 19.5f;
+    ret = ao_hvac_set_group_metrics(&s_ao, 0, &metrics);
+    zassert_equal(ret, 0, "set_group_metrics failed");
+
+    ret = ao_hvac_step(&s_ao);
+    zassert_equal(ret, 0, "ao_hvac_step failed");
+
+    ret = ao_hvac_get_status(&s_ao, &status);
+    zassert_equal(ret, 0, "get_status failed");
     zassert_equal(status.bypass_causes[0] & (uint32_t)BYPASS_CAUSE_HIGH_TEMP, 0U,
-                  "BYPASS_CAUSE_HIGH_TEMP must clear when temperature recovers below temp_max");
+                  "BYPASS_CAUSE_HIGH_TEMP must clear when temperature drops <= temp_min");
     zassert_false(fake_hvac_unit_is_bypass_alarm_active(),
                   "Bypass alarm relay must de-energize after high temp clearance");
 }

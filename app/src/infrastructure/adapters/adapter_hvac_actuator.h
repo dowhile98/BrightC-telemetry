@@ -34,11 +34,12 @@ typedef struct adapter_hvac_actuator_s adapter_hvac_actuator_t;
  * @brief HVAC actuator adapter context.
  */
 struct adapter_hvac_actuator_s {
-    hvac_unit_hw_config_t hw_config[HVAC_MAX_UNITS_TOTAL];
-    i_relay_t              remote_relay_port;
-    i_relay_t              local_relay_port;
-    hvac_tri_state_t       cached_tri_state[HVAC_MAX_UNITS_TOTAL];
-    bool                   cache_valid[HVAC_MAX_UNITS_TOTAL];
+    hvac_unit_hw_config_t     hw_config[HVAC_MAX_UNITS_TOTAL];
+    i_relay_t                 remote_relay_port;
+    i_relay_t                 local_relay_port;
+    hvac_tri_state_t          cached_tri_state[HVAC_MAX_UNITS_TOTAL];
+    bool                      cache_valid[HVAC_MAX_UNITS_TOTAL];
+    hvac_alarm_contact_type_t bypass_alarm_contact_type;
 };
 
 /**
@@ -81,10 +82,20 @@ i_hvac_unit_t adapter_hvac_actuator_port(adapter_hvac_actuator_t *self);
  * @brief Drive the bypass alarm contact (Alarm Relay 1) via local relay port.
  *
  * @param[in] impl    Adapter instance context.
- * @param[in] active  true to close Alarm 1 contact, false to open.
+ * @param[in] active  true when system is in Bypass, false when in Smart mode.
  * @return 0 on success, negative errno on failure.
  */
 int adapter_hvac_actuator_set_bypass_alarm(void *impl, bool active);
+
+/**
+ * @brief Configure the contact polarity for the bypass alarm relay (Alarm Out 1).
+ *
+ * @param[in,out] self          Adapter instance.
+ * @param[in]     contact_type  HVAC_ALARM_CONTACT_NC (0=Bypass, 1=Smart) or HVAC_ALARM_CONTACT_NO (1=Bypass, 0=Smart).
+ * @return 0 on success, -EINVAL on invalid arguments.
+ */
+int adapter_hvac_actuator_set_bypass_alarm_contact_type(adapter_hvac_actuator_t *self,
+                                                        hvac_alarm_contact_type_t contact_type);
 
 #ifdef __cplusplus
 }

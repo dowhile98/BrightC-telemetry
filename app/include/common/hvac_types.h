@@ -304,18 +304,28 @@ typedef struct {
 _Static_assert(sizeof(config_hvac_group_t) == 40U, "config_hvac_group_t must be exactly 40 bytes");
 
 /**
+ * @brief Contact polarity configuration for the Bypass Alarm output relay (ALARM_OUT_1).
+ */
+typedef enum {
+    /** Default (Ref 1 / Ref 2 hardware): writes 0 (LOW/OPEN) in Bypass, 1 (HIGH/CLOSED) in Smart. */
+    HVAC_ALARM_CONTACT_NC = 0,
+    /** Inverted: writes 1 (HIGH/CLOSED) in Bypass, 0 (LOW/OPEN) in Smart. */
+    HVAC_ALARM_CONTACT_NO = 1,
+} hvac_alarm_contact_type_t;
+
+/**
  * @brief Root persistent HVAC storage configuration structure (~460-476 bytes).
  */
 typedef struct {
-    uint8_t               operation_mode; /**< Operation profile (@see hvac_operation_mode_t) */
-    uint8_t               total_units;    /**< Total number of configured units (1..8) */
-    uint8_t               total_groups;   /**< Total number of configured groups (1..4) */
-    uint8_t               reserved1;      /**< Alignment padding */
-    hvac_io_endpoint_t    fire_interlock; /**< Emergency fire shutdown input endpoint */
-    hvac_io_endpoint_t    bypass_switch;  /**< Front-panel physical bypass switch endpoint */
+    uint8_t               operation_mode;            /**< Operation profile (@see hvac_operation_mode_t) */
+    uint8_t               total_units;               /**< Total number of configured units (1..8) */
+    uint8_t               total_groups;              /**< Total number of configured groups (1..4) */
+    uint8_t               bypass_alarm_contact_type; /**< Alarm 1 contact polarity (@see hvac_alarm_contact_type_t) */
+    hvac_io_endpoint_t    fire_interlock;            /**< Emergency fire shutdown input endpoint */
+    hvac_io_endpoint_t    bypass_switch;             /**< Front-panel physical bypass switch endpoint */
     config_hvac_group_t   groups[HVAC_MAX_GROUPS];     /**< Group configuration array */
     hvac_unit_hw_config_t units[HVAC_MAX_UNITS_TOTAL]; /**< Hardware unit routing array */
-    uint8_t               reserved[16];   /**< Future expansion padding */
+    uint8_t               reserved[16];              /**< Future expansion padding */
 } config_hvac_t;
 
 /* ========================================================================= */
@@ -331,6 +341,17 @@ typedef struct {
 static inline bool hvac_operation_mode_is_valid(uint8_t mode)
 {
     return (mode <= (uint8_t)HVAC_MODE_HYBRID_FULL);
+}
+
+/**
+ * @brief Validate bypass alarm contact polarity enumerator.
+ *
+ * @param contact_type Contact polarity to validate.
+ * @return true if valid, false otherwise.
+ */
+static inline bool hvac_alarm_contact_type_is_valid(uint8_t contact_type)
+{
+    return (contact_type <= (uint8_t)HVAC_ALARM_CONTACT_NO);
 }
 
 /**
@@ -442,6 +463,10 @@ static inline bool config_hvac_is_valid(const config_hvac_t *cfg)
     }
 
     if (!hvac_operation_mode_is_valid(cfg->operation_mode)) {
+        return false;
+    }
+
+    if (!hvac_alarm_contact_type_is_valid(cfg->bypass_alarm_contact_type)) {
         return false;
     }
 

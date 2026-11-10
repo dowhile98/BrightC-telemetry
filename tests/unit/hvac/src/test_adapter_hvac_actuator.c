@@ -12,6 +12,7 @@
 #include "common/hvac_types.h"
 #include "fake_relay.h"
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
+#include "infrastructure/adapters/adapter_relay_gpio.h"
 #include "interfaces/i_hvac_unit.h"
 
 static adapter_hvac_actuator_t s_adapter;
@@ -155,4 +156,47 @@ ZTEST(adapter_hvac_actuator_suite, test_error_handling_and_validation)
     ret = i_hvac_unit_set_tri_state(&port, 0, HVAC_TRI_STATE_ON);
     zassert_equal(ret, -EIO, "Should propagate relay error");
     fake_relay_set_simulated_error(0);
+}
+
+ZTEST(adapter_hvac_actuator_suite, test_bypass_alarm_contact_type_nc_and_no)
+{
+    (void)adapter_hvac_actuator_init(&s_adapter, s_hw_configs, 2U, &s_remote_relay, &s_local_relay);
+    i_hvac_unit_t port = adapter_hvac_actuator_port(&s_adapter);
+
+    /* 1. Default contact type is HVAC_ALARM_CONTACT_NC (Ref 1 & Ref 2 polarity):
+     *    - Bypass active (true)  -> RELAY_STATE_OPEN (0)
+     *    - Smart mode (false)    -> RELAY_STATE_CLOSED (1)
+     */
+    zassert_equal(s_adapter.bypass_alarm_contact_type, HVAC_ALARM_CONTACT_NC, "Default must be NC");
+
+    int ret = i_hvac_unit_set_bypass_alarm(&port, true);
+    zassert_equal(ret, 0, "set_bypass_alarm(true) failed");
+    zassert_equal(fake_relay_get_channel_state((relay_channel_t)RELAY_CH_ALARM_OUT_1),
+                  RELAY_STATE_OPEN,
+                  "NC default: Bypass active must write RELAY_STATE_OPEN (0)");
+
+    ret = i_hvac_unit_set_bypass_alarm(&port, false);
+    zassert_equal(ret, 0, "set_bypass_alarm(false) failed");
+    zassert_equal(fake_relay_get_channel_state((relay_channel_t)RELAY_CH_ALARM_OUT_1),
+                  RELAY_STATE_CLOSED,
+                  "NC default: Smart mode must write RELAY_STATE_CLOSED (1)");
+
+    /* 2. Switch to HVAC_ALARM_CONTACT_NO:
+     *    - Bypass active (true)  -> RELAY_STATE_CLOSED (1)
+     *    - Smart mode (false)    -> RELAY_STATE_OPEN (0)
+     */
+    ret = adapter_hvac_actuator_set_bypass_alarm_contact_type(&s_adapter, HVAC_ALARM_CONTACT_NO);
+    zassert_equal(ret, 0, "set_bypass_alarm_contact_type(NO) failed");
+
+    ret = i_hvac_unit_set_bypass_alarm(&port, true);
+    zassert_equal(ret, 0, "set_bypass_alarm(true) failed");
+    zassert_equal(fake_relay_get_channel_state((relay_channel_t)RELAY_CH_ALARM_OUT_1),
+                  RELAY_STATE_CLOSED,
+                  "NO mode: Bypass active must write RELAY_STATE_CLOSED (1)");
+
+    ret = i_hvac_unit_set_bypass_alarm(&port, false);
+    zassert_equal(ret, 0, "set_bypass_alarm(false) failed");
+    zassert_equal(fake_relay_get_channel_state((relay_channel_t)RELAY_CH_ALARM_OUT_1),
+                  RELAY_STATE_OPEN,
+                  "NO mode: Smart mode must write RELAY_STATE_OPEN (0)");
 }

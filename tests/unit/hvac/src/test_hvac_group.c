@@ -231,15 +231,19 @@ ZTEST(hvac_group_suite, test_cooling_timeout_and_rescue_boost)
     zassert_equal(s_group.cooling_timeout_count, 1U, "First timeout registered");
     zassert_equal(s_group.state, GROUP_STATE_COOL_BOOST, "First timeout triggers COOL_BOOST rescue");
 
-    /* Verify active units 0 and 1 got fault counter incremented */
+    /* Verify active units 0 and 1 got fault counter incremented but remain RUNNING */
     zassert_equal(s_units[0].fault_counter, 1U, "Active unit 0 fault incremented");
     zassert_equal(s_units[1].fault_counter, 1U, "Active unit 1 fault incremented");
+    zassert_equal(s_units[0].state, UNIT_STATE_RUNNING, "Active unit 0 must remain RUNNING during Rescue Boost");
+    zassert_equal(s_units[1].state, UNIT_STATE_RUNNING, "Active unit 1 must remain RUNNING during Rescue Boost");
 
-    /* Verify rescue boost energized ALL units */
-    for (uint8_t i = 0U; i < HVAC_MAX_UNITS_TOTAL; i++) {
-        zassert_true(s_units[i].state == UNIT_STATE_RUNNING || s_units[i].state == UNIT_STATE_STARTING ||
-                     s_units[i].state == UNIT_STATE_BLOCKED_ALARM,
-                     "Unit %d was commanded to rescue", i);
+    /* Verify rescue boost energized ALL backup units with staggered delays (0s, 20s, 40s, ...) */
+    zassert_equal(s_units[2].state, UNIT_STATE_RUNNING, "Backup unit 2 (first newly starting) starts at 0s delay");
+    for (uint8_t i = 3U; i < HVAC_MAX_UNITS_TOTAL; i++) {
+        zassert_equal(s_units[i].state, UNIT_STATE_STARTING,
+                      "Backup unit %d must be STARTING with staggered delay", i);
+        zassert_equal(s_units[i].startup_timer_s, (uint16_t)((i - 2U) * s_group.delay_on_s),
+                      "Backup unit %d staggered timer mismatch", i);
     }
 
     /* Second cooling cycle: tick 49 more seconds */
@@ -310,11 +314,21 @@ ZTEST(hvac_group_suite, test_high_temp_bypass_and_hysteresis)
     hvac_group_entity_evaluate(&s_group, &metrics);
     zassert_equal(s_group.state, GROUP_STATE_BYPASS, "Bypass must remain active at 25.0 C");
 
-    /* Temperature drops to or below temp_max (23.5 C <= 24.0 C): Bypass clears! */
+    /* Temperature cools to 23.5 C (<= temp_max 24.0 C, but > temp_min 21.0 C):
+     * H-07: Bypass MUST remain active until all temperatures drop <= temp_min!
+     */
     metrics.highest_temp = 23.5f;
     hvac_group_entity_evaluate(&s_group, &metrics);
-    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Bypass must clear when T <= temp_max");
+    zassert_equal(s_group.state, GROUP_STATE_BYPASS, "Bypass must remain active until T <= temp_min");
+    zassert_true((s_group.bypass_causes_mask & (uint32_t)BYPASS_CAUSE_HIGH_TEMP) != 0U,
+                 "BYPASS_CAUSE_HIGH_TEMP must remain active above temp_min");
+
+    /* Temperature drops to or below temp_min (20.5 C <= 21.0 C): Bypass clears and rotates turn! */
+    metrics.highest_temp = 20.5f;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Bypass must clear when all temperatures <= temp_min");
     zassert_equal(s_group.bypass_causes_mask, 0U, "All bypass flags must be cleared");
+    zassert_equal(s_group.current_turn_offset, 1U, "Turn shift must rotate upon thermal bypass recovery");
 
     /* Verify units restored to smart mode (relay_sm = 1) */
     for (uint8_t i = 0U; i < HVAC_MAX_UNITS_TOTAL; i++) {
@@ -343,12 +357,13 @@ ZTEST(hvac_group_suite, test_fire_emergency_priority)
     zassert_equal(s_group.state, GROUP_STATE_FIRE, "Group must transition to GROUP_STATE_FIRE");
     zassert_true(s_group.is_fire_active, "Fire active flag must be set");
 
-    /* Verify all compressors and fan purge relays are immediately shut down */
+    /* Verify all compressors and fans are immediately shut down (AA=0, SM=1, G=1 cuts NC fan wire) */
     for (uint8_t i = 0U; i < HVAC_MAX_UNITS_TOTAL; i++) {
         bool relay_aa, relay_sm, relay_g;
         hvac_unit_entity_get_relays(&s_units[i], &relay_aa, &relay_sm, &relay_g);
         zassert_false(relay_aa, "Unit %d compressor must be OFF during fire", i);
-        zassert_false(relay_g, "Unit %d fan relay must be OFF during fire", i);
+        zassert_true(relay_sm, "Unit %d relay_sm must be 1 during fire", i);
+        zassert_true(relay_g, "Unit %d relay_g must be 1 (energized to open NC fan contact) during fire", i);
     }
 
     /* Fire interlock overrides even extreme high temperature bypass */
@@ -637,8 +652,11 @@ ZTEST(hvac_group_suite, test_duty_rotation_timer_and_automatic_shift)
     zassert_equal(hvac_group_entity_get_rotation_timer(&s_group), 0U,
                   "Rotation timer must reset to 0 after automatic shift");
 
-    /* Verify units 1, 2 active, unit 0 standby */
-    zassert_equal(s_units[2].state, UNIT_STATE_STARTING, "Unit 2 now active");
+    /* Verify units 1, 2 active, unit 0 standby.
+     * Since Unit 1 has been RUNNING for 7 days (count_starting_units == 0),
+     * Unit 2 is the only unit starting now (0 * delay_on_s = 0s -> RUNNING).
+     */
+    zassert_equal(s_units[2].state, UNIT_STATE_RUNNING, "Unit 2 now active (0s delay as sole starting unit)");
     zassert_true(s_units[0].state == UNIT_STATE_OFF || s_units[0].state == UNIT_STATE_STOPPING,
                  "Unit 0 now standby");
 
@@ -884,15 +902,67 @@ ZTEST(hvac_group_suite, test_standby_substitution_on_active_unit_fault)
     hvac_unit_entity_update_alarms(&s_units[0], true, false, false, false);
     zassert_equal(s_units[0].state, UNIT_STATE_BLOCKED_ALARM, "Unit 0 must be in BLOCKED_ALARM");
 
-    /* 3. Re-evaluate group: Unit 0 is unavailable, so Unit 1 and Unit 2 (standby) must be commanded */
+    /* 3. Re-evaluate group: Unit 0 is unavailable, Unit 1 is still STARTING (20s),
+     * so Unit 2 (standby substitute) must be staggered behind Unit 1 (1 * 20s = 20s -> STARTING) (Option A, H-04)
+     */
     hvac_group_entity_evaluate(&s_group, &metrics);
     zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must remain in COOLING");
     zassert_equal(s_units[0].state, UNIT_STATE_BLOCKED_ALARM, "Unit 0 stays in BLOCKED_ALARM");
-    zassert_true(s_units[1].state == UNIT_STATE_RUNNING || s_units[1].state == UNIT_STATE_STARTING,
-                 "Unit 1 must be active");
-    zassert_true(s_units[2].state == UNIT_STATE_RUNNING || s_units[2].state == UNIT_STATE_STARTING,
-                 "Unit 2 (standby substitute) must be commanded to START");
+    zassert_equal(s_units[1].state, UNIT_STATE_STARTING, "Unit 1 is still STARTING");
+    zassert_equal(s_units[2].state, UNIT_STATE_STARTING, "Unit 2 (standby substitute) must stagger behind STARTING Unit 1");
+    zassert_equal(s_units[2].startup_timer_s, 20U, "Unit 2 must receive 1 * delay_on_s = 20s");
     zassert_equal(s_units[3].state, UNIT_STATE_OFF, "Unit 3 must remain standby (OFF)");
+}
+
+ZTEST(hvac_group_suite, test_cool_boost_hysteresis_retention_below_temp_alarm)
+{
+    /* H-03: Once COOL_BOOST is triggered by T >= temp_alarm (27.0 C),
+     * all units must remain active even when T drops below temp_alarm (e.g. 25.5 C or 22.5 C)
+     * until T <= temp_min (21.0 C).
+     */
+    hvac_group_entity_clear_units(&s_group);
+    for (uint8_t i = 0U; i < 4U; i++) {
+        hvac_unit_entity_init(&s_units[i], i, 3U, 0U, 30U, 180U, false);
+        hvac_group_entity_add_unit(&s_group, &s_units[i]);
+    }
+    s_group.active_turn_count = 2U;
+    s_group.delay_on_s = 0U;
+    s_group.enable_fan_delay = false;
+
+    group_temperature_metrics_t metrics = {
+        .highest_temp = 28.0f, /* >= temp_alarm (27.0 C) */
+        .valid_sensors = 2U,
+    };
+
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOL_BOOST, "Must enter COOL_BOOST at 28.0 C");
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_units[u].state, UNIT_STATE_RUNNING, "Unit %u must be RUNNING in COOL_BOOST", u);
+    }
+
+    /* Temperature drops to 25.5 C (< temp_alarm 27.0 C, >= temp_max 24.0 C) */
+    metrics.highest_temp = 25.5f;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOL_BOOST, "Must remain in COOL_BOOST at 25.5 C");
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_units[u].state, UNIT_STATE_RUNNING, "Backup unit %u must NOT be stopped at 25.5 C", u);
+    }
+
+    /* Temperature drops to 22.0 C (< temp_max 24.0 C, > temp_min 21.0 C) */
+    metrics.highest_temp = 22.0f;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOL_BOOST, "Must remain in COOL_BOOST at 22.0 C");
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_units[u].state, UNIT_STATE_RUNNING, "Backup unit %u must NOT be stopped at 22.0 C", u);
+    }
+
+    /* Temperature drops to 21.0 C (<= temp_min 21.0 C) -> exits COOL_BOOST to IDLE */
+    metrics.highest_temp = 21.0f;
+    hvac_group_entity_evaluate(&s_group, &metrics);
+    zassert_equal(s_group.state, GROUP_STATE_IDLE, "Must transition to IDLE at temp_min (21.0 C)");
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_units[u].state, UNIT_STATE_OFF, "Unit %u must stop at temp_min", u);
+    }
 }
 
 /*============================================================================*
@@ -963,6 +1033,102 @@ ZTEST(hvac_group_suite, test_permanent_mode_off_does_not_timeout_or_revert)
     hvac_group_entity_evaluate(&s_group, &metrics);
     zassert_equal(s_group.state, GROUP_STATE_COOLING, "Group must resume COOLING on hot metrics");
 }
+
+/*============================================================================*
+ * H-10 Regression: Periodic set_fire(false) / set_manual(false) idempotence
+ *============================================================================*/
+
+ZTEST(hvac_group_suite, test_periodic_set_fire_false_does_not_abort_staggered_cooling_or_boost)
+{
+    /* Configure 2+2 group (4 units total, 2 active turn, 2 standby, delay_on_s = 10s) */
+    hvac_group_entity_clear_units(&s_group);
+    for (uint8_t i = 0U; i < 4U; i++) {
+        hvac_unit_entity_init(&s_units[i], i, 3U, 0U, 30U, 180U, false);
+        hvac_group_entity_add_unit(&s_group, &s_units[i]);
+    }
+    s_group.active_turn_count = 2U;
+    s_group.current_turn_offset = 0U;
+    s_group.delay_on_s = 10U;
+    s_group.enable_fan_delay = true;
+
+    group_temperature_metrics_t cooling_metrics = {
+        .highest_temp = 25.0f, /* >= temp_max (24.0), < temp_alarm (27.0) */
+        .lowest_temp = 24.5f,
+        .average_temp = 24.75f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+
+    /* 1. Evaluate at T = 25.0 C -> COOLING: Unit 0 RUNNING (0s), Unit 1 STARTING (10s) */
+    hvac_group_entity_evaluate(&s_group, &cooling_metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOLING, "Must enter COOLING");
+    zassert_equal(s_units[0].state, UNIT_STATE_RUNNING, "Unit 0 must be RUNNING immediately");
+    zassert_equal(s_units[1].state, UNIT_STATE_STARTING, "Unit 1 must be STARTING");
+    zassert_equal(s_units[1].startup_timer_s, 10U, "Unit 1 startup timer must be 10s");
+
+    /* 2. Simulate 50ms DI feed calling set_fire(false) and set_manual(false) 20x per second
+     * across 10 seconds of staggered startup.
+     */
+    for (int sec = 0; sec < 10; sec++) {
+        for (int di_tick = 0; di_tick < 20; di_tick++) {
+            hvac_group_entity_set_fire(&s_group, false);
+            hvac_group_entity_set_manual(&s_group, false);
+            hvac_group_entity_set_bypass_cause(&s_group, BYPASS_CAUSE_PHYSICAL_SWITCH, false);
+        }
+        zassert_equal(s_group.state, GROUP_STATE_COOLING,
+                      "set_fire(false) must NOT reset COOLING to IDLE");
+        zassert_equal(s_units[0].state, UNIT_STATE_RUNNING,
+                      "set_fire(false) must NOT push Unit 0 into STOPPING");
+
+        hvac_group_entity_tick_1s(&s_group);
+        for (uint8_t u = 0U; u < 4U; u++) {
+            hvac_unit_entity_tick_1s(&s_units[u]);
+        }
+        hvac_group_entity_evaluate(&s_group, &cooling_metrics);
+    }
+
+    zassert_equal(s_units[0].state, UNIT_STATE_RUNNING, "Unit 0 must remain RUNNING");
+    zassert_equal(s_units[1].state, UNIT_STATE_RUNNING,
+                  "Unit 1 must reach RUNNING after 10s staggered delay");
+    zassert_equal(s_units[2].state, UNIT_STATE_OFF, "Standby Unit 2 must remain OFF");
+    zassert_equal(s_units[3].state, UNIT_STATE_OFF, "Standby Unit 3 must remain OFF");
+
+    /* 3. Escalate temperature to >= temp_alarm (27.0 C) -> COOL_BOOST:
+     * Standby Units 2 (0s) and 3 (10s) must start even while set_fire(false) is called every 50ms.
+     */
+    group_temperature_metrics_t boost_metrics = {
+        .highest_temp = 28.0f, /* >= temp_alarm (27.0 C) */
+        .lowest_temp = 27.2f,
+        .average_temp = 27.6f,
+        .valid_sensors = 2U,
+        .total_sensors = 2U,
+    };
+
+    hvac_group_entity_evaluate(&s_group, &boost_metrics);
+    zassert_equal(s_group.state, GROUP_STATE_COOL_BOOST, "Must enter COOL_BOOST");
+    zassert_equal(s_units[2].state, UNIT_STATE_RUNNING,
+                  "Standby Unit 2 (0s delay) must enter RUNNING immediately");
+    zassert_equal(s_units[3].state, UNIT_STATE_STARTING,
+                  "Standby Unit 3 (10s delay) must enter STARTING");
+    zassert_equal(s_units[3].startup_timer_s, 10U, "Unit 3 startup timer must be 10s");
+
+    for (int sec = 0; sec < 10; sec++) {
+        for (int di_tick = 0; di_tick < 20; di_tick++) {
+            hvac_group_entity_set_fire(&s_group, false);
+        }
+        hvac_group_entity_tick_1s(&s_group);
+        for (uint8_t u = 0U; u < 4U; u++) {
+            hvac_unit_entity_tick_1s(&s_units[u]);
+        }
+        hvac_group_entity_evaluate(&s_group, &boost_metrics);
+    }
+
+    for (uint8_t u = 0U; u < 4U; u++) {
+        zassert_equal(s_units[u].state, UNIT_STATE_RUNNING,
+                      "All 4 units (including standby) must be RUNNING in COOL_BOOST (unit %u)", u);
+    }
+}
+
 
 
 

@@ -116,7 +116,7 @@ To interface with standard industrial air conditioning wiring, every unit produc
 typedef struct {
     bool relay_aa; /**< Compressor contactor: Smart Mode ON (true) / OFF (false). */
     bool relay_sm; /**< Mode selector: Smart Controller in charge (true) / Bypass (false). */
-    bool relay_g;  /**< Fan purge relay: Forced ventilation ON (true) / OFF (false). */
+    bool relay_g;  /**< Fan cut relay (NC contact in series with G): Fan Enabled/ON (false) / Fan Cut/OFF (true). */
 } hvac_tri_state_t;
 ```
 
@@ -169,12 +169,15 @@ typedef struct {
 - **`BLOCKED_ALARM`**: Triggered immediately if high-pressure, low-pressure, supply airflow, or voltage faults trip while the compressor is commanded ON. The compressor is shut down, `fault_counter` increments, and a 3-minute lockout (`pressure_retry_s = 180s`) begins. If alarms clear after 180s, the unit returns to `UNIT_STATE_OFF`.
 - **`UNIT_STATE_FAULT`**: If `fault_counter >= max_allowed_faults` (default 3), the unit is permanently disqualified from cooling rotation to protect hardware from repeated cycling under fault conditions.
 
-### 4.3 Fan Purge Sub-FSM (`hvac_fan_substate_t`)
-To extract residual refrigeration energy from the evaporator coil and prevent condensate mold:
-1. `COMPRESSOR_RUNNING`: While compressor is active, `relay_g = 0`.
-2. `WAIT_DELAY`: When compressor turns OFF (`SMART_ON -> SMART_OFF`), countdown timer `fan_delay_timer_s` runs (default 60s). `relay_g = 0`.
-3. `SMART_IDLE_ON`: Upon timer expiration, `relay_g = 1` closes the fan relay for continuous low-power circulation.
-4. `BYPASS` / `FIRE`: `relay_g = 0` immediately.
+### 4.3 Fan Control & Post-Purge Sub-FSM (`hvac_fan_substate_t`)
+The `G` relay uses a **Normally Closed (NC)** contact in series with the thermostat's fan line (`G`): `relay_g = 0` (`LOW`) keeps the fan enabled/running, while `relay_g = 1` (`HIGH`) energizes the relay to cut/turn off the fan.
+- **Default (`enable_fan_delay = 0`, Fan Control OFF)**: `DISABLED` — `relay_g = 0` at all times in Smart/Bypass modes (fan always enabled), except during `FIRE` where `relay_g = 1` cuts the fan.
+- **Configured (`enable_fan_delay = 1`, Fan Control ON — turn off fan when AC is off)**:
+  1. `COMPRESSOR_RUNNING`: While compressor is active (`RUNNING`), `relay_g = 0` (fan ON).
+  2. `WAIT_DELAY`: When compressor turns OFF (`RUNNING -> STOPPING`), countdown timer `fan_delay_timer_s` runs (default 30s) with `relay_g = 0` (fan remains ON for post-cooling coil purge).
+  3. `SMART_IDLE_ON`: Upon timer expiration (or when idle in `OFF`, `STARTING`, `BLOCKED_ALARM`, `FAULT`), `relay_g = 1` energizes the `G` relay to turn OFF the fan while the compressor is off.
+  4. `BYPASS`: `relay_g = 0` immediately (thermostat takes over).
+  5. `FIRE`: `relay_g = 1` immediately (cuts fan regardless of `enable_fan_delay`).
 
 ---
 
@@ -195,11 +198,11 @@ Each group computes aggregated metrics from assigned temperature probes (`group_
       │
       ├─ >= T_bypass (default 32.0 °C) ──► Triggers BYPASS_CAUSE_HIGH_TEMP (relay_sm = 0)
       │
-      ├─ >= T_alarm  (default 27.0 °C) ──► GROUP_STATE_COOL_BOOST (All N+M units turn ON)
+      ├─ >= T_alarm  (default 30.0 °C) ──► GROUP_STATE_COOL_BOOST (All N+M units turn ON)
       │
-      ├─ >= T_max    (default 24.0 °C) ──► GROUP_STATE_COOLING (N active turn units turn ON)
+      ├─ >= T_max    (default 28.0 °C) ──► GROUP_STATE_COOLING (N active turn units turn ON)
       │
-      ├─ <= T_min    (default 21.0 °C) ──► GROUP_STATE_IDLE (All units turn OFF; clears bypass)
+      ├─ <= T_min    (default 26.0 °C) ──► GROUP_STATE_IDLE (All units turn OFF; clears bypass)
       ▼
 ```
 

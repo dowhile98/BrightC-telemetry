@@ -25,6 +25,8 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-09**: Fixed Double Polarity Inversion on On-Chip GPIO `sw_bypass` (`H-01` in `doc/issues/2026-11-09-hvac-control-delay-sequence-pinout-review.md`):
+  - Changed `gpio_pin_get_dt(spec)` to raw `gpio_pin_get(spec->port, spec->pin)` for `DI_SOURCE_ONCHIP_GPIO` in `adapter_di_gpio.c` so `GPIO_ACTIVE_LOW` pins are not inverted twice before `di_normalize_raw_level()` (`DI_CONTACT_NORMALLY_CLOSED`).
 - **2026-11-07**: Implemented Phase 0 — Security (R-02 Physical Bypass Switch & R-14 Remote Units 4..7 Alarms):
   - Added on-chip GPIO channels (`ONCHIP_DI_USER_BUTTON` and `ONCHIP_DI_SW_BYPASS`) and consolidated 58-channel system DI table (`k_brightc_system_di_table`) in `hardware_pin_map.h`.
   - Added unique user roles (`DI_ROLE_USER_5`..`DI_ROLE_USER_10`) in `digital_input_types.h` and eliminated duplicate semantic roles across local and remote tables.

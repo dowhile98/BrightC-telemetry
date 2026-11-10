@@ -380,11 +380,11 @@ static const di_channel_config_t k_brightc_remote_di_table[HARDWARE_REMOTE_DI_CO
  * - Units 4..7 (Remote 5..8): Actuation on Waveshare Modbus relay, Alarms on MBSL32DI.
  */
 static const hvac_unit_hw_config_t k_brightc_hvac_hw_table[HARDWARE_TOTAL_HVAC_UNITS_COUNT] = {
-    /* --- Local Unit 1 --- */
+    /* --- Local Unit 1 (RELAY_CH_AC1_AA=0, SM=1, G=2) --- */
     {
-        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 9U },
-        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 10U },
-        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 8U },
+        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 0U },
+        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 1U },
+        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 2U },
         .alarm_hp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 0U },
         .alarm_lp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 1U },
         .alarm_flow     = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 2U },
@@ -393,11 +393,11 @@ static const hvac_unit_hw_config_t k_brightc_hvac_hw_table[HARDWARE_TOTAL_HVAC_U
         .fb_fan         = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS,  .device_id = MODBUS_ADDR_MBSL32DI,               .channel = 16U },
     },
 
-    /* --- Local Unit 2 --- */
+    /* --- Local Unit 2 (RELAY_CH_AC2_AA=3, SM=4, G=5) --- */
     {
-        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 12U },
-        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 13U },
-        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 11U },
+        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 3U },
+        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 4U },
+        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 5U },
         .alarm_hp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 4U },
         .alarm_lp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 5U },
         .alarm_flow     = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 6U },
@@ -406,11 +406,11 @@ static const hvac_unit_hw_config_t k_brightc_hvac_hw_table[HARDWARE_TOTAL_HVAC_U
         .fb_fan         = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS,  .device_id = MODBUS_ADDR_MBSL32DI,               .channel = 17U },
     },
 
-    /* --- Local Unit 3 --- */
+    /* --- Local Unit 3 (RELAY_CH_AC3_AA=6, SM=7, G=8) --- */
     {
-        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 15U },
-        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 0U },
-        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 14U },
+        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 6U },
+        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 7U },
+        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 8U },
         .alarm_hp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 8U },
         .alarm_lp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 9U },
         .alarm_flow     = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11, .channel = 10U },
@@ -419,11 +419,11 @@ static const hvac_unit_hw_config_t k_brightc_hvac_hw_table[HARDWARE_TOTAL_HVAC_U
         .fb_fan         = { .backend = (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS,  .device_id = MODBUS_ADDR_MBSL32DI,               .channel = 18U },
     },
 
-    /* --- Local Unit 4 --- */
+    /* --- Local Unit 4 (RELAY_CH_AC4_AA=9, SM=10, G=11) --- */
     {
-        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 2U },
-        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 3U },
-        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 1U },
+        .relay_aa       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 9U },
+        .relay_sm       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 10U },
+        .relay_g        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_HVAC_RELAYS, .channel = 11U },
         .alarm_hp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 0U },
         .alarm_lp       = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 1U },
         .alarm_flow     = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 2U },
