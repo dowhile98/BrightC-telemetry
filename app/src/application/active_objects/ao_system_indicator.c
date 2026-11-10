@@ -26,6 +26,16 @@ LOG_MODULE_REGISTER(ao_system_indicator, LOG_LEVEL_INF);
 #define STARTUP_CHIME_DUR_2_MS     150U
 #define STARTUP_CHIME_TOTAL_MS     (STARTUP_CHIME_DUR_1_MS + STARTUP_CHIME_SILENCE_MS + STARTUP_CHIME_DUR_2_MS)
 
+/* Warning Buzzer Cadence: 1 short beep (100 ms) every 5 seconds (5000 ms) */
+#define WARNING_BEEP_PERIOD_MS     5000U
+#define WARNING_BEEP_ON_MS         100U
+
+/* Critical / Error Buzzer Cadence: 2 short beeps (100 ms ON, 100 ms OFF, 100 ms ON) every 2 seconds (2000 ms) */
+#define ERROR_BEEP_PERIOD_MS       2000U
+#define ERROR_BEEP_1_END_MS        100U
+#define ERROR_BEEP_2_START_MS      200U
+#define ERROR_BEEP_2_END_MS        300U
+
 static void recalculate_alarm_level(ao_system_indicator_t *self)
 {
     alarm_level_t max_level = ALARM_LEVEL_NONE;
@@ -212,8 +222,8 @@ int ao_system_indicator_step(ao_system_indicator_t *self, uint32_t now_ms)
             desired_buzzer = BUZZER_PATTERN_SILENT;
         } else if (self->current_health == SYSTEM_HEALTH_FAULT) {
             desired_led = LED_STATE_BLINK_FAST;
-            desired_buzzer = BUZZER_PATTERN_ALARM_INTERMITTENT;
-            desired_freq = 1500U;
+            desired_buzzer = BUZZER_PATTERN_ALARM_CONTINUOUS;
+            desired_freq = 2000U;
         } else if (self->current_health == SYSTEM_HEALTH_DEGRADED) {
             desired_led = LED_STATE_BLINK_SLOW;
             desired_buzzer = BUZZER_PATTERN_SILENT;
@@ -259,23 +269,32 @@ int ao_system_indicator_step(ao_system_indicator_t *self, uint32_t now_ms)
     }
 
     /* 4. Software Timing for Buzzer (if not already dictated by chime) */
+    if (desired_buzzer != self->target_buzzer_pattern) {
+        self->pattern_start_ms = now_ms;
+    }
+
     if (desired_buzzer != BUZZER_PATTERN_STARTUP_CHIME) {
         switch (desired_buzzer) {
         case BUZZER_PATTERN_SILENT:
             buzzer_sound_active = false;
             break;
-        case BUZZER_PATTERN_ALARM_CONTINUOUS:
-            buzzer_sound_active = true;
+        case BUZZER_PATTERN_ALARM_CONTINUOUS: {
             if (desired_freq == 0U) {
                 desired_freq = 2000U;
             }
+            uint32_t ph = (now_ms - self->pattern_start_ms) % ERROR_BEEP_PERIOD_MS;
+            buzzer_sound_active = ((ph < ERROR_BEEP_1_END_MS) ||
+                                   (ph >= ERROR_BEEP_2_START_MS && ph < ERROR_BEEP_2_END_MS));
             break;
-        case BUZZER_PATTERN_ALARM_INTERMITTENT:
+        }
+        case BUZZER_PATTERN_ALARM_INTERMITTENT: {
             if (desired_freq == 0U) {
                 desired_freq = 1500U;
             }
-            buzzer_sound_active = ((now_ms % 500U) < 250U);
+            uint32_t ph = (now_ms - self->pattern_start_ms) % WARNING_BEEP_PERIOD_MS;
+            buzzer_sound_active = (ph < WARNING_BEEP_ON_MS);
             break;
+        }
         case BUZZER_PATTERN_BEEP_SHORT:
             if (!self->beep_active) {
                 self->beep_active = true;

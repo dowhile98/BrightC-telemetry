@@ -513,3 +513,88 @@ ZTEST(system_indicators_suite, test_ao_indicator_alarm_buzzer_mute)
 
     zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
 }
+
+/*============================================================================*
+ * 10. Warning (1 beep / 5s) and Critical/Error (2 beeps / 2s) Cadence Tests
+ *============================================================================*/
+
+ZTEST(system_indicators_suite, test_ao_indicator_warning_and_error_buzzer_cadences)
+{
+    i_led_t led = fake_led_get_port();
+    i_buzzer_t buzzer = fake_buzzer_get_port();
+
+    zassert_equal(ao_system_indicator_init(&s_test_ao_indicator, &led, &buzzer, &s_test_indicator_msgq,
+                                           s_test_ao_indicator_stack,
+                                           K_THREAD_STACK_SIZEOF(s_test_ao_indicator_stack)),
+                  0, "Init");
+
+    /* 1. WARNING: 1 short beep (100 ms) every 5000 ms */
+    ao_indicator_event_t evt_warn = {
+        .type = AO_INDICATOR_EVT_ALARM,
+        .data.alarm = {
+            .alarm_id = 1,
+            .level = ALARM_LEVEL_WARNING,
+            .is_active = true,
+            .timestamp_ms = 1000,
+        },
+    };
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt_warn);
+
+    /* t = 1000 ms (ph = 0 ms): ON */
+    ao_system_indicator_step(&s_test_ao_indicator, 1000);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "WARNING beep ON at 0 ms");
+
+    /* t = 1050 ms (ph = 50 ms): still ON */
+    ao_system_indicator_step(&s_test_ao_indicator, 1050);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "WARNING beep ON at 50 ms");
+
+    /* t = 1100 ms (ph = 100 ms): OFF for the remainder of the 5 s period */
+    ao_system_indicator_step(&s_test_ao_indicator, 1100);
+    zassert_false(fake_buzzer_get_state()->is_sounding, "WARNING silent at 100 ms");
+
+    /* t = 5999 ms (ph = 4999 ms): still OFF */
+    ao_system_indicator_step(&s_test_ao_indicator, 5999);
+    zassert_false(fake_buzzer_get_state()->is_sounding, "WARNING silent at 4999 ms");
+
+    /* t = 6000 ms (ph = 0 ms of next 5 s cycle): ON again */
+    ao_system_indicator_step(&s_test_ao_indicator, 6000);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "WARNING beep repeats at 5000 ms");
+
+    /* 2. Escalate to CRITICAL / ERROR: 2 short beeps (0..100 ms, 200..300 ms) every 2000 ms */
+    ao_indicator_event_t evt_crit = {
+        .type = AO_INDICATOR_EVT_ALARM,
+        .data.alarm = {
+            .alarm_id = 2,
+            .level = ALARM_LEVEL_CRITICAL,
+            .is_active = true,
+            .timestamp_ms = 7000,
+        },
+    };
+    ao_system_indicator_process_event(&s_test_ao_indicator, &evt_crit);
+
+    /* t = 7000 ms (ph = 0 ms): Beep 1 ON */
+    ao_system_indicator_step(&s_test_ao_indicator, 7000);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "CRITICAL Beep 1 ON at 0 ms");
+
+    /* t = 7100 ms (ph = 100 ms): Inter-beep pause OFF */
+    ao_system_indicator_step(&s_test_ao_indicator, 7100);
+    zassert_false(fake_buzzer_get_state()->is_sounding, "CRITICAL pause OFF at 100 ms");
+
+    /* t = 7200 ms (ph = 200 ms): Beep 2 ON */
+    ao_system_indicator_step(&s_test_ao_indicator, 7200);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "CRITICAL Beep 2 ON at 200 ms");
+
+    /* t = 7300 ms (ph = 300 ms): Silence for remaining 1700 ms */
+    ao_system_indicator_step(&s_test_ao_indicator, 7300);
+    zassert_false(fake_buzzer_get_state()->is_sounding, "CRITICAL silent at 300 ms");
+
+    /* t = 8999 ms (ph = 1999 ms): still silent */
+    ao_system_indicator_step(&s_test_ao_indicator, 8999);
+    zassert_false(fake_buzzer_get_state()->is_sounding, "CRITICAL silent at 1999 ms");
+
+    /* t = 9000 ms (ph = 0 ms of next 2 s cycle): Beep 1 ON again */
+    ao_system_indicator_step(&s_test_ao_indicator, 9000);
+    zassert_true(fake_buzzer_get_state()->is_sounding, "CRITICAL double-beep repeats at 2000 ms");
+
+    zassert_equal(ao_system_indicator_deinit(&s_test_ao_indicator), 0, "Deinit");
+}

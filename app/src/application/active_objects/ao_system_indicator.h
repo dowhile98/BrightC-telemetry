@@ -99,10 +99,11 @@ typedef struct {
     bool                       startup_chime_active;
     uint32_t                   chime_start_ms;
 
-    /* One-shot Beep State */
+    /* One-shot Beep & Periodic Pattern Phase State */
     uint32_t                   beep_start_ms;
     uint32_t                   beep_duration_ms;
     bool                       beep_active;
+    uint32_t                   pattern_start_ms;
 
     /* Current Physical Hardware State (to avoid redundant driver writes) */
     led_state_t                target_led_state;
