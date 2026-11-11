@@ -40,6 +40,7 @@
 #include "application/zbus/thermal_channels.h"
 #include "common/config_types.h"
 #include "common/energy_types.h"
+#include "common/hvac_types.h"
 #include "common/thermal_energy_types.h"
 #include "domain/thermal_energy/compressor_fsm.h"
 #include "domain/thermal_energy/predictive_analytics.h"
@@ -96,6 +97,7 @@ typedef struct {
     config_thermal_baseline_t       *baseline_cfg;
     ao_thermal_baseline_persist_cb_t baseline_persist_cb;
     void                            *baseline_persist_user_data;
+    hvac_operation_mode_t            hvac_mode;
 
     /* 4. Abstract Port Interface Handle */
     i_thermal_energy_t port;
@@ -111,6 +113,14 @@ typedef struct {
     bool                  has_elec_reading;
     bool                  capture_injected;
     uint32_t              result_generation_id;
+
+    /* 6. Hourly Accumulators for Integrated OLS Regression & History */
+    double   hourly_accum_t_ret;
+    double   hourly_accum_t_ext;
+    double   hourly_accum_f_carga;
+    double   hourly_accum_q_total;
+    double   hourly_accum_p_elec;
+    uint32_t hourly_samples_count;
 } ao_thermal_energy_t;
 
 /* ========================================================================= */
@@ -126,6 +136,7 @@ typedef struct {
  * @param[out] self         Active object instance to initialize.
  * @param[in]  site_cfg     Site topology configuration (or NULL for pilot default).
  * @param[in]  baseline_cfg Learned baseline configuration reference (or NULL).
+ * @param[in]  mode         HVAC operational mode for contact mapping.
  * @param[in]  stack        File-scope thread stack buffer (MPU aligned).
  * @param[in]  stack_size   Stack size in bytes (must be >= AO_THERMAL_ENERGY_STACK_SIZE).
  * @param[in]  priority     Thread preemptive priority.
@@ -134,9 +145,20 @@ typedef struct {
 int ao_thermal_energy_init(ao_thermal_energy_t *self,
                            const config_thermal_site_t *site_cfg,
                            config_thermal_baseline_t *baseline_cfg,
+                           hvac_operation_mode_t mode,
                            k_thread_stack_t *stack,
                            size_t stack_size,
                            int priority);
+
+/**
+ * @brief Set the HVAC operational mode for dynamic contact mapping.
+ *
+ * Thread-safe update of current HVAC operational mode.
+ *
+ * @param[in,out] self Active object instance.
+ * @param[in]     mode Target HVAC operational mode.
+ */
+void ao_thermal_energy_set_hvac_mode(ao_thermal_energy_t *self, hvac_operation_mode_t mode);
 
 /**
  * @brief Phase 2: Start the Thermal Energy Active Object thread loop.

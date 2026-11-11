@@ -1620,9 +1620,12 @@ int composition_root_init_thermal_energy(app_container_t *self)
         return 0;
     }
 
+    hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
+
     int err = ao_thermal_energy_init(&self->thermal_energy.ao,
                                      &self->thermal_site_cfg,
                                      &self->thermal_baseline_cfg,
+                                     op_mode,
                                      s_ao_thermal_energy_stack,
                                      K_THREAD_STACK_SIZEOF(s_ao_thermal_energy_stack),
                                      AO_THERMAL_ENERGY_PRIORITY);
@@ -1647,6 +1650,12 @@ int composition_root_wire_thermal_energy(app_container_t *self)
     ao_thermal_energy_set_baseline_persist_cb(&self->thermal_energy.ao,
                                               on_thermal_baseline_persisted,
                                               self);
+
+    if (self->hvac.initialized)
+    {
+        ao_thermal_energy_set_hvac_mode(&self->thermal_energy.ao,
+                                        (hvac_operation_mode_t)self->hvac.config.operation_mode);
+    }
     return 0;
 }
 
@@ -2313,6 +2322,12 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
     if (self->alarm.initialized)
     {
         (void)adapter_alarm_detector_temp_apply_hvac_config(&self->alarm.det_temp, cfg);
+    }
+
+    if (self->thermal_energy.initialized)
+    {
+        ao_thermal_energy_set_hvac_mode(&self->thermal_energy.ao,
+                                        (hvac_operation_mode_t)cfg->operation_mode);
     }
 
     if (self->storage.initialized)

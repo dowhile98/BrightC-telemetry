@@ -92,6 +92,7 @@ static void ao_thermal_energy_thread_entry(void *p1, void *p2, void *p3)
 int ao_thermal_energy_init(ao_thermal_energy_t *self,
                            const config_thermal_site_t *site_cfg,
                            config_thermal_baseline_t *baseline_cfg,
+                           hvac_operation_mode_t mode,
                            k_thread_stack_t *stack,
                            size_t stack_size,
                            int priority)
@@ -104,6 +105,7 @@ int ao_thermal_energy_init(ao_thermal_energy_t *self,
 
     self->site_cfg = (site_cfg != NULL) ? site_cfg : app_defaults_get_thermal_site_cfg();
     self->baseline_cfg = baseline_cfg;
+    self->hvac_mode = mode;
     self->stack = stack;
     self->stack_size = stack_size;
     self->priority = priority;
@@ -232,6 +234,17 @@ i_thermal_energy_t ao_thermal_energy_get_port(ao_thermal_energy_t *self)
     return self->port;
 }
 
+void ao_thermal_energy_set_hvac_mode(ao_thermal_energy_t *self, hvac_operation_mode_t mode)
+{
+    if (self == NULL) {
+        return;
+    }
+
+    k_mutex_lock(&self->result_mutex, K_FOREVER);
+    self->hvac_mode = mode;
+    k_mutex_unlock(&self->result_mutex);
+}
+
 /* ========================================================================= */
 /* Port V-Table Interface Methods                                            */
 /* ========================================================================= */
@@ -316,6 +329,12 @@ static int ao_thermal_energy_api_trigger_recalibration(void *impl)
         self->baseline_cfg->training_hours_accumulated = 0U;
         self->baseline_cfg->is_valid = 0U;
     }
+    self->hourly_accum_t_ret = 0.0;
+    self->hourly_accum_t_ext = 0.0;
+    self->hourly_accum_f_carga = 0.0;
+    self->hourly_accum_q_total = 0.0;
+    self->hourly_accum_p_elec = 0.0;
+    self->hourly_samples_count = 0U;
     k_mutex_unlock(&self->result_mutex);
 
     return 0;
@@ -358,8 +377,10 @@ int ao_thermal_energy_feed_energy_reading(ao_thermal_energy_t *self,
         return -EINVAL;
     }
 
+    k_mutex_lock(&self->result_mutex, K_FOREVER);
     self->latest_elec_reading = *reading;
     self->has_elec_reading = true;
+    k_mutex_unlock(&self->result_mutex);
     return 0;
 }
 
@@ -389,8 +410,24 @@ void ao_thermal_energy_set_baseline_persist_cb(ao_thermal_energy_t *self,
 }
 
 /* ========================================================================= */
-/* Hourly History Compression                                                */
+/* Hourly History Compression & Filter Slope                                 */
 /* ========================================================================= */
+
+static float calc_filter_slope_c_per_day(const ao_thermal_energy_t *self, uint8_t k, float current_t_inj)
+{
+    if (self == NULL || k >= CONFIG_THERMAL_HOURLY_PAIRS_COUNT) {
+        return 0.0f;
+    }
+
+    if (self->history_count >= 24U) {
+        uint16_t idx = (uint16_t)((self->history_head + THERMAL_HOURLY_HISTORY_CAPACITY - 1U - 24U) % THERMAL_HOURLY_HISTORY_CAPACITY);
+        float t_inj_24h = ((float)self->history[idx].t_inj_x10[k]) / 10.0f;
+        float slope = (current_t_inj - t_inj_24h); /* [deg C / day] */
+        return slope;
+    }
+
+    return 0.0f;
+}
 
 int ao_thermal_energy_record_hour(ao_thermal_energy_t *self)
 {
@@ -424,7 +461,9 @@ int ao_thermal_energy_record_hour(ao_thermal_energy_t *self)
     }
 
     rec.humidity_return_x10 = (uint16_t)roundf(self->latest_capture.humidity_return_pct * 10.0f);
-    rec.active_power_kw = self->latest_result.active_electrical_power_kw;
+    rec.active_power_kw = (self->hourly_samples_count > 0U)
+                              ? (float)(self->hourly_accum_p_elec / self->hourly_samples_count)
+                              : self->latest_result.active_electrical_power_kw;
     rec.sensible_capacity_kw = self->latest_result.q_sensible_total;
     rec.latent_capacity_kw = self->latest_result.q_latente_total;
     rec.cop_real_x100 = (uint16_t)roundf(self->latest_result.cop_real * 100.0f);
@@ -472,12 +511,25 @@ int ao_thermal_energy_record_hour(ao_thermal_energy_t *self)
         }
     }
 
+    double avg_t_ret = (self->hourly_samples_count > 0U)
+                           ? (self->hourly_accum_t_ret / self->hourly_samples_count)
+                           : (double)self->latest_result.t_ret_mean;
+    double avg_t_ext = (self->hourly_samples_count > 0U)
+                           ? (self->hourly_accum_t_ext / self->hourly_samples_count)
+                           : (double)self->latest_result.t_outdoor_effective;
+    double avg_f_carga = (self->hourly_samples_count > 0U)
+                             ? (self->hourly_accum_f_carga / self->hourly_samples_count)
+                             : (double)f_carga;
+    double avg_q_total = (self->hourly_samples_count > 0U)
+                             ? (self->hourly_accum_q_total / self->hourly_samples_count)
+                             : (double)self->latest_result.q_total;
+
     if (steady_state && !self->ols_model.ols_trained) {
         ols_model_accumulate(&self->ols_model,
-                             self->latest_result.t_ret_mean,
-                             self->latest_result.t_outdoor_effective,
-                             (double)f_carga,
-                             (double)self->latest_result.q_total);
+                             avg_t_ret,
+                             avg_t_ext,
+                             avg_f_carga,
+                             avg_q_total);
         self->ols_model.training_hours++;
 
         if (self->ols_model.training_hours >= OLS_MIN_TRAINING_HOURS) {
@@ -500,6 +552,14 @@ int ao_thermal_energy_record_hour(ao_thermal_energy_t *self)
         }
     }
 
+    /* Reset running accumulators for the next hour */
+    self->hourly_accum_t_ret = 0.0;
+    self->hourly_accum_t_ext = 0.0;
+    self->hourly_accum_f_carga = 0.0;
+    self->hourly_accum_q_total = 0.0;
+    self->hourly_accum_p_elec = 0.0;
+    self->hourly_samples_count = 0U;
+
     return 0;
 }
 
@@ -514,6 +574,19 @@ int ao_thermal_energy_step(ao_thermal_energy_t *self)
     }
 
     uint64_t start_us = (uint64_t)k_ticks_to_us_near64(k_uptime_ticks());
+
+    /* Snapshot shared fields under mutex */
+    energy_reading_t local_elec_reading;
+    bool has_elec = false;
+    hvac_operation_mode_t current_mode;
+
+    k_mutex_lock(&self->result_mutex, K_FOREVER);
+    if (self->has_elec_reading) {
+        local_elec_reading = self->latest_elec_reading;
+        has_elec = true;
+    }
+    current_mode = self->hvac_mode;
+    k_mutex_unlock(&self->result_mutex);
 
     /* 1. Ingestion: build capture if not injected directly */
     if (!self->capture_injected) {
@@ -539,6 +612,7 @@ int ao_thermal_energy_step(ao_thermal_energy_t *self)
         src.generation_id = ++self->result_generation_id;
         src.timestamp_ms = (uint64_t)k_uptime_get();
         src.site_cfg = self->site_cfg;
+        src.hvac_mode = current_mode;
 
         if (self->has_sensor_snapshot) {
             src.flat_temps = self->last_sensor_snapshot.temperatures;
@@ -550,8 +624,8 @@ int ao_thermal_energy_step(ao_thermal_energy_t *self)
             src.di_snapshot = &self->last_di_snapshot;
         }
 
-        if (self->has_elec_reading) {
-            src.elec_reading = &self->latest_elec_reading;
+        if (has_elec) {
+            src.elec_reading = &local_elec_reading;
         }
 
         (void)sensor_matrix_mapper_build_capture(&src, &self->latest_capture);
@@ -701,7 +775,8 @@ int ao_thermal_energy_step(ao_thermal_energy_t *self)
                                  : 10.0f;
 
         res.pct_filter_restriction[k] = predictive_calc_filter_restriction(t_inj_base, self->latest_capture.t_inj[k], delta_t_base, th_out.delta_t[k]);
-        res.filter_days_remaining[k] = predictive_calc_filter_days_remaining(self->ols_model.training_hours, res.pct_filter_restriction[k], self->latest_capture.t_inj[k], 0.0f);
+        float filter_slope = calc_filter_slope_c_per_day(self, k, self->latest_capture.t_inj[k]);
+        res.filter_days_remaining[k] = predictive_calc_filter_days_remaining(self->ols_model.training_hours, res.pct_filter_restriction[k], self->latest_capture.t_inj[k], filter_slope);
         res.pct_refrigerant_leak[k] = predictive_calc_refrigerant_leak(delta_t_base, th_out.delta_t[k], f_carga, th_out.eta_ii_pct, eta_ii_base, res.pct_filter_restriction[k]);
     }
 
@@ -781,6 +856,26 @@ int ao_thermal_energy_step(ao_thermal_energy_t *self)
     /* Quality statuses */
     res.cop_quality = th_out.cop_quality;
     res.thermal_quality = (valid_p_cnt > 0U) ? QUALITY_VALID : QUALITY_FAILED;
+
+    /* Stale telemetry detection */
+    uint64_t now_ms = (uint64_t)k_uptime_get();
+    if (self->has_sensor_snapshot) {
+        uint64_t temp_age_ms = (now_ms >= self->last_sensor_snapshot.timestamp_ms)
+                                   ? (now_ms - self->last_sensor_snapshot.timestamp_ms)
+                                   : 0ULL;
+        if (temp_age_ms > 2000ULL) {
+            res.thermal_quality = QUALITY_SUSPECT;
+        }
+    }
+
+    if (has_elec) {
+        uint64_t elec_ms = local_elec_reading.timestamp_us / 1000ULL;
+        uint64_t elec_age_ms = (now_ms >= elec_ms) ? (now_ms - elec_ms) : 0ULL;
+        if (elec_age_ms > 3000ULL) {
+            res.cop_quality = QUALITY_SUSPECT;
+        }
+    }
+
     res.psychrometric_quality = self->latest_capture.humidity_quality;
     res.predictive_quality = self->ols_model.ols_trained ? QUALITY_VALID : QUALITY_SUSPECT;
     res.overall_quality = (res.thermal_quality == QUALITY_VALID && res.cop_quality == QUALITY_VALID)
@@ -802,6 +897,13 @@ int ao_thermal_energy_step(ao_thermal_energy_t *self)
     (void)zbus_chan_pub(&chan_thermal_energy_update, &evt, K_MSEC(50));
 
     /* 8. Periodic hourly accumulator */
+    self->hourly_accum_t_ret += (double)t_ret_mean;
+    self->hourly_accum_t_ext += (double)t_outdoor_eff;
+    self->hourly_accum_f_carga += (double)f_carga;
+    self->hourly_accum_q_total += (double)th_out.q_total;
+    self->hourly_accum_p_elec += (double)self->latest_capture.total_active_power_kw;
+    self->hourly_samples_count++;
+
     self->seconds_in_current_hour++;
     if (self->seconds_in_current_hour >= 3600U) {
         self->seconds_in_current_hour = 0U;

@@ -47,6 +47,14 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Remediated 5 Audit Findings in Thermal & Energy Subsystem (`doc/issues/2026-11-11-thermal-energy-system-audit-findings.md`):
+  - **THERMAL-ISSUE-001**: Passed and wired `hvac_operation_mode_t` in `ao_thermal_energy_init()`, added `ao_thermal_energy_set_hvac_mode()`, propagated operational mode into `sensor_matrix_mapper_build_capture`, and wired dynamic profile updates in `composition_root.c` (`app_container_set_hvac_config`).
+  - **THERMAL-ISSUE-002**: Wrapped `ao_thermal_energy_feed_energy_reading()` and snapshot retrieval in `ao_thermal_energy_step()` with `result_mutex` to eliminate torn reads between `ao_modbus` and `ao_thermal_energy`.
+  - **THERMAL-ISSUE-003**: Implemented `calc_filter_slope_c_per_day()` querying 24h history from 720h circular buffer in RAM, eliminating hardcoded `0.0f` filter slope in `ao_thermal_energy_step()`.
+  - **THERMAL-ISSUE-004**: Implemented stale telemetry freshness detection in `ao_thermal_energy_step()` (> 2000 ms temperature -> `thermal_quality = QUALITY_SUSPECT`; > 3000 ms electrical -> `cop_quality = QUALITY_SUSPECT`).
+  - **THERMAL-ISSUE-005**: Added running hourly accumulators (`hourly_accum_*`, `hourly_samples_count`) in `ao_thermal_energy_t` to integrate real averages over the hour for OLS regression matrix accumulation and record compression.
+  - Added 4 new unit test cases (`test_mode_switching_propagates_to_capture`, `test_filter_slope_from_24h_history`, `test_stale_telemetry_degradation`, `test_integrated_hourly_averages_in_ols`). All 57 unit tests in `tests/unit/thermal_energy/` pass 100% on `native_sim`.
+  - Verified target build on `brightc-controllerv3`: 0 errors, 0 warnings (Flash: 17.37%, RAM: 48.70%).
 - **2026-11-11**: Implemented Phase 5 (Active Object `ao_thermal_energy`, 720h RAM Circular Buffer, DI Integration, and Zbus Updates):
   - Created Zbus channels `app/src/application/zbus/thermal_channels.c/.h` exposing `chan_thermal_energy_update` broadcasting `thermal_energy_event_t` ({`generation_id`, `timestamp_ms`, `quality`}).
   - Created Active Object `app/src/application/active_objects/ao_thermal_energy.c/.h` implementing canonical 5-phase lifecycle (`init`, `start`, `stop`, `wait_stopped`, `deinit`), 1 Hz periodic execution loop, and `i_thermal_energy_api_t` port implementation.
