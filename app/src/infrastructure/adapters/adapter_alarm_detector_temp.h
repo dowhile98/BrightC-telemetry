@@ -48,13 +48,16 @@ typedef struct {
     bool    enabled;  /**< true if group is active/configured */
 } adapter_temp_group_config_t;
 
+/** Maximum number of flat temperature sensors evaluated across groups (IDs 1..64) */
+#define ADAPTER_TEMP_MAX_SENSORS 64U
+
 typedef struct {
     ao_alarm_manager_t          *manager;
     adapter_temp_group_config_t  groups[HVAC_MAX_GROUPS];
-    alarm_eval_temp_low_t        eval_low[HVAC_MAX_GROUPS][16];
-    alarm_eval_temp_high_t       eval_high[HVAC_MAX_GROUPS][16];
-    bool                         last_is_low[HVAC_MAX_GROUPS][16];
-    bool                         last_is_high[HVAC_MAX_GROUPS][16];
+    alarm_eval_temp_low_t        eval_low[HVAC_MAX_GROUPS][ADAPTER_TEMP_MAX_SENSORS];
+    alarm_eval_temp_high_t       eval_high[HVAC_MAX_GROUPS][ADAPTER_TEMP_MAX_SENSORS];
+    bool                         last_is_low[HVAC_MAX_GROUPS][ADAPTER_TEMP_MAX_SENSORS];
+    bool                         last_is_high[HVAC_MAX_GROUPS][ADAPTER_TEMP_MAX_SENSORS];
     bool                         group_fault_active[HVAC_MAX_GROUPS];
 } adapter_alarm_detector_temp_t;
 

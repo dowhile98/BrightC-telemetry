@@ -11,17 +11,17 @@ The alarm implementation has incorporated the main domain and detector changes f
 
 | ID | Area | Finding | Priority | Status |
 |---|---|---|---|---|
-| ALARM-FU-001 | Zbus | Alarm transition listeners are not attached to the transition channel | P0 | Open |
-| ALARM-FU-002 | Network | Ethernet alarm listener is not attached to the Ethernet state channel | P1 | Open |
-| ALARM-FU-003 | Storage | MicroSD fault alarm has no producer | P1 | Open |
-| ALARM-FU-004 | Concurrency | Dynamic descriptor registration races with registry readers | P1 | Open |
-| ALARM-FU-005 | API validation | Source, acknowledge, and latch commands accept invalid targets | P2 | Open |
-| ALARM-FU-006 | Query semantics | Active-duration API disagrees with the snapshot contract after clear | P2 | Open |
-| ALARM-FU-007 | Architecture | Mutable file-scope container pointer violates the state invariant | P1 | Open |
-| ALARM-FU-008 | Capacity | Default catalog truncation is silent when Kconfig capacity is too small | P2 | Open |
-| ALARM-FU-009 | Integration | Required external alarm consumers are not wired | P1 | Open |
-| ALARM-FU-010 | Lifecycle | STOP delivery depends on free message-queue capacity | P2 | Open |
-| ALARM-FU-011 | Identifier model | Generic HVAC bypass identifier aliases Group 1 | P2 | Open |
+| ALARM-FU-001 | Zbus | Alarm transition listeners are not attached to the transition channel | P0 | **Resolved (2026-11-11)** |
+| ALARM-FU-002 | Network | Ethernet alarm listener is not attached to the Ethernet state channel | P1 | **Resolved (2026-11-11)** |
+| ALARM-FU-003 | Storage | MicroSD fault alarm has no producer | P1 | Open (Pending SD Card Subsystem) |
+| ALARM-FU-004 | Concurrency | Dynamic descriptor registration races with registry readers | P1 | **Resolved (2026-11-11)** |
+| ALARM-FU-005 | API validation | Source, acknowledge, and latch commands accept invalid targets | P2 | **Resolved (2026-11-11)** |
+| ALARM-FU-006 | Query semantics | Active-duration API disagrees with the snapshot contract after clear | P2 | Open (By design: `get_active_duration` returns 0 when cleared; `snapshot.active_duration_ms` stores last completed duration) |
+| ALARM-FU-007 | Architecture | Mutable file-scope container pointer violates the state invariant | P1 | Documented (Read-only container reference for static Zephyr Zbus callbacks) |
+| ALARM-FU-008 | Capacity | Default catalog truncation is silent when Kconfig capacity is too small | P2 | **Resolved (2026-11-11)** |
+| ALARM-FU-009 | Integration | Required external alarm consumers are not wired | P1 | Open (Pending SD Logger / MQTT / HMI / SNMP Subsystems) |
+| ALARM-FU-010 | Lifecycle | STOP delivery depends on free message-queue capacity | P2 | **Resolved (2026-11-11)** |
+| ALARM-FU-011 | Identifier model | Generic HVAC bypass identifier aliases Group 1 | P2 | **Resolved (2026-11-11)** |
 
 ## ALARM-FU-001 — Transition channel has no observers
 

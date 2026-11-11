@@ -478,3 +478,49 @@ ZTEST(alarm_detectors_suite, test_detector_temp_eeprom_hvac_config_integration)
     zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP1_TEMP_HIGH),
                   "Group 1 High Temp must clear after temp_alarm raised to 30.0C");
 }
+
+ZTEST(alarm_detectors_suite, test_detector_temp_partial_probes_and_cwt_range)
+{
+    adapter_alarm_detector_temp_t det_temp;
+    adapter_alarm_detector_temp_init(&det_temp, &s_mgr);
+
+    /* Configure Group 1 with default range 1..5 (5 internal RTD slots) and
+     * Group 2 with CWT1 range 10..25 (beyond 16-sensor limit). */
+    int ret = adapter_alarm_detector_temp_set_group_config(&det_temp, 0U, 1U, 5U, 12.0f, 28.0f, 1.0f);
+    zassert_equal(ret, 0, "Group 1 config 1..5");
+    ret = adapter_alarm_detector_temp_set_group_config(&det_temp, 1U, 10U, 25U, 12.0f, 28.0f, 1.0f);
+    zassert_equal(ret, 0, "Group 2 config 10..25");
+
+    /* Only 1 probe connected in Group 1 (ID 1 -> bit 0) at 25.2C,
+     * and 1 probe connected in Group 2 (ID 20 -> bit 19) at 24.0C. */
+    sensor_snapshot_msg_t snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.valid_mask = (1ULL << 0) | (1ULL << 19);
+    snap.temperatures[0] = 25.2f;
+    snap.temperatures[19] = 24.0f;
+
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+
+    /* SENS_G1 and SENS_G2 must NOT trigger when at least 1 probe in the group is valid */
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_SENSOR_GROUP1_FAULT),
+                  "SENS_G1 must NOT trigger when 1 of 5 probes is valid");
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_SENSOR_GROUP2_FAULT),
+                  "SENS_G2 must NOT trigger when 1 of 16 CWT probes is valid");
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP1_TEMP_LOW),
+                  "G1_T_LOW must be inactive");
+
+    /* CWT probe ID 20 (index 19 >= 16) exceeds 28.0C -> G2_T_HIGH trips! */
+    snap.temperatures[19] = 29.5f;
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_true(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP2_TEMP_HIGH),
+                 "G2_T_HIGH must trip for sensor ID 20 (> 16)");
+
+    /* Recover CWT probe ID 20 to 24.0C */
+    snap.temperatures[19] = 24.0f;
+    adapter_alarm_detector_temp_process_snapshot(&det_temp, &snap);
+    k_sleep(K_MSEC(50));
+    zassert_false(i_alarm_query_is_active(&s_query, ALARM_ID_GROUP2_TEMP_HIGH),
+                  "G2_T_HIGH must clear");
+}

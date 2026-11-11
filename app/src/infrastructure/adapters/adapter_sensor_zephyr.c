@@ -158,8 +158,18 @@ static int acquire_adc_samples(adapter_sensor_zephyr_t *self, raw_sensor_reading
 
         if (phys_ch >= PHYS_CH_INTERNAL_RTD_1 && phys_ch <= PHYS_CH_INTERNAL_RTD_5) {
             const size_t rtd_idx = (size_t)(phys_ch - PHYS_CH_INTERNAL_RTD_1);
-            float filtered_counts = adapter_rc_filter_apply(&self->rtd_filter[rtd_idx], (float)counts);
-            raw->internal_rtd_raw_adc[rtd_idx] = filtered_counts;
+            float inst_temp_c = 0.0f;
+            int cvd_err = transducer_rtd_adc_to_celsius(NULL, (float)counts, &inst_temp_c);
+            if (cvd_err != 0 || inst_temp_c < SENSOR_TEMP_MIN_VALID_C ||
+                inst_temp_c > SENSOR_TEMP_MAX_VALID_C) {
+                /* Disconnected / out-of-range RTD probe: bypass and reset IIR filter
+                 * so connection/disconnection does not ramp through false low temperatures. */
+                self->rtd_filter[rtd_idx].initialized = false;
+                raw->internal_rtd_raw_adc[rtd_idx] = (float)counts;
+            } else {
+                float filtered_counts = adapter_rc_filter_apply(&self->rtd_filter[rtd_idx], (float)counts);
+                raw->internal_rtd_raw_adc[rtd_idx] = filtered_counts;
+            }
             raw->internal_rtd_valid_mask |= (uint8_t)(1U << rtd_idx);
         } else {
             const size_t j9_idx = (size_t)(phys_ch - PHYS_CH_ANALOG_J9_CH1);

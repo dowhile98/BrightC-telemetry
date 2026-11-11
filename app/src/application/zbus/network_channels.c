@@ -12,7 +12,7 @@ ZBUS_CHAN_DEFINE(
     net_state_msg_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_OBSERVERS(lis_alarm_net_eth_feed),
     ZBUS_MSG_INIT(
         .interface = NETWORK_INTERFACE_ETHERNET,
         .status = {

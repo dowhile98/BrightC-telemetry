@@ -13,7 +13,7 @@ ZBUS_CHAN_DEFINE(
     alarm_transition_event_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_OBSERVERS(lis_alarm_logger),
     ZBUS_MSG_INIT(
         .alarm_id = 0,
         .event_type = ALARM_EVENT_NONE,

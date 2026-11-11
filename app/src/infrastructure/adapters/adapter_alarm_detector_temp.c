@@ -30,6 +30,15 @@ static const uint16_t s_sensor_fault_ids[HVAC_MAX_GROUPS] = {
     ALARM_ID_SENSOR_GROUP4_FAULT
 };
 
+static inline uint8_t sensor_to_source_idx(const adapter_temp_group_config_t *grp, uint8_t flat_idx)
+{
+    uint8_t sensor_id = (uint8_t)(flat_idx + 1U);
+    if (grp != NULL && grp->min_id > 0U && sensor_id >= grp->min_id) {
+        return (uint8_t)((sensor_id - grp->min_id) & 0x1FU);
+    }
+    return (uint8_t)(flat_idx & 0x1FU);
+}
+
 int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *self,
                                                  uint8_t group_idx,
                                                  uint8_t min_id,
@@ -41,7 +50,7 @@ int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *
     if (self == NULL || group_idx >= HVAC_MAX_GROUPS) {
         return -EINVAL;
     }
-    if (min_id > 0U && max_id < min_id) {
+    if (min_id > 0U && (max_id < min_id || max_id > ADAPTER_TEMP_MAX_SENSORS)) {
         return -EINVAL;
     }
 
@@ -55,7 +64,8 @@ int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *
     self->groups[group_idx].hyst_c = (hyst_c > 0.0f) ? hyst_c : 1.0f;
     self->groups[group_idx].enabled = now_enabled;
 
-    for (uint8_t i = 0; i < 16; i++) {
+    for (uint8_t i = 0; i < ADAPTER_TEMP_MAX_SENSORS; i++) {
+        uint8_t src_idx = sensor_to_source_idx(&self->groups[group_idx], i);
         alarm_eval_temp_low_init(&self->eval_low[group_idx][i], t_low_c, self->groups[group_idx].hyst_c);
         alarm_eval_temp_high_init(&self->eval_high[group_idx][i], t_high_c, self->groups[group_idx].hyst_c);
 
@@ -65,7 +75,7 @@ int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *
                 if (self->manager != NULL) {
                     (void)ao_alarm_manager_post_source_condition(self->manager,
                                                                  s_temp_low_ids[group_idx],
-                                                                 i, false, 0.0f);
+                                                                 src_idx, false, 0.0f);
                 }
             }
             if (self->last_is_high[group_idx][i]) {
@@ -73,7 +83,7 @@ int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *
                 if (self->manager != NULL) {
                     (void)ao_alarm_manager_post_source_condition(self->manager,
                                                                  s_temp_high_ids[group_idx],
-                                                                 i, false, 0.0f);
+                                                                 src_idx, false, 0.0f);
                 }
             }
         }
@@ -167,20 +177,54 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
             continue;
         }
 
-        bool group_has_fault = false;
+        uint8_t assigned_sensors = 0U;
+        uint8_t valid_sensors = 0U;
 
-        for (uint8_t i = 0; i < 16; i++) {
+        for (uint8_t i = 0; i < ADAPTER_TEMP_MAX_SENSORS; i++) {
+            uint8_t sensor_id = (uint8_t)(i + 1U); /* 1-based */
+            if (sensor_id < grp->min_id || sensor_id > grp->max_id) {
+                continue;
+            }
+            assigned_sensors++;
+            if ((snapshot->valid_mask & (1ULL << i)) != 0ULL) {
+                valid_sensors++;
+            }
+        }
+
+        /* Group sensor fault is asserted only when ALL assigned sensors in the group are invalid
+         * (consistent with HVAC control BYPASS_CAUSE_SENSOR_FAULT and BrightC-V3). */
+        bool group_has_fault = (assigned_sensors > 0U && valid_sensors == 0U);
+
+        for (uint8_t i = 0; i < ADAPTER_TEMP_MAX_SENSORS; i++) {
             uint8_t sensor_id = (uint8_t)(i + 1U); /* 1-based */
             if (sensor_id < grp->min_id || sensor_id > grp->max_id) {
                 continue; /* Probe not assigned to this group */
             }
 
+            uint8_t src_idx = sensor_to_source_idx(grp, i);
             bool is_valid = ((snapshot->valid_mask & (1ULL << i)) != 0ULL);
 
             if (!is_valid) {
-                /* Disconnected sensor: do NOT clear low/high condition to avoid false recovery.
-                 * Assert fault on this group. */
-                group_has_fault = true;
+                if (valid_sensors > 0U) {
+                    /* Other probes in the group are healthy: clear any stale thermal alarm
+                     * from this disconnected/unpopulated channel and reset its evaluator. */
+                    alarm_eval_temp_low_init(&self->eval_low[g][i], grp->t_low_c, grp->hyst_c);
+                    alarm_eval_temp_high_init(&self->eval_high[g][i], grp->t_high_c, grp->hyst_c);
+                    if (self->last_is_low[g][i]) {
+                        self->last_is_low[g][i] = false;
+                        (void)ao_alarm_manager_post_source_condition(self->manager,
+                                                                     s_temp_low_ids[g],
+                                                                     src_idx, false, 0.0f);
+                    }
+                    if (self->last_is_high[g][i]) {
+                        self->last_is_high[g][i] = false;
+                        (void)ao_alarm_manager_post_source_condition(self->manager,
+                                                                     s_temp_high_ids[g],
+                                                                     src_idx, false, 0.0f);
+                    }
+                }
+                /* If valid_sensors == 0 (total sensor loss for the group), retain existing
+                 * thermal alarm state so sensor loss cannot mask an active thermal alarm. */
                 continue;
             }
 
@@ -192,7 +236,7 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
                 self->last_is_low[g][i] = is_low;
                 (void)ao_alarm_manager_post_source_condition(self->manager,
                                                              s_temp_low_ids[g],
-                                                             i, is_low, temp);
+                                                             src_idx, is_low, temp);
             }
 
             /* Evaluate High Temperature */
@@ -201,7 +245,7 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
                 self->last_is_high[g][i] = is_high;
                 (void)ao_alarm_manager_post_source_condition(self->manager,
                                                              s_temp_high_ids[g],
-                                                             i, is_high, temp);
+                                                             src_idx, is_high, temp);
             }
         }
 

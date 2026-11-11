@@ -56,8 +56,8 @@ int ao_alarm_manager_init(ao_alarm_manager_t *self,
     for (size_t i = 0; i < self->registry.count; i++) {
         const alarm_descriptor_t *d = &self->registry.descriptors[i];
         if (d->is_aggregated) {
-            /* Default aggregate mask covering assigned sources (e.g. 0x0F for 4 sensors) */
-            uint32_t mask = 0x0000FFFFU;
+            /* Default aggregate mask covering all 32 possible sources */
+            uint32_t mask = 0xFFFFFFFFU;
             alarm_aggregate_init(&self->aggregates[i], d->alarm_id, d->source_category,
                                  d->default_severity, d->default_priority, mask, d->is_latch_supported);
         } else {
@@ -132,7 +132,14 @@ int ao_alarm_manager_stop(ao_alarm_manager_t *self)
     ao_alarm_msg_t msg = {
         .cmd = AO_ALARM_CMD_STOP
     };
-    return k_msgq_put(&self->msgq, &msg, K_NO_WAIT);
+    int err = k_msgq_put(&self->msgq, &msg, K_NO_WAIT);
+    if (err == -ENOMSG) {
+        /* Guarantee STOP delivery under queue saturation (ALARM-FU-010) */
+        ao_alarm_msg_t dropped;
+        (void)k_msgq_get(&self->msgq, &dropped, K_NO_WAIT);
+        err = k_msgq_put(&self->msgq, &msg, K_NO_WAIT);
+    }
+    return err;
 }
 
 int ao_alarm_manager_wait_stopped(ao_alarm_manager_t *self, k_timeout_t timeout)
@@ -186,7 +193,10 @@ int ao_alarm_manager_post_condition(ao_alarm_manager_t *self,
     if (self == NULL || !self->is_running || alarm_id == ALARM_ID_NONE) {
         return -EINVAL;
     }
-    if (alarm_registry_find_index(&self->registry, alarm_id) < 0) {
+    k_mutex_lock(&self->lock, K_FOREVER);
+    int idx = alarm_registry_find_index(&self->registry, alarm_id);
+    k_mutex_unlock(&self->lock);
+    if (idx < 0) {
         return -ENOENT;
     }
 
@@ -215,8 +225,15 @@ int ao_alarm_manager_post_source_condition(ao_alarm_manager_t *self,
     if (self == NULL || !self->is_running || agg_alarm_id == ALARM_ID_NONE || source_idx >= 32) {
         return -EINVAL;
     }
-    if (alarm_registry_find_index(&self->registry, agg_alarm_id) < 0) {
+    k_mutex_lock(&self->lock, K_FOREVER);
+    int idx = alarm_registry_find_index(&self->registry, agg_alarm_id);
+    bool is_agg = (idx >= 0) ? self->registry.descriptors[idx].is_aggregated : false;
+    k_mutex_unlock(&self->lock);
+    if (idx < 0) {
         return -ENOENT;
+    }
+    if (!is_agg) {
+        return -ENOTSUP;
     }
 
     ao_alarm_msg_t msg = {
@@ -237,8 +254,19 @@ int ao_alarm_manager_post_source_condition(ao_alarm_manager_t *self,
 
 int ao_alarm_manager_post_ack(ao_alarm_manager_t *self, uint16_t alarm_id)
 {
-    if (self == NULL || !self->is_running) {
+    if (self == NULL || !self->is_running || alarm_id == ALARM_ID_NONE) {
         return -EINVAL;
+    }
+    k_mutex_lock(&self->lock, K_FOREVER);
+    int idx = alarm_registry_find_index(&self->registry, alarm_id);
+    bool ack_sup = (idx >= 0) ? (self->registry.descriptors[idx].is_ack_supported &&
+                                 !self->registry.descriptors[idx].is_aggregated) : false;
+    k_mutex_unlock(&self->lock);
+    if (idx < 0) {
+        return -ENOENT;
+    }
+    if (!ack_sup) {
+        return -ENOTSUP;
     }
 
     ao_alarm_msg_t msg = {
@@ -252,8 +280,18 @@ int ao_alarm_manager_post_ack(ao_alarm_manager_t *self, uint16_t alarm_id)
 
 int ao_alarm_manager_post_reset_latch(ao_alarm_manager_t *self, uint16_t alarm_id)
 {
-    if (self == NULL || !self->is_running) {
+    if (self == NULL || !self->is_running || alarm_id == ALARM_ID_NONE) {
         return -EINVAL;
+    }
+    k_mutex_lock(&self->lock, K_FOREVER);
+    int idx = alarm_registry_find_index(&self->registry, alarm_id);
+    bool latch_sup = (idx >= 0) ? self->registry.descriptors[idx].is_latch_supported : false;
+    k_mutex_unlock(&self->lock);
+    if (idx < 0) {
+        return -ENOENT;
+    }
+    if (!latch_sup) {
+        return -ENOTSUP;
     }
 
     ao_alarm_msg_t msg = {
@@ -292,7 +330,7 @@ int ao_alarm_manager_register_descriptor(ao_alarm_manager_t *self,
     if (idx >= 0) {
         if (desc->is_aggregated) {
             alarm_aggregate_init(&self->aggregates[idx], desc->alarm_id, desc->source_category,
-                                 desc->default_severity, desc->default_priority, 0x0000FFFFU,
+                                 desc->default_severity, desc->default_priority, 0xFFFFFFFFU,
                                  desc->is_latch_supported);
         } else {
             alarm_entity_init(&self->entities[idx], desc->alarm_id, desc->source_category,
@@ -320,21 +358,19 @@ uint32_t ao_alarm_manager_get_active_duration(ao_alarm_manager_t *self, uint16_t
         return 0;
     }
 
-    int idx = alarm_registry_find_index(&self->registry, alarm_id);
-    if (idx < 0) {
-        return 0;
-    }
-
     uint32_t duration = 0;
     k_mutex_lock(&self->lock, K_FOREVER);
-    alarm_state_t st = self->snapshot[idx].state;
-    if (st == ALARM_STATE_ACTIVE || st == ALARM_STATE_ACKNOWLEDGED || st == ALARM_STATE_LATCHED) {
-        uint64_t now_ms = (uint64_t)k_uptime_get();
-        if (now_ms >= self->snapshot[idx].triggered_timestamp_ms) {
-            duration = (uint32_t)(now_ms - self->snapshot[idx].triggered_timestamp_ms);
+    int idx = alarm_registry_find_index(&self->registry, alarm_id);
+    if (idx >= 0) {
+        alarm_state_t st = self->snapshot[idx].state;
+        if (st == ALARM_STATE_ACTIVE || st == ALARM_STATE_ACKNOWLEDGED || st == ALARM_STATE_LATCHED) {
+            uint64_t now_ms = (uint64_t)k_uptime_get();
+            if (now_ms >= self->snapshot[idx].triggered_timestamp_ms) {
+                duration = (uint32_t)(now_ms - self->snapshot[idx].triggered_timestamp_ms);
+            }
+        } else {
+            duration = 0;
         }
-    } else {
-        duration = 0;
     }
     k_mutex_unlock(&self->lock);
     return duration;
@@ -417,14 +453,18 @@ static void ao_alarm_manager_thread_entry(void *p1, void *p2, void *p3)
             break;
         }
 
+        k_mutex_lock(&self->lock, K_FOREVER);
         int idx = alarm_registry_find_index(&self->registry, msg.alarm_id);
         if (idx < 0) {
+            k_mutex_unlock(&self->lock);
             LOG_WRN("Unknown alarm ID 0x%04x received", msg.alarm_id);
             continue;
         }
 
         bool changed = false;
-        const alarm_descriptor_t *desc = &self->registry.descriptors[idx];
+        alarm_descriptor_t desc_copy = self->registry.descriptors[idx];
+        k_mutex_unlock(&self->lock);
+        const alarm_descriptor_t *desc = &desc_copy;
 
         if (msg.cmd == AO_ALARM_CMD_UPDATE_DISCRETE) {
             if (!desc->is_aggregated) {
@@ -524,12 +564,13 @@ static alarm_severity_t query_get_highest_active_severity(void *impl)
 static bool query_is_active(void *impl, uint16_t alarm_id)
 {
     ao_alarm_manager_t *self = (ao_alarm_manager_t *)impl;
+    k_mutex_lock(&self->lock, K_FOREVER);
     int idx = alarm_registry_find_index(&self->registry, alarm_id);
     if (idx < 0) {
+        k_mutex_unlock(&self->lock);
         return false;
     }
 
-    k_mutex_lock(&self->lock, K_FOREVER);
     alarm_state_t st = self->snapshot[idx].state;
     bool active = (st == ALARM_STATE_ACTIVE || st == ALARM_STATE_ACKNOWLEDGED || st == ALARM_STATE_LATCHED);
     k_mutex_unlock(&self->lock);
@@ -542,12 +583,13 @@ static int query_get_alarm_state(void *impl, uint16_t alarm_id, alarm_state_t *o
         return -EINVAL;
     }
     ao_alarm_manager_t *self = (ao_alarm_manager_t *)impl;
+    k_mutex_lock(&self->lock, K_FOREVER);
     int idx = alarm_registry_find_index(&self->registry, alarm_id);
     if (idx < 0) {
+        k_mutex_unlock(&self->lock);
         return -ENOENT;
     }
 
-    k_mutex_lock(&self->lock, K_FOREVER);
     *out_state = self->snapshot[idx].state;
     k_mutex_unlock(&self->lock);
     return 0;
@@ -559,12 +601,13 @@ static int query_get_alarm_snapshot(void *impl, uint16_t alarm_id, alarm_snapsho
         return -EINVAL;
     }
     ao_alarm_manager_t *self = (ao_alarm_manager_t *)impl;
+    k_mutex_lock(&self->lock, K_FOREVER);
     int idx = alarm_registry_find_index(&self->registry, alarm_id);
     if (idx < 0) {
+        k_mutex_unlock(&self->lock);
         return -ENOENT;
     }
 
-    k_mutex_lock(&self->lock, K_FOREVER);
     *out_snapshot = self->snapshot[idx];
     alarm_state_t st = self->snapshot[idx].state;
     if (st == ALARM_STATE_ACTIVE || st == ALARM_STATE_ACKNOWLEDGED || st == ALARM_STATE_LATCHED) {
@@ -600,7 +643,10 @@ static size_t query_get_active_alarm_ids(void *impl, uint16_t *out_ids, size_t m
 static int query_get_descriptor(void *impl, uint16_t alarm_id, alarm_descriptor_t *out_desc)
 {
     ao_alarm_manager_t *self = (ao_alarm_manager_t *)impl;
-    return alarm_registry_get(&self->registry, alarm_id, out_desc);
+    k_mutex_lock(&self->lock, K_FOREVER);
+    int rc = alarm_registry_get(&self->registry, alarm_id, out_desc);
+    k_mutex_unlock(&self->lock);
+    return rc;
 }
 
 static uint32_t query_get_active_duration(void *impl, uint16_t alarm_id)

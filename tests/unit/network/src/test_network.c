@@ -17,6 +17,14 @@
 #include "application/zbus/network_channels.h"
 #include "application/active_objects/ao_network.h"
 
+static uint32_t s_eth_alarm_feed_count = 0;
+static void test_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
+{
+    ARG_UNUSED(chan);
+    s_eth_alarm_feed_count++;
+}
+ZBUS_LISTENER_DEFINE(lis_alarm_net_eth_feed, test_alarm_net_eth_feed_cb);
+
 ZTEST_SUITE(network_suite, NULL, NULL, NULL, NULL, NULL);
 
 
@@ -529,6 +537,7 @@ ZTEST(network_suite, test_ao_network_lifecycle_and_zbus_publication)
     zassert_ok(zbus_chan_read(&chan_network_eth_state, &eth_msg, K_MSEC(100)), "Read updated chan_network_eth_state");
     zassert_equal(eth_msg.status.state, NET_IF_STATE_CONNECTED, "ETH connected");
     zassert_equal(eth_msg.status.ip_addr, 0xC0A8017B, "ETH IP updated in Zbus");
+    zassert_true(s_eth_alarm_feed_count > 0U, "lis_alarm_net_eth_feed listener must be notified");
 
     /* Post hot reconfiguration for WiFi to STA */
     ao_network_event_t evt;

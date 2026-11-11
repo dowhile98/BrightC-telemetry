@@ -28,6 +28,14 @@ static void test_indicator_alarm_feed_cb(const struct zbus_channel *chan)
 }
 ZBUS_LISTENER_DEFINE(lis_indicator_alarm_feed, test_indicator_alarm_feed_cb);
 
+static uint32_t s_alarm_logger_count = 0;
+static void test_alarm_logger_cb(const struct zbus_channel *chan)
+{
+    ARG_UNUSED(chan);
+    s_alarm_logger_count++;
+}
+ZBUS_LISTENER_DEFINE(lis_alarm_logger, test_alarm_logger_cb);
+
 
 ZTEST(alarm_ao_suite, test_ao_alarm_manager_lifecycle)
 {
@@ -79,7 +87,8 @@ ZTEST(alarm_ao_suite, test_ao_alarm_manager_dispatch_and_query)
     zassert_true(i_alarm_query_is_active(&query, ALARM_ID_AC1_HIGH_PRESSURE), "AC1 HP is active");
     zassert_equal(i_alarm_query_get_highest_active_severity(&query), ALARM_SEVERITY_CRITICAL, "Highest severity CRITICAL");
 
-    /* Verify Zbus notification via zbus_chan_read */
+    /* Verify Zbus notification via zbus_chan_read and listener delivery */
+    zassert_true(s_alarm_logger_count > 0U, "lis_alarm_logger must be notified on transition");
     alarm_transition_event_t trans_evt;
     ret = zbus_chan_read(&chan_alarm_transition, &trans_evt, K_NO_WAIT);
     zassert_equal(ret, 0, "Read chan_alarm_transition succeeded");

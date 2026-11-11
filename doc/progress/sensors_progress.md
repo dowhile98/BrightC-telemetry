@@ -48,6 +48,8 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Eliminated RTD Disconnection/Connection Filter Transient in `adapter_sensor_zephyr.c`:
+  - Bypassed and reset (`initialized = false`) the 1st-order IIR low-pass filter on internal RTD channels whenever an instantaneous sample falls outside `[-20.0 °C, 150.0 °C]` (e.g. open/unplugged probe at `-22.7 °C`), preventing the filter from ramping across false low temperatures (such as `+2.78 °C`) and triggering spurious `G1_T_LOW` alarms during probe connection or disconnection.
 - **2026-11-11**: Implemented Zephyr Shell Presentation Interface for Thermal & Energy Subsystem:
   - Added Thermal Energy APIs to `app_facade.h` and `app_facade.c`: `app_facade_thermal_get_result()`, `app_facade_thermal_get_capture()`, `app_facade_thermal_get_hourly_history()`, `app_facade_thermal_get_baseline()`, `app_facade_thermal_get_site_config()`, and `app_facade_thermal_trigger_recalibration()`. Delegated strictly via safe defensive wrappers over `i_thermal_energy_t` port handle (Invariant 1: 0 `api->` dereferences).
   - Implemented `thermal` shell command in `app/src/presentation/shell/shell_brightc.c` with 8 rich subcommands (`status`, `pairs`, `compressors`, `diagnostics`, `baseline`, `site`, `history`, `recalibrate`). Presentation layer interacts exclusively with `app_facade.h` (0 references to container or Active Objects).

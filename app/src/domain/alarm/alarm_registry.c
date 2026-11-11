@@ -125,6 +125,11 @@ void alarm_registry_init(alarm_registry_t *self)
         return;
     }
 
+    /* Compile-time guard against silent catalog truncation (ALARM-FU-008) */
+    _Static_assert((sizeof(g_default_catalog) / sizeof(g_default_catalog[0])) <=
+                       CONFIG_ALARM_MANAGER_MAX_ALARMS,
+                   "CONFIG_ALARM_MANAGER_MAX_ALARMS is smaller than g_default_catalog");
+
     self->count = 0;
     size_t default_count = sizeof(g_default_catalog) / sizeof(g_default_catalog[0]);
     if (default_count > CONFIG_ALARM_MANAGER_MAX_ALARMS) {

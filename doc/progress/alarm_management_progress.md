@@ -124,3 +124,15 @@
   6. *Target Compilation & Verification*:
      - Target STM32H743 builds cleanly: Flash 347,584 B (16.57%), RAM 196,892 B (37.55%).
      - All unit tests pass: `test-alarm` (17/17), `test-ind` (9/9), `test-hvac` (59/59). All architectural invariants (1, 2, 3, 5, 6) verified with 0 violations.
+
+- **2026-11-11 (Zbus Observer Wiring, 64-Sensor Group Range, & Follow-up Fixes)**:
+  1. *Zbus Observers Wired (`ALARM-FU-001` & `ALARM-FU-002`)*: Subscribed `lis_alarm_logger` to `chan_alarm_transition` in `alarm_channels.c` and `lis_alarm_net_eth_feed` to `chan_network_eth_state` in `network_channels.c`.
+  2. *Group Sensor Fault Semantics & 64-Channel CWT Support*:
+     - Updated `adapter_alarm_detector_temp.h/.c` to evaluate all 64 flat sensors (`ADAPTER_TEMP_MAX_SENSORS = 64U`) and assert `SENS_G1..G4` only when all assigned probes in a group are invalid (`valid_sensors == 0`), matching `hvac_group_entity.c` and `BrightC-V3`.
+     - Cleared stale thermal alarm states on individual disconnected channels when other probes in the same group remain valid.
+     - Expanded default `alarm_aggregate_t` source bitmask in `ao_alarm_manager.c` to `0xFFFFFFFFU` (32 sources).
+  3. *Registry Concurrency & Command Validation (`ALARM-FU-004`, `005`, `008`, `010`, `011`)*:
+     - Synchronized all `alarm_registry` queries under `self->lock` in `ao_alarm_manager.c`.
+     - Validated descriptor capabilities (`is_aggregated`, `is_ack_supported`, `is_latch_supported`) in `ao_alarm_manager_post_*` APIs (`-ENOTSUP`).
+     - Added `_Static_assert` on `CONFIG_ALARM_MANAGER_MAX_ALARMS` in `alarm_registry.c`, guaranteed `AO_ALARM_CMD_STOP` delivery on full queue, and removed duplicate `ALARM_ID_HVAC_BYPASS_ACTIVE` alias in `alarm_types.h`.
+  4. *Test Verification*: Added `test_detector_temp_partial_probes_and_cwt_range` (18/18 alarm tests PASS, 17/17 network tests PASS).
