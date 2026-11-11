@@ -126,6 +126,19 @@ int sensor_matrix_map_contacts(hvac_operation_mode_t mode,
 int sensor_matrix_map_capture(const thermal_capture_source_t *source,
                               thermal_energy_capture_t *out_capture);
 
+/**
+ * @brief Build a coherent multi-source capture snapshot from composite inputs.
+ *
+ * @param[in]  source      Complete source bundle containing temperatures, humidity, power, contacts.
+ * @param[out] out_capture Destination coherent snapshot.
+ * @return 0 on success, -EINVAL on NULL parameters.
+ */
+static inline int sensor_matrix_mapper_build_capture(const thermal_capture_source_t *source,
+                                                     thermal_energy_capture_t *out_capture)
+{
+    return sensor_matrix_map_capture(source, out_capture);
+}
+
 #ifdef __cplusplus
 }
 #endif

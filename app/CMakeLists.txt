@@ -59,6 +59,8 @@ target_sources(app PRIVATE
     src/domain/thermal_energy/compressor_fsm.c
     src/domain/thermal_energy/predictive_analytics.c
     src/infrastructure/adapters/sensor_matrix_mapper.c
+    src/application/zbus/thermal_channels.c
+    src/application/active_objects/ao_thermal_energy.c
 )
 
 if(CONFIG_SHELL)

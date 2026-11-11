@@ -75,6 +75,7 @@ static K_THREAD_STACK_DEFINE(s_ao_di_stack, AO_DIGITAL_INPUT_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_hvac_stack, AO_HVAC_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_sensor_stack, AO_SENSOR_MATRIX_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_alarm_stack, CONFIG_AO_ALARM_MANAGER_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_thermal_energy_stack, AO_THERMAL_ENERGY_STACK_SIZE);
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
@@ -1023,6 +1024,11 @@ static void on_modbus_jsy_mk339_reading(void *ctx, uint8_t device_id, const ener
     {
         adapter_alarm_detector_volt_process_reading(&self->alarm.det_volt, reading);
     }
+
+    if (self->thermal_energy.initialized)
+    {
+        (void)ao_thermal_energy_feed_energy_reading(&self->thermal_energy.ao, reading);
+    }
 }
 
 static void on_modbus_bus_fault(void *ctx, uint8_t bus_id, bool is_fault)
@@ -1124,6 +1130,15 @@ int composition_root_wire(app_container_t *self)
             ao_modbus_set_cwt_tm16pt_callback(&self->modbus.ao[bus], on_modbus_cwt_tm16pt_reading, self);
             ao_modbus_set_jsy_mk339_callback(&self->modbus.ao[bus], on_modbus_jsy_mk339_reading, self);
             ao_modbus_set_bus_fault_callback(&self->modbus.ao[bus], on_modbus_bus_fault, self);
+        }
+    }
+
+    if (self->thermal_energy.initialized)
+    {
+        int err = composition_root_wire_thermal_energy(self);
+        if (err != 0)
+        {
+            LOG_WRN("failed to wire thermal energy: %d", err);
         }
     }
 
@@ -1579,6 +1594,73 @@ static void on_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
 
 ZBUS_LISTENER_DEFINE(lis_alarm_net_eth_feed, on_alarm_net_eth_feed_cb);
 
+static void on_thermal_baseline_persisted(void *user_data, const config_thermal_baseline_t *baseline)
+{
+    app_container_t *app = (app_container_t *)user_data;
+    if (app == NULL || baseline == NULL)
+    {
+        return;
+    }
+
+    if (app->storage.initialized)
+    {
+        (void)ao_storage_mark_dirty(&app->storage.ao, CONFIG_DOMAIN_THERMAL_BASELINE, 0U);
+    }
+}
+
+int composition_root_init_thermal_energy(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->thermal_energy.initialized)
+    {
+        return 0;
+    }
+
+    int err = ao_thermal_energy_init(&self->thermal_energy.ao,
+                                     &self->thermal_site_cfg,
+                                     &self->thermal_baseline_cfg,
+                                     s_ao_thermal_energy_stack,
+                                     K_THREAD_STACK_SIZEOF(s_ao_thermal_energy_stack),
+                                     AO_THERMAL_ENERGY_PRIORITY);
+    if (err != 0)
+    {
+        LOG_ERR("Failed to initialize ao_thermal_energy: %d", err);
+        return err;
+    }
+
+    self->thermal_energy.port = ao_thermal_energy_get_port(&self->thermal_energy.ao);
+    self->thermal_energy.initialized = true;
+    return 0;
+}
+
+int composition_root_wire_thermal_energy(app_container_t *self)
+{
+    if (self == NULL || !self->thermal_energy.initialized)
+    {
+        return -EINVAL;
+    }
+
+    ao_thermal_energy_set_baseline_persist_cb(&self->thermal_energy.ao,
+                                              on_thermal_baseline_persisted,
+                                              self);
+    return 0;
+}
+
+i_thermal_energy_t composition_root_get_thermal_energy_port(app_container_t *self)
+{
+    if (self == NULL || !self->thermal_energy.initialized)
+    {
+        i_thermal_energy_t unbound = {0};
+        return unbound;
+    }
+
+    return self->thermal_energy.port;
+}
+
 
 
 int composition_root_init(app_container_t *self)
@@ -1633,6 +1715,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_sensor_matrix(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_thermal_energy(self);
     if (err != 0)
     {
         return err;
@@ -1753,6 +1841,16 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+    if (self->thermal_energy.initialized)
+    {
+        int err = ao_thermal_energy_start(&self->thermal_energy.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("thermal energy active object start failed (%d)", err);
+            return err;
+        }
+    }
+
     self->is_running = true;
     return 0;
 }
@@ -1778,6 +1876,21 @@ int composition_root_stop(app_container_t *self)
         if (rc != 0)
         {
             LOG_WRN("ao_network_wait_stopped returned %d", rc);
+        }
+    }
+
+    /* 1b. Stop thermal energy monitoring (wait up to 1000 ms) */
+    if (self->thermal_energy.initialized)
+    {
+        rc = ao_thermal_energy_stop(&self->thermal_energy.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_thermal_energy_stop returned %d", rc);
+        }
+        rc = ao_thermal_energy_wait_stopped(&self->thermal_energy.ao, K_MSEC(1000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_thermal_energy_wait_stopped returned %d", rc);
         }
     }
 
@@ -1931,6 +2044,16 @@ int composition_root_deinit(app_container_t *self)
             LOG_WRN("ao_hvac_deinit returned %d", rc);
         }
         self->hvac.initialized = false;
+    }
+
+    if (self->thermal_energy.initialized)
+    {
+        rc = ao_thermal_energy_deinit(&self->thermal_energy.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_thermal_energy_deinit returned %d", rc);
+        }
+        self->thermal_energy.initialized = false;
     }
 
     if (self->sensor.initialized)

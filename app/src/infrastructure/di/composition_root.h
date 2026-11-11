@@ -43,7 +43,9 @@
 #include "interfaces/i_slave_registry.h"
 #include "interfaces/i_wifi_control.h"
 #include "interfaces/i_alarm_query.h"
+#include "interfaces/i_thermal_energy.h"
 #include "application/active_objects/ao_alarm_manager.h"
+#include "application/active_objects/ao_thermal_energy.h"
 #include "infrastructure/adapters/adapter_alarm_detector_di.h"
 #include "infrastructure/adapters/adapter_alarm_detector_temp.h"
 #include "infrastructure/adapters/adapter_alarm_detector_volt.h"
@@ -198,6 +200,13 @@ struct app_container {
         adapter_alarm_detector_hvac_t det_hvac;        /**< HVAC bypass and lockout detector adapter */
         bool initialized;                              /**< Subsystem initialization status */
     } alarm;
+
+    /* Subsystem 10: Thermal and Energy Monitoring (Revision F Baseline) */
+    struct {
+        ao_thermal_energy_t ao;
+        i_thermal_energy_t port;
+        bool initialized;
+    } thermal_energy;
 
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
@@ -527,6 +536,9 @@ int composition_root_init_network(app_container_t *self);
 int composition_root_init_indicators(app_container_t *self);
 int composition_root_init_digital_inputs(app_container_t *self);
 int composition_root_init_hvac(app_container_t *self);
+int composition_root_init_thermal_energy(app_container_t *self);
+int composition_root_wire_thermal_energy(app_container_t *self);
+i_thermal_energy_t composition_root_get_thermal_energy_port(app_container_t *self);
 
 /* =========================================================================
  * Full Lifecycle Management

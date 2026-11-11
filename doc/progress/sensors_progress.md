@@ -9,6 +9,8 @@
 
 | Component | File Path | Status | Description |
 | :--- | :--- | :---: | :--- |
+| **Thermal Energy Active Object** | `app/src/application/active_objects/ao_thermal_energy.c/.h` | 100% | Canonical 5-phase AO (`ao_thermal_energy_t`), 1 Hz cadence, 720h RAM circular buffer, steady-state OLS training, and atomic result query |
+| **Thermal Zbus Channels** | `app/src/application/zbus/thermal_channels.c/.h` | 100% | `chan_thermal_energy_update` broadcasting `thermal_energy_event_t` updates upon calculation cycle completion |
 | **Thermal & Energy Port Contract** | `app/include/interfaces/i_thermal_energy.h` | 100% | Rule §4.1.D fat-pointer port contract (`i_thermal_energy_t`, `i_thermal_energy_api_t`), safety predicate `i_thermal_energy_is_bound()`, and type-safe defensive wrappers |
 | **Thermal & Energy Fake Double** | `tests/fakes/include/fake_thermal_energy.h`, `tests/fakes/src/fake_thermal_energy.c` | 100% | In-memory test double implementing `i_thermal_energy_t` for consumer testing with ring history support |
 | **Hardware FPU & CMSIS-DSP** | `app/prj.conf`, `app/src/domain/thermal_energy/predictive_analytics.c` | 100% | Cortex-M7 FPv5-D16 hardware FPU + CMSIS-DSP `arm_mat_inverse_f64` and vector multiplication with ISO C99 fallback |
@@ -35,6 +37,7 @@
 ## 2. Pending Work
 - [ ] Implement `adapter_temperature_bank.c` linking Modbus/internal sensors to `i_temperature_bank_t`.
 - [ ] Implement `adapter_energy_meter.c` linking JSY-MK-339 to `i_energy_meter_t`.
+- [x] Implement Phase 5 Active Object (`ao_thermal_energy`), 720h RAM circular buffer, DI wiring, and Zbus channels.
 - [x] Implement Phase 4 Interface Port Contract (`i_thermal_energy.h`), Fake (`fake_thermal_energy.c/.h`), and Signal Ingestion Layer (`sensor_matrix_mapper.c/.h`).
 - [x] Enable Hardware FPU (`CONFIG_FPU=y`, `CONFIG_FPU_SHARING=y`) & CMSIS-DSP Acceleration (`arm_mat_inverse_f64`).
 - [x] Implement Mathematical Model Revision F Phase 3 Domain Services (`predictive_analytics.c/.h`, `test_predictive_ols.c`).
@@ -44,6 +47,15 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Implemented Phase 5 (Active Object `ao_thermal_energy`, 720h RAM Circular Buffer, DI Integration, and Zbus Updates):
+  - Created Zbus channels `app/src/application/zbus/thermal_channels.c/.h` exposing `chan_thermal_energy_update` broadcasting `thermal_energy_event_t` ({`generation_id`, `timestamp_ms`, `quality`}).
+  - Created Active Object `app/src/application/active_objects/ao_thermal_energy.c/.h` implementing canonical 5-phase lifecycle (`init`, `start`, `stop`, `wait_stopped`, `deinit`), 1 Hz periodic execution loop, and `i_thermal_energy_api_t` port implementation.
+  - Implemented 720-hour circular ring buffer (`thermal_hourly_record_t history[720]`) in AXI SRAM with bounded lookup (`get_hourly_history`), CRC16 verification, and hourly downsampling.
+  - Integrated steady-state detection, OLS regression accumulator, automatic baseline solving upon 168h completion, and auto-persistence dirty marking via `on_baseline_persisted` callback.
+  - Implemented atomic result query under `result_mutex` (< 2 us lock time) ensuring zero torn reads for consumers.
+  - Integrated into Composition Root (`composition_root.c/.h`): allocated static thread stack `s_ao_thermal_energy_stack` (4096 B) at file scope complying with MPU Stack Guard Invariant 4, wired initialization, starting, stopping, and exposed DIP getter `composition_root_get_thermal_energy_port()`.
+  - Added unit test suite `test_ao_thermal_energy.c` (5 unit tests) verifying lifecycle, atomic port queries, ring buffer storage/wrap-around, and Zbus event delivery. All 58 unit tests in `tests/unit/thermal_energy/` pass 100% on `native_sim`.
+  - Clean target build verified on `brightc-controllerv3` (STM32H743): 0 errors, 0 warnings, Flash: 17.34%, RAM: 48.67% (< 50% threshold).
 - **2026-11-11**: Implemented Phase 4 (Interface Port Contract & Signal Ingestion Layer) + Hardware FPU & CMSIS-DSP Acceleration:
   - Enabled Hardware Double-Precision FPU (`CONFIG_FPU=y`, `CONFIG_FPU_SHARING=y`) and ARM CMSIS-DSP (`CONFIG_CMSIS_DSP=y`) in `app/prj.conf`.
   - Added hardware-accelerated 4x4 matrix solve (`arm_mat_init_f64`, `arm_mat_inverse_f64`, `arm_mat_mult_f64`) in `app/src/domain/thermal_energy/predictive_analytics.c` under `#if defined(CONFIG_CMSIS_DSP) && !defined(CONFIG_ZTEST)` with pure C99 Gauss-Jordan fallback for host simulation.
