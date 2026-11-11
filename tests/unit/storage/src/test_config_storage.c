@@ -8,6 +8,8 @@
 
 #include "common/config_types.h"
 #include "common/config_envelope.h"
+#include "common/thermal_energy_types.h"
+#include "common/app_defaults.h"
 #include "interfaces/i_config_storage.h"
 #include "fake_config_storage.h"
 #include "application/zbus/config_channels.h"
@@ -25,13 +27,17 @@ ZTEST(storage_suite, test_config_domain_enum_and_validation)
     zassert_equal(CONFIG_DOMAIN_NET_WIFI, 2, "CONFIG_DOMAIN_NET_WIFI should be 2");
     zassert_equal(CONFIG_DOMAIN_HVAC, 3, "CONFIG_DOMAIN_HVAC should be 3");
     zassert_equal(CONFIG_DOMAIN_CALIBRATION, 4, "CONFIG_DOMAIN_CALIBRATION should be 4");
-    zassert_equal(CONFIG_DOMAIN_MAX, 5, "CONFIG_DOMAIN_MAX should be 5");
+    zassert_equal(CONFIG_DOMAIN_THERMAL_SITE, 5, "CONFIG_DOMAIN_THERMAL_SITE should be 5");
+    zassert_equal(CONFIG_DOMAIN_THERMAL_BASELINE, 6, "CONFIG_DOMAIN_THERMAL_BASELINE should be 6");
+    zassert_equal(CONFIG_DOMAIN_MAX, 7, "CONFIG_DOMAIN_MAX should be 7");
 
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_DEVICE), "DEVICE must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_NET_ETH), "NET_ETH must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_NET_WIFI), "NET_WIFI must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_HVAC), "HVAC must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_CALIBRATION), "CALIBRATION must be valid");
+    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_THERMAL_SITE), "THERMAL_SITE must be valid");
+    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_THERMAL_BASELINE), "THERMAL_BASELINE must be valid");
 
     zassert_false(config_domain_is_valid(CONFIG_DOMAIN_MAX), "MAX must be invalid");
     zassert_false(config_domain_is_valid((config_domain_t)-1), "-1 must be invalid");
@@ -86,6 +92,18 @@ ZTEST(storage_suite, test_config_domain_layout)
     zassert_equal(base, 0x0880, "CALIBRATION base");
     zassert_equal(total, 384, "CALIBRATION total");
     zassert_equal(slot, 192, "CALIBRATION slot");
+
+    /* THERMAL_SITE: 0x0A00, 1536, 768 */
+    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_THERMAL_SITE, &base, &total, &slot), 0, "THERMAL_SITE layout error");
+    zassert_equal(base, 0x0A00, "THERMAL_SITE base");
+    zassert_equal(total, 1536, "THERMAL_SITE total");
+    zassert_equal(slot, 768, "THERMAL_SITE slot");
+
+    /* THERMAL_BASELINE: 0x1000, 1024, 512 */
+    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_THERMAL_BASELINE, &base, &total, &slot), 0, "THERMAL_BASELINE layout error");
+    zassert_equal(base, 0x1000, "THERMAL_BASELINE base");
+    zassert_equal(total, 1024, "THERMAL_BASELINE total");
+    zassert_equal(slot, 512, "THERMAL_BASELINE slot");
 
     /* Invalid domain */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_MAX, &base, &total, &slot), -EINVAL, "MAX invalid");
@@ -363,4 +381,143 @@ ZTEST(storage_suite, test_config_envelope_packing_and_validation)
     ret = config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, env_buf, env_len,
                                  unpacked, sizeof(unpacked), &unpacked_len);
     zassert_equal(ret, -EBADMSG, "Should detect magic mismatch");
+}
+
+ZTEST(storage_suite, test_thermal_energy_types_and_alignments)
+{
+    zassert_equal(sizeof(thermal_pair_mapping_t), 4U, "thermal_pair_mapping_t size must be 4");
+    zassert_equal(sizeof(thermal_hourly_record_t), THERMAL_HOURLY_RECORD_EXPECTED_SIZE,
+                  "thermal_hourly_record_t size must match THERMAL_HOURLY_RECORD_EXPECTED_SIZE");
+    zassert_equal(sizeof(config_thermal_site_t), 184U, "config_thermal_site_t size must be 184");
+    zassert_equal(sizeof(config_thermal_baseline_t), 216U, "config_thermal_baseline_t size must be 216");
+
+    zassert_equal(THERMAL_MAX_PAIRS, 16U, "THERMAL_MAX_PAIRS == 16");
+    zassert_equal(THERMAL_MAX_ROOM_PROBES, 16U, "THERMAL_MAX_ROOM_PROBES == 16");
+    zassert_equal(THERMAL_MAX_OUTDOOR_PROBES, 8U, "THERMAL_MAX_OUTDOOR_PROBES == 8");
+    zassert_equal(THERMAL_MAX_HVAC_UNITS, 8U, "THERMAL_MAX_HVAC_UNITS == 8");
+    zassert_equal(THERMAL_HOURLY_HISTORY_CAPACITY, 720U, "THERMAL_HOURLY_HISTORY_CAPACITY == 720");
+
+    zassert_equal(QUALITY_VALID, 0, "QUALITY_VALID == 0");
+    zassert_equal(QUALITY_SUSPECT, 1, "QUALITY_SUSPECT == 1");
+    zassert_equal(QUALITY_FAILED, 2, "QUALITY_FAILED == 2");
+    zassert_equal(QUALITY_UNAVAILABLE, 3, "QUALITY_UNAVAILABLE == 3");
+
+    zassert_equal(COMPRESSOR_STATE_OFF, 0, "COMPRESSOR_STATE_OFF == 0");
+    zassert_equal(COMPRESSOR_STATE_INRUSH_WAIT, 1, "COMPRESSOR_STATE_INRUSH_WAIT == 1");
+    zassert_equal(COMPRESSOR_STATE_STEP_LOAD_CAPTURE, 2, "COMPRESSOR_STATE_STEP_LOAD_CAPTURE == 2");
+    zassert_equal(COMPRESSOR_STATE_THERMAL_WARMUP, 3, "COMPRESSOR_STATE_THERMAL_WARMUP == 3");
+    zassert_equal(COMPRESSOR_STATE_STEADY_STATE, 4, "COMPRESSOR_STATE_STEADY_STATE == 4");
+}
+
+ZTEST(storage_suite, test_thermal_site_config_defaults_and_validation)
+{
+    const config_thermal_site_t *def_site = default_config_get_thermal_site_cfg();
+    zassert_not_null(def_site, "default thermal site config must not be null");
+    zassert_true(config_thermal_site_is_valid(def_site), "default thermal site config must be valid");
+    zassert_equal(def_site->configured_pairs_count, 6U, "default pairs count should be 6");
+    zassert_equal(def_site->configured_room_probes, 2U, "default room probes should be 2");
+    zassert_equal(def_site->configured_outdoor_probes, 2U, "default outdoor probes should be 2");
+    zassert_equal(def_site->required_redundancy_units, 2U, "default redundancy units should be 2");
+    zassert_equal(def_site->site_altitude_m, 0, "default altitude should be 0");
+
+    /* Validation edge cases */
+    zassert_false(config_thermal_site_is_valid(NULL), "NULL config must be invalid");
+
+    config_thermal_site_t bad_site = *def_site;
+    bad_site.configured_pairs_count = 0U;
+    zassert_false(config_thermal_site_is_valid(&bad_site), "0 pairs must be invalid");
+
+    bad_site = *def_site;
+    bad_site.configured_pairs_count = 17U;
+    zassert_false(config_thermal_site_is_valid(&bad_site), ">16 pairs must be invalid");
+
+    bad_site = *def_site;
+    bad_site.pair_mapping_table[0].supply_flat_id = bad_site.pair_mapping_table[0].return_flat_id;
+    zassert_false(config_thermal_site_is_valid(&bad_site), "Identical supply and return flat IDs must be invalid");
+
+    bad_site = *def_site;
+    bad_site.site_altitude_m = 5000;
+    zassert_false(config_thermal_site_is_valid(&bad_site), "Altitude > 4000m must be invalid");
+
+    bad_site = *def_site;
+    bad_site.nominal_airflow_m3h[0] = 100.0f;
+    zassert_false(config_thermal_site_is_valid(&bad_site), "Airflow < 500 must be invalid");
+
+    /* Envelope pack / unpack and fake storage save / load */
+    fake_config_storage_reset();
+    i_config_storage_t port = fake_config_storage_get_port();
+    zassert_equal(i_config_storage_init(&port), 0, "Init failed");
+
+    uint8_t pack_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
+    size_t packed_len = 0U;
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, def_site, sizeof(*def_site),
+                                       pack_buf, sizeof(pack_buf), &packed_len), 0, "Pack failed");
+    zassert_equal(packed_len, sizeof(config_envelope_header_t) + sizeof(*def_site), "Packed len mismatch");
+
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_THERMAL_SITE, pack_buf, packed_len), 0, "Save failed");
+
+    uint8_t load_buf[sizeof(pack_buf)];
+    size_t loaded_len = 0U;
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_THERMAL_SITE, load_buf, sizeof(load_buf), &loaded_len), 0, "Load failed");
+    zassert_equal(loaded_len, packed_len, "Loaded len mismatch");
+
+    config_thermal_site_t unpacked_site;
+    size_t unpacked_len = 0U;
+    zassert_equal(config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, load_buf, loaded_len,
+                                         &unpacked_site, sizeof(unpacked_site), &unpacked_len), 0, "Unpack failed");
+    zassert_equal(unpacked_len, sizeof(config_thermal_site_t), "Unpacked size mismatch");
+    zassert_mem_equal(&unpacked_site, def_site, sizeof(config_thermal_site_t), "Unpacked data mismatch");
+}
+
+ZTEST(storage_suite, test_thermal_baseline_config_defaults_and_validation)
+{
+    const config_thermal_baseline_t *def_base = default_config_get_thermal_baseline_cfg();
+    zassert_not_null(def_base, "default baseline config must not be null");
+    zassert_true(config_thermal_baseline_is_valid(def_base), "default baseline config must be valid");
+    zassert_equal(def_base->is_valid, 0U, "default baseline should be untrained (is_valid == 0)");
+    zassert_equal(def_base->training_hours_accumulated, 0U, "default training hours should be 0");
+
+    /* Validation edge cases */
+    zassert_false(config_thermal_baseline_is_valid(NULL), "NULL baseline config must be invalid");
+
+    config_thermal_baseline_t trained_base = *def_base;
+    trained_base.is_valid = 1U;
+    trained_base.training_hours_accumulated = 168U;
+    trained_base.baseline_exergetic_efficiency = 42.0f;
+    zassert_true(config_thermal_baseline_is_valid(&trained_base), "168h trained baseline must be valid");
+
+    config_thermal_baseline_t bad_base = trained_base;
+    bad_base.training_hours_accumulated = 100U;
+    zassert_false(config_thermal_baseline_is_valid(&bad_base), "Trained baseline with < 168h must be invalid");
+
+    bad_base = trained_base;
+    bad_base.baseline_exergetic_efficiency = 10.0f;
+    zassert_false(config_thermal_baseline_is_valid(&bad_base), "Trained baseline with exergy < 20% must be invalid");
+
+    bad_base = trained_base;
+    bad_base.is_valid = 5U;
+    zassert_false(config_thermal_baseline_is_valid(&bad_base), "is_valid != 0 and != 1 must be invalid");
+
+    /* Envelope pack / unpack and fake storage save / load */
+    fake_config_storage_reset();
+    i_config_storage_t port = fake_config_storage_get_port();
+    zassert_equal(i_config_storage_init(&port), 0, "Init failed");
+
+    uint8_t pack_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
+    size_t packed_len = 0U;
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &trained_base, sizeof(trained_base),
+                                       pack_buf, sizeof(pack_buf), &packed_len), 0, "Pack failed");
+
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_THERMAL_BASELINE, pack_buf, packed_len), 0, "Save failed");
+
+    uint8_t load_buf[sizeof(pack_buf)];
+    size_t loaded_len = 0U;
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_THERMAL_BASELINE, load_buf, sizeof(load_buf), &loaded_len), 0, "Load failed");
+
+    config_thermal_baseline_t unpacked_base;
+    size_t unpacked_len = 0U;
+    zassert_equal(config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, load_buf, loaded_len,
+                                         &unpacked_base, sizeof(unpacked_base), &unpacked_len), 0, "Unpack failed");
+    zassert_equal(unpacked_len, sizeof(config_thermal_baseline_t), "Unpacked size mismatch");
+    zassert_mem_equal(&unpacked_base, &trained_base, sizeof(config_thermal_baseline_t), "Unpacked data mismatch");
 }

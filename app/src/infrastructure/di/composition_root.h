@@ -202,6 +202,8 @@ struct app_container {
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
     config_calibration_t calibration_cfg;
+    config_thermal_site_t thermal_site_cfg;
+    config_thermal_baseline_t thermal_baseline_cfg;
 
     /* Container-level status */
     bool is_initialized;                               /**< True when container is initialized */
@@ -480,6 +482,40 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
  * @return 0 on success, negative errno on error.
  */
 int app_container_apply_profile(app_container_t *self, hvac_operation_mode_t mode);
+
+/**
+ * @brief Retrieve active site thermal topology configuration from RAM.
+ */
+static inline const config_thermal_site_t *app_container_get_thermal_site_config(const app_container_t *self)
+{
+    return (self != NULL) ? &self->thermal_site_cfg : NULL;
+}
+
+/**
+ * @brief Retrieve active learned baseline configuration from RAM.
+ */
+static inline const config_thermal_baseline_t *app_container_get_thermal_baseline_config(const app_container_t *self)
+{
+    return (self != NULL) ? &self->thermal_baseline_cfg : NULL;
+}
+
+/**
+ * @brief Dynamically update site thermal topology configuration at runtime.
+ *
+ * @param[in,out] self Container instance.
+ * @param[in]     cfg  New site thermal configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_set_thermal_site_config(app_container_t *self, const config_thermal_site_t *cfg);
+
+/**
+ * @brief Dynamically update learned steady-state baseline configuration at runtime.
+ *
+ * @param[in,out] self Container instance.
+ * @param[in]     cfg  New thermal baseline configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_set_thermal_baseline_config(app_container_t *self, const config_thermal_baseline_t *cfg);
 
 /* =========================================================================
  * Modular Subsystem Initializers

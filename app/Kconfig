@@ -172,3 +172,32 @@ config AO_ALARM_MANAGER_STACK_SIZE
 	  Stack storage size allocated for the ao_alarm_manager thread.
 
 endmenu
+
+menu "BrightC Thermal and Energy Subsystem"
+
+config THERMAL_HOURLY_PAIRS_COUNT
+	int "Configured supply/return thermal pairs in hourly log"
+	default 6
+	range 1 16
+	help
+	  Number of supply/return temperature probe pairs stored per hourly
+	  compressed record in datalogger storage.
+
+config THERMAL_HOURLY_ROOM_PROBES_COUNT
+	int "Configured room ambient probes in hourly log"
+	default 2
+	range 1 16
+	help
+	  Number of room ambient temperature probes stored per hourly
+	  compressed record in datalogger storage.
+
+config THERMAL_HOURLY_OUTDOOR_PROBES_COUNT
+	int "Configured outdoor reference probes in hourly log"
+	default 2
+	range 1 8
+	help
+	  Number of outdoor ambient condenser reference probes stored per hourly
+	  compressed record in datalogger storage.
+
+endmenu
+

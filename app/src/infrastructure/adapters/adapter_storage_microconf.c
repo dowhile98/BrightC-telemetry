@@ -20,11 +20,13 @@ LOG_MODULE_REGISTER(adapter_storage_mconf, LOG_LEVEL_INF);
 #define MCONF_STORAGE_HEADER_SIZE 32U
 
 static const char *s_domain_keys[CONFIG_DOMAIN_MAX] = {
-    [CONFIG_DOMAIN_DEVICE]      = "device",
-    [CONFIG_DOMAIN_NET_ETH]     = "net_eth",
-    [CONFIG_DOMAIN_NET_WIFI]    = "net_wifi",
-    [CONFIG_DOMAIN_HVAC]        = "hvac",
-    [CONFIG_DOMAIN_CALIBRATION] = "calib",
+    [CONFIG_DOMAIN_DEVICE]           = "device",
+    [CONFIG_DOMAIN_NET_ETH]          = "net_eth",
+    [CONFIG_DOMAIN_NET_WIFI]         = "net_wifi",
+    [CONFIG_DOMAIN_HVAC]             = "hvac",
+    [CONFIG_DOMAIN_CALIBRATION]      = "calib",
+    [CONFIG_DOMAIN_THERMAL_SITE]     = "thm_site",
+    [CONFIG_DOMAIN_THERMAL_BASELINE] = "thm_base",
 };
 
 static int mconf_err_to_errno(mconf_err_t err)

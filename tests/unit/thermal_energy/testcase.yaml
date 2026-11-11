@@ -1,0 +1,8 @@
+tests:
+  unit.thermal_energy:
+    tags:
+      - thermal_energy
+      - domain
+      - psychrometrics
+      - unit
+    platform_allow: native_sim

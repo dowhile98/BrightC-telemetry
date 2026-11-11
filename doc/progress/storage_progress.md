@@ -14,7 +14,7 @@
 | **Envelope Framing** | `app/include/common/config_envelope.h` | 100% | Binary payload framing: Magic (`0x4243544C`), version 1, length, and CRC16 |
 | **Active Object** | `app/src/application/active_objects/ao_storage.c` | 100% | Asynchronous write queue, commit debouncing, degraded mode fallback |
 | **Zbus Channels** | `app/src/application/zbus/config_channels.c` | 100% | `chan_system_config` broadcasting persistent events |
-| **Unit Tests** | `tests/unit/storage/` | 100% | 11 tests passing on `native_sim` |
+| **Unit Tests** | `tests/unit/storage/` | 100% | 14 tests passing on `native_sim` |
 
 ---
 
@@ -25,6 +25,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Expanded Storage Domains for Thermal and Energy System (REVF Baseline):
+  - Added `CONFIG_DOMAIN_THERMAL_SITE` (domain 5, 0x0A00, 1536 B, slot 768 B) and `CONFIG_DOMAIN_THERMAL_BASELINE` (domain 6, 0x1000, 1024 B, slot 512 B), bringing `CONFIG_DOMAIN_MAX` to 7.
+  - Sized and validated payload structures `config_thermal_site_t` (184 B) and `config_thermal_baseline_t` (216 B, 8-byte aligned).
+  - Updated `adapter_storage_microconf.c/.h`: increased `ADAPTER_STORAGE_MICROCONF_MAX_PAYLOAD` to 736 B and added domain keys `"thm_site"` and `"thm_base"`.
+  - Registered providers in `composition_root.c` with RAM fallback and automatic initialization.
+  - Extended unit tests in `test_config_storage.c` with 100% pass (14/14 tests).
 - **2026-11-11**: Executed Phase C HVAC Storage Optimization:
   - Removed `hvac_unit_hw_config_t units[8]` (288 B) from `config_hvac_t` (`app/include/common/hvac_types.h`).
   - `config_hvac_t` size reduced to exactly 188 bytes, verified via `_Static_assert(sizeof(config_hvac_t) == 188U, ...)`.

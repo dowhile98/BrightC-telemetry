@@ -53,6 +53,10 @@ target_sources(app PRIVATE
     src/infrastructure/adapters/adapter_alarm_detector_temp.c
     src/infrastructure/adapters/adapter_alarm_detector_volt.c
     src/infrastructure/adapters/adapter_alarm_detector_hvac.c
+    src/domain/thermal_energy/humidity_transducer.c
+    src/domain/thermal_energy/psychrometrics.c
+    src/domain/thermal_energy/thermodynamics.c
+    src/domain/thermal_energy/compressor_fsm.c
 )
 
 if(CONFIG_SHELL)

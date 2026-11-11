@@ -52,6 +52,50 @@ extern "C"
             10000U, 10000U, 10000U, 10000U, 10000U, 10000U, 10000U, 10000U},
     };
 
+    /** Default Site Thermal & HVAC Topology Configuration */
+    static const config_thermal_site_t k_default_thermal_site_cfg = {
+        .version = 1U,
+        .configured_pairs_count = 6U,
+        .configured_room_probes = 2U,
+        .configured_outdoor_probes = 2U,
+        .required_redundancy_units = 2U,
+        .site_altitude_m = 0,
+        .pair_mapping_table = {
+            [0] = { .supply_flat_id = 10U, .return_flat_id = 11U, .hvac_unit_id = 1U, .reserved = 0U },
+            [1] = { .supply_flat_id = 12U, .return_flat_id = 13U, .hvac_unit_id = 2U, .reserved = 0U },
+            [2] = { .supply_flat_id = 14U, .return_flat_id = 15U, .hvac_unit_id = 3U, .reserved = 0U },
+            [3] = { .supply_flat_id = 16U, .return_flat_id = 17U, .hvac_unit_id = 4U, .reserved = 0U },
+            [4] = { .supply_flat_id = 30U, .return_flat_id = 31U, .hvac_unit_id = 5U, .reserved = 0U },
+            [5] = { .supply_flat_id = 32U, .return_flat_id = 33U, .hvac_unit_id = 6U, .reserved = 0U },
+        },
+        .room_probes_table = { 18U, 19U },
+        .outdoor_probes_table = { 22U, 23U },
+        .nominal_airflow_m3h = {
+            4500.0f, 4500.0f, 4500.0f, 4500.0f, 4500.0f, 4500.0f, 4500.0f, 4500.0f
+        },
+        .nominal_capacity_kw = {
+            14.0f, 14.0f, 14.0f, 14.0f, 14.0f, 14.0f, 14.0f, 14.0f
+        },
+        .design_outdoor_temp_c = 35.0f,
+        .derating_coefficient = 0.005f,
+        .reserved = {0},
+    };
+
+    /** Default Machine-Learned Steady-State Baseline Configuration */
+    static const config_thermal_baseline_t k_default_thermal_baseline_cfg = {
+        .ols_beta_coefficients = { 0.0, 0.0, 0.0, 0.0 },
+        .baseline_exergetic_efficiency = 42.0f,
+        .ols_condition_number = 0.0f,
+        .baseline_pair_delta_t = { 0.0f },
+        .baseline_pair_t_inj = { 0.0f },
+        .compressor_power_signatures = { 0.0f },
+        .training_timestamp_unix = 0U,
+        .training_hours_accumulated = 0U,
+        .is_valid = 0U,
+        .algorithm_version = 1U,
+        .reserved = {0},
+    };
+
 #ifndef CONFIG_BRIGHTC_WIFI_DEFAULT_SSID
 #define CONFIG_BRIGHTC_WIFI_DEFAULT_SSID "BrightC-V3-AP"
 #endif
@@ -228,6 +272,16 @@ extern "C"
         return hardware_pin_map_get_di_profile(mode, out_count);
     }
 
+    static inline const config_thermal_site_t *app_defaults_get_thermal_site_cfg(void)
+    {
+        return &k_default_thermal_site_cfg;
+    }
+
+    static inline const config_thermal_baseline_t *app_defaults_get_thermal_baseline_cfg(void)
+    {
+        return &k_default_thermal_baseline_cfg;
+    }
+
     /* ========================================================================= */
     /* Backward Compatibility Aliases                                            */
     /* ========================================================================= */
@@ -261,6 +315,16 @@ extern "C"
                                                                            size_t *out_count)
     {
         return hardware_pin_map_get_di_profile(mode, out_count);
+    }
+
+    static inline const config_thermal_site_t *default_config_get_thermal_site_cfg(void)
+    {
+        return app_defaults_get_thermal_site_cfg();
+    }
+
+    static inline const config_thermal_baseline_t *default_config_get_thermal_baseline_cfg(void)
+    {
+        return app_defaults_get_thermal_baseline_cfg();
     }
 
     static inline const modbus_slave_descriptor_t *default_config_get_modbus_slaves(size_t *out_count)

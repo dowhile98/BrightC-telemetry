@@ -922,6 +922,42 @@ int app_facade_storage_reload_all(void)
         } else {
             reload_err = -EIO;
         }
+
+        /* 6. THERMAL_SITE */
+        uint8_t site_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
+        config_thermal_site_t site_cfg;
+        memset(&site_cfg, 0, sizeof(site_cfg));
+        size_t loaded_site_size = 0;
+        size_t unpacked_site_size = 0;
+        int site_ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
+                                             site_buf, sizeof(site_buf), &loaded_site_size);
+        if (site_ret == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, site_buf, loaded_site_size,
+                                   &site_cfg, sizeof(site_cfg), &unpacked_site_size) == 0 &&
+            unpacked_site_size == sizeof(config_thermal_site_t) &&
+            config_thermal_site_is_valid(&site_cfg)) {
+            s_app->thermal_site_cfg = site_cfg;
+        } else {
+            reload_err = -EIO;
+        }
+
+        /* 7. THERMAL_BASELINE */
+        uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
+        config_thermal_baseline_t base_cfg;
+        memset(&base_cfg, 0, sizeof(base_cfg));
+        size_t loaded_base_size = 0;
+        size_t unpacked_base_size = 0;
+        int base_ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
+                                             base_buf, sizeof(base_buf), &loaded_base_size);
+        if (base_ret == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, base_buf, loaded_base_size,
+                                   &base_cfg, sizeof(base_cfg), &unpacked_base_size) == 0 &&
+            unpacked_base_size == sizeof(config_thermal_baseline_t) &&
+            config_thermal_baseline_is_valid(&base_cfg)) {
+            s_app->thermal_baseline_cfg = base_cfg;
+        } else {
+            reload_err = -EIO;
+        }
     }
 
 

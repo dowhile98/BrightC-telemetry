@@ -25,8 +25,8 @@
 extern "C" {
 #endif
 
-/** Maximum payload size in bytes per slot across any domain (576 - 32 = 544 B). */
-#define ADAPTER_STORAGE_MICROCONF_MAX_PAYLOAD 544U
+/** Maximum payload size in bytes per slot across any domain (768 - 32 = 736 B). */
+#define ADAPTER_STORAGE_MICROCONF_MAX_PAYLOAD 736U
 
 /**
  * @brief Context structure for the microconf Zephyr EEPROM storage adapter.
