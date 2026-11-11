@@ -45,9 +45,9 @@ Every module across domain services, Active Objects, adapters, interfaces, and b
 | **Energy Types** | `app/include/common/energy_types.h` | Declares `energy_reading_t` with timestamp, validity, 3-phase metrics, and totals. | **Implemented & Functional** | **Reuse directly**. Complete contract for REVF §2.4. |
 | **Digital Input AO** | `app/src/application/active_objects/ao_digital_input.c` | Scans on-board MCP23S17 SPI expanders and remote MBSL32DI at 20 ms (50 Hz), drives debouncing engine, publishes state transitions and snapshots. | **Implemented & Functional** | **Reuse directly**. Provides debounced fan and compressor contacts without polling duplicate hardware. |
 | **Digital Input Aggregator** | `app/src/domain/services/digital_input_aggregator.c` | Software integrator debounce filter (25 samples = 500 ms for contactors per REVF §2.3). Tracks active durations and state masks. | **Implemented & Functional** | **Reuse directly**. |
-| **Hardware Pin Map** | `app/include/common/hardware_pin_map.h` | Declares pin mappings for MCP23S17, on-chip pins, and MBSL32DI. Maps Fans 1..4 (`DI_ROLE_FAN_1..4_AUX`) and Compressors 1..4 (`DI_ROLE_COMPRESSOR_1..4_AUX`). | **Implemented (Partial Roles)** | **Reuse mapping**. Channels for Units 5..8 on MBSL32DI currently carry generic roles (`DI_ROLE_USER_4..9`). Semantic extension required for full 8-unit support. |
+| **Hardware Pin Map** | `app/include/common/hardware_pin_map.h` | Single authoritative source of truth for physical pinouts (MCP23S17, on-chip, MBSL32DI, Waveshare). Implements profile-dependent mapping. | **Implemented & Authoritative** | **Reuse & profile extension**. In `HVAC_MODE_TELEMETRY_ONLY`, maps 100% of auxiliary run feedbacks for up to 8 ACs to on-board local inputs `ALM_IN_1..16` (zero external Modbus I/O modules required). In `HVAC_MODE_HYBRID_FULL`, maps local inputs to 4 safety cutouts for Units 1..4, remote MBSL32DI 0..15 to safety cutouts for Units 5..8, and MBSL32DI 16..31 to Fans 1..8 and Compressors 1..8 feedbacks. |
 | **Microconf Storage Adapter**| `app/src/infrastructure/adapters/adapter_storage_microconf.c` | Manages 32 KB AT24C256C I2C EEPROM. Implements ping-pong wear leveling, versioned envelope header (`config_envelope.h`), and CRC-16. | **Implemented & Functional** | **Reuse directly**. Provides rock-solid persistence. Subsystem has 29.5 KB unallocated reserve space. |
-| **Storage Types & Layout** | `app/include/common/config_types.h` | Defines 5 domains (`DEVICE`, `NET_ETH`, `NET_WIFI`, `HVAC`, `CALIBRATION`). Layout allocates 0x0000..0x09FF. | **Implemented (Needs Extension)** | Extend storage domains to incorporate site topology and learned baseline signature without disturbing existing domains. |
+| **Storage Types & Layout** | `app/include/common/config_types.h` | Defines 5 domains (`DEVICE`, `NET_ETH`, `NET_WIFI`, `HVAC`, `CALIBRATION`). Layout allocates 0x0000..0x09FF. | **Implemented & Optimized** | Redundant hardware routing (`units[8]`, 288 B) removed from `config_hvac_t` (payload reduced from ~476 B to ~188 B). Extend storage domains to incorporate site topology and learned baseline signature in unallocated space. |
 | **HVAC Control Subsystem** | `doc/architecture/hvac_control_subsystem.md` | Industrial HVAC sequencer, lead-lag rotation, and stage control. | **Implemented in Other Subsystem** | Passive observer separation: Thermal monitoring audits thermodynamic performance passively without taking control authority from the HVAC control loop. |
 | **Psychrometric & Thermodynamic Engine** | `app/src/domain/services/thermodynamic_engine.c/.h` | Pure C99/C11 domain implementation of REVF baseline: psychrometrics ($P_{atm}, P_{ws}, P_w, \omega, T_{rocio}, \rho, \dot{m}_{da}$), sensible/latent capacity balances, enthalpies, Carnot COP, exergy efficiency ($\eta_{II}$), 46-point Flash R410A LUT, double-precision regularized OLS solver, filter fouling days remaining hierarchy, and weather derating. Tested in `test_thermodynamic_engine.c` (582 lines). | **Implemented & Functional in Domain** | **Reuse directly**. The core equations and OLS linear algebra are already functional and unit-tested. Needs integration into an Active Object (`ao_thermal_energy`), port contracts (`i_thermal_energy_t`), and dynamic site topology injection. |
 | **Compressor Stabilization FSM** | N/A (`app/src/domain/thermal/compressor_fsm.c`) | 5-phase temporal state machine per compressor (`OFF`, `INRUSH_WAIT`, `STEP_LOAD_CAPTURE`, `THERMAL_WARMUP`, `STEADY_STATE`). Tracks $t_{off}$, $t_{on}$, and isolates step load $\Delta P_{comp,c} = P(15\text{s}) - P(0^-)$. | **MISSING** | **Must be designed and implemented** in domain layer to feed `thermo_engine_compute()` with qualified steady-state and load fraction ($F_{carga}$) inputs. |
@@ -87,9 +87,10 @@ Every module across domain services, Active Objects, adapters, interfaces, and b
 3. **JSY-MK-339 Power Data Routing**:
    - Current implementation: Modbus callback in `composition_root.c` routes readings exclusively to `adapter_alarm_detector_volt`.
    - Requirement: A thread-safe distribution mechanism (Zbus channel or direct AO capture cache) must deliver `energy_reading_t` to the thermal subsystem with timestamps and validity flags.
-4. **Digital Input Semantic Roles for HVAC Units 5..8**:
-   - Current implementation: `hardware_pin_map.h` maps Fans 1..4 and Compressors 1..4. Channels 20..23 and 28..31 on MBSL32DI carry generic roles (`DI_ROLE_USER_4..9`).
-   - Requirement: Define explicit semantic roles `DI_ROLE_FAN_5..8_AUX` and `DI_ROLE_COMPRESSOR_5..8_AUX` to support up to 8 units.
+4. **Digital Input Routing Across Operational Profiles**:
+   - Architectural strategy: `hardware_pin_map.h` governs digital input semantic assignments based on the active operational profile:
+     * In `HVAC_MODE_TELEMETRY_ONLY`: Units 1..8 use on-board local inputs `ALM_IN_1..16` correlatively for Compressor Run and Fan Run feedbacks (`fb_compressor`, `fb_fan`). This eliminates the requirement for an external Modbus I/O expander entirely.
+     * In `HVAC_MODE_HYBRID_FULL` & `HVAC_MODE_HVAC_CONTROL_ONLY`: Local inputs `ALM_IN_1..16` are dedicated to 4 safety alarm cutouts per local unit (HP, LP, FLOW, VOLT) for Units 1..4. Auxiliary contacts are assigned to remote Modbus `MBSL32DI`: channels 16..23 for Fans 1..8 and channels 24..31 for Compressors 1..8. Channels 20..23 and 28..31 carry explicit roles (`DI_ROLE_FAN_5..8_AUX` and `DI_ROLE_COMPRESSOR_5..8_AUX`).
 
 ### 3.3 Missing Components to Implement in Phase 1
 
@@ -148,15 +149,18 @@ flowchart TD
 ```
 
 #### Analytical Findings on Equipment Feedback:
-1. **Airflow Mass Flow ($\dot{m}_{da,total}$)**:
+1. **Operational Profile Source Partitioning**:
+   - In `HVAC_MODE_TELEMETRY_ONLY`, feedback contacts ($8 \times \text{Compressor} + 8 \times \text{Fan} = 16\text{ DIs}$) are ingested **100% from on-board SPI optocouplers** `ALM_IN_1` through `ALM_IN_16` on `&mcp23s17_0` and `&mcp23s17_1`. No remote Modbus DI module is required.
+   - In `HVAC_MODE_HYBRID_FULL` and `HVAC_MODE_HVAC_CONTROL_ONLY`, local inputs `ALM_IN_1..16` serve as safety alarms (HP, LP, FLOW, VOLT) for local Units 1..4, while fans 1..8 and compressors 1..8 are acquired from remote Modbus `MBSL32DI` channels 16..23 and 24..31.
+2. **Airflow Mass Flow ($\dot{m}_{da,total}$)**:
    - REVF §4.3.4 explicitly mandates that dry air mass flow summation is governed strictly by units whose supply fan is confirmed active ($u \in U_{vent\_ON}$):
      $$\dot{m}_{da,total} = \sum_{u \in U_{vent\_ON}} \left(\frac{V_{nom,u}}{3600}\right) \times \rho_{da,ret}$$
    - When a compressor cycles off on thermostat, the evaporator fan often continues recirculating air. Coupling mass flow to compressor state would invalidate enthalpy balances.
    - **Phase 1 Rule**: Airflow is computed **only** from confirmed fan contacts ($u \in U_{vent\_ON}$). If fan feedback for unit $u$ is absent, unmapped, or invalid, unit $u$ cannot contribute to mass flow.
-2. **Compressor Load Fraction ($F_{carga}$)**:
+3. **Compressor Load Fraction ($F_{carga}$)**:
    - REVF §5.1 relies on $F_{carga} = \sum_{c \in C_{active}} Q_{nom,c} / Q_{nom,total} \in (0, 1]$.
    - **Phase 1 Rule**: Computed strictly from confirmed compressor contactors in steady state (`STEADY_STATE`). If no compressor contacts are confirmed on, $F_{carga} = 0$, which invalidates OLS sample accumulation.
-3. **Step Load Power Disaggregation ($\Delta P_{comp,c}$)**:
+4. **Step Load Power Disaggregation ($\Delta P_{comp,c}$)**:
    - Disaggregating compressor power using a single main feeder meter (`JSY-MK-339`) requires measuring the active power step at $t_{on} = 15\text{ s}$ relative to $t_{on} = 0^-$.
    - **Phase 1 Limitation**: If multiple compressors or large auxiliary loads start simultaneously within the 15-second window, the step cannot be attributed to a single compressor. The system must flag $\Delta P_{comp,c}$ as `UNAVAILABLE` rather than recording an erroneous signature.
 

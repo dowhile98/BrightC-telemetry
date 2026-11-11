@@ -52,7 +52,7 @@ Its primary objective is maintaining strict thermal stability while:
                         │ injected device pointers          │ injected port
  ┌──────────────────────┴───────────────────────────────────┴──────────────────┐
  │                     COMPOSITION ROOT (composition_root.c)                   │
- │      - Declarative hardware mapping table (hvac_unit_hw_config_t)           │
+ │      - Immutable hardware routing table in hardware_pin_map.h               │
  │      - Operation mode profile selection (system_operation_mode_t)           │
  └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -69,7 +69,7 @@ Based on deep architectural inspection of the reference project (`/media/jeffry/
 | **Telemetry vs. Control Separation** | Contactor feedback inputs (`fb_compressor`, `fb_fan`) entangled inside control structures. | **Single Responsibility Principle (SRP)**: Control FSM only consumes safety alarms; feedback belongs to Telemetry. | Decoupled domain models. Contactor feedback monitored even during Bypass mode. |
 | **Contactor Discrepancy Monitoring** | Open-loop relay commanding with no verification of contactor physical state. | **Command-vs-Feedback Discrepancy Engine**: Telemetry raises Zbus discrepancy alarms if feedback fails within 10s. | Prevents silent room overheating caused by tripped breakers or burnt contactor coils. |
 | **System Operation Profiles** | Monolithic execution: control and telemetry always running simultaneously. | **Declarative Operation Profiles**: 1) Telemetry Only (Rev F), 2) Control Only, 3) Hybrid Full. | Cleanly selectable via EEPROM configuration. Zero CPU/memory overhead for unused features. |
-| **Hardware Mapping & Reassignment** | Hardcoded pin and slave assignments in static driver files. | **Declarative Routing Table in Composition Root**: Map any unit to local GPIO, SPI expander, or Modbus. | Run-time pin reassignment via EEPROM if a physical relay channel burns in the field. |
+| **Authoritative Hardware Mapping & Storage Optimization** | Redundant hardware routing stored in EEPROM (`hvac_unit_hw_config_t units[8]`, 288 B) duplicating firmware definitions. | **Immutable `hardware_pin_map.h` as Single Truth**: Hardware pinouts removed from EEPROM (`config_hvac_t` reduced from ~476 B to ~188 B). | Eliminates EEPROM corruption risk on pin routing, frees ~288 B in non-volatile storage, and deterministically binds pins per profile. |
 
 ---
 
@@ -102,6 +102,55 @@ typedef enum {
     SYSTEM_MODE_HYBRID_FULL
 } system_operation_mode_t;
 ```
+
+### 3.1 Operational Profiles Hardware Mapping Strategy (`hardware_pin_map.h`)
+
+Physical channel and terminal block assignments are defined deterministically in `app/include/common/hardware_pin_map.h`. The active operation profile governs physical channel interpretation without needing external runtime reconfiguration:
+
+#### 1. Profile `HVAC_MODE_TELEMETRY_ONLY` (Audit & Passive Diagnostics):
+- **Monitored Capacity**: Up to 8 AC units ($AC_1 \dots AC_8$).
+- **Actuation**: Zero physical relays commanded; all relay lines remain disengaged (`relay_sm = 0` / mechanical bypass).
+- **Auxiliary Feedback per Unit**: Exactly 2 dry-contact inputs per unit (1 + 1):
+  * Compressor Run feedback (`fb_compressor`)
+  * Evaporator Fan Run feedback (`fb_fan`)
+- **Total Feedback Channels**: 16 digital inputs ($8 \times 2 = 16$).
+- **100% On-Board Local Inputs**: Uses exclusively local optocoupled inputs on the BrightC V3 PCB (`ALM_IN_1` through `ALM_IN_16`), mapped correlatively:
+
+| Unit | Compressor Run Input | Evaporator Fan Run Input | Hardware Device & Pin Index |
+| :--- | :--- | :--- | :--- |
+| **AC 1** | `ALM_IN_1` | `ALM_IN_2` | `&mcp23s17_0`, Pins 0 & 1 |
+| **AC 2** | `ALM_IN_3` | `ALM_IN_4` | `&mcp23s17_0`, Pins 2 & 3 |
+| **AC 3** | `ALM_IN_5` | `ALM_IN_6` | `&mcp23s17_0`, Pins 4 & 5 |
+| **AC 4** | `ALM_IN_7` | `ALM_IN_8` | `&mcp23s17_0`, Pins 6 & 7 |
+| **AC 5** | `ALM_IN_9` | `ALM_IN_10` | `&mcp23s17_0`, Pins 8 & 9 |
+| **AC 6** | `ALM_IN_11` | `ALM_IN_12` | `&mcp23s17_0`, Pins 10 & 11 |
+| **AC 7** | `ALM_IN_13` | `ALM_IN_14` | `&mcp23s17_1`, Pins 0 & 1 |
+| **AC 8** | `ALM_IN_15` | `ALM_IN_16` | `&mcp23s17_1`, Pins 2 & 3 |
+| **Safety** | `ALM_IN_17` (Smoke/Fire), `ALM_IN_18` (Door), `ALM_IN_19` (Water Leak), `ALM_IN_20` (DPS/Surge), `ALM_IN_21` (Phase) | `&mcp23s17_1`, Pins 4..8 |
+
+> [!IMPORTANT]
+> **Zero External Modbus I/O Dependency**: In `HVAC_MODE_TELEMETRY_ONLY`, all 8 AC units plus facility alarms are monitored **100% locally on the controller PCB**. No external RS-485 Modbus digital input module (`MBSL32DI`) or relay module is required.
+
+#### 2. Profiles `HVAC_MODE_HYBRID_FULL` & `HVAC_MODE_HVAC_CONTROL_ONLY`:
+Designed for sites requiring autonomous lead-lag rotation, smart-mode contactor driving, and active safety trips:
+- **Maximum Capacity**: Up to 8 AC units (4 units local + 4 units remote via Modbus expansion).
+- **Units 1..4 (Local Actuation & Safety)**:
+  * Actuation via on-board relays on `&mcp23s17_2` (`relay_aa`, `relay_sm`, `relay_g`).
+  * 4 dedicated safety alarm cutouts per unit (`alarm_hp`, `alarm_lp`, `alarm_flow`, `alarm_volt`) wired directly to local inputs `ALM_IN_1..16`:
+    - AC 1: `ALM_IN_1..4`
+    - AC 2: `ALM_IN_5..8`
+    - AC 3: `ALM_IN_9..12`
+    - AC 4: `ALM_IN_13..16`
+- **Units 5..8 (Remote Actuation & Safety, configured when `total_units > 4`)**:
+  * Actuation via remote Modbus relay module (e.g., Waveshare 32-channel Modbus RTU relay module, Slave Addr 2).
+  * 4 dedicated safety alarm cutouts per unit (`alarm_hp`, `alarm_lp`, `alarm_flow`, `alarm_volt`) wired to remote Modbus `MBSL32DI` (Slave Addr 4), channels 0..15:
+    - AC 5: `MBSL32DI` channels 0..3
+    - AC 6: `MBSL32DI` channels 4..7
+    - AC 7: `MBSL32DI` channels 8..11
+    - AC 8: `MBSL32DI` channels 12..15
+- **Telemetry Feedback for All Units 1..8 in Hybrid Mode**:
+  * Evaporator Fan Run feedbacks (`fb_fan`): Remote Modbus `MBSL32DI` channels 16..23 (Fans 1..8).
+  * Compressor Run feedbacks (`fb_compressor`): Remote Modbus `MBSL32DI` channels 24..31 (Compressors 1..8).
 
 ---
 
@@ -299,8 +348,14 @@ static inline int i_hvac_unit_set_tri_state(const i_hvac_unit_t *port, uint8_t u
 }
 ```
 
-### 7.2 Declarative Hardware Routing in Composition Root
-To allow dynamic channel mapping without code modifications:
+### 7.2 Authoritative Hardware Routing & EEPROM Storage Optimization
+
+In earlier revisions, the hardware endpoint routing array (`hvac_unit_hw_config_t units[8]`, 288 bytes) was stored redundantly inside `config_hvac_t` in the EEPROM storage domain (`CONFIG_DOMAIN_HVAC`). 
+
+Under the enhanced architecture:
+1. **Single Authoritative Source of Truth**: Physical pinout, expander indices, and Modbus slave/channel assignments are declared immutably at compile time in `app/include/common/hardware_pin_map.h` (`k_brightc_hvac_hw_table` and `k_brightc_system_di_table`). Physical hardware wiring does not mutate during runtime and must not depend on mutable non-volatile storage.
+2. **Elimination of EEPROM Divergence**: Removing hardware pinouts from EEPROM prevents accidental corruption or invalid pin bindings caused by incomplete storage writes or EEPROM degradation.
+3. **Significant EEPROM Footprint Reduction**: `config_hvac_t` shrinks from ~476 bytes down to **~188 bytes**, freeing **288 bytes** of non-volatile storage per ping-pong slot in `AT24C256C`.
 
 ```c
 typedef enum {
@@ -316,18 +371,44 @@ typedef struct {
     uint16_t          channel;        /**< GPIO pin, expander pin (0..15), or Modbus coil/reg */
 } hvac_io_endpoint_t;
 
+/**
+ * @brief Immutable compile-time hardware descriptor (declared in hardware_pin_map.h).
+ * Zero bytes allocated in persistent EEPROM!
+ */
 typedef struct {
     /* Actuation Endpoints (Outputs) */
-    hvac_io_endpoint_t relay_aa;
-    hvac_io_endpoint_t relay_sm;
-    hvac_io_endpoint_t relay_g;
+    hvac_io_endpoint_t relay_aa;      /**< Compressor contactor relay */
+    hvac_io_endpoint_t relay_sm;      /**< Smart mode / bypass selector relay */
+    hvac_io_endpoint_t relay_g;       /**< Fan cut / forced ventilation relay */
 
     /* Safety Interlocks (Inputs) */
-    hvac_io_endpoint_t alarm_hp;
-    hvac_io_endpoint_t alarm_lp;
-    hvac_io_endpoint_t alarm_flow;
-    hvac_io_endpoint_t alarm_volt;
+    hvac_io_endpoint_t alarm_hp;      /**< High-pressure switch */
+    hvac_io_endpoint_t alarm_lp;      /**< Low-pressure switch */
+    hvac_io_endpoint_t alarm_flow;    /**< Airflow / water flow switch */
+    hvac_io_endpoint_t alarm_volt;    /**< Phase / voltage monitor */
+
+    /* Operational Feedback (Inputs) */
+    hvac_io_endpoint_t fb_compressor; /**< Auxiliary contact from compressor contactor */
+    hvac_io_endpoint_t fb_fan;        /**< Auxiliary contact from fan contactor */
 } hvac_unit_hw_config_t;
+
+/**
+ * @brief Persistent HVAC Configuration Structure in EEPROM (~188 bytes).
+ * Sized for CONFIG_DOMAIN_HVAC without redundant hardware pinout arrays.
+ */
+typedef struct {
+    uint8_t               operation_mode;            /**< Profile: TELEMETRY_ONLY, HVAC_CONTROL_ONLY, HYBRID_FULL */
+    uint8_t               total_units;               /**< Total configured units (1..8) */
+    uint8_t               total_groups;              /**< Total configured groups (1..4) */
+    uint8_t               bypass_alarm_contact_type; /**< Alarm 1 contact polarity (NC=0, NO=1) */
+    hvac_io_endpoint_t    fire_interlock;            /**< Emergency fire shutdown dry contact */
+    hvac_io_endpoint_t    bypass_switch;             /**< Front-panel physical bypass switch */
+    config_hvac_group_t   groups[HVAC_MAX_GROUPS];   /**< 4 Groups x 40 B = 160 B setpoints & parameters */
+    uint8_t               alarm_buzzer_muted;        /**< 1 = Buzzer muted, 0 = audible */
+    uint8_t               reserved[15];              /**< Future expansion padding */
+} config_hvac_t;
+
+_Static_assert(sizeof(config_hvac_t) <= 200U, "config_hvac_t exceeds optimized EEPROM budget of 200 bytes");
 ```
 
 ---

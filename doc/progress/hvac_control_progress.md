@@ -48,6 +48,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-10**: Updated Subsystem Architecture & Storage Specifications:
+  - **Removal of Redundant Hardware Routing from EEPROM**: Removed `hvac_unit_hw_config_t units[8]` (288 B) from persistent `config_hvac_t`. Physical terminal block, expander pin, and Modbus coil routing is now governed exclusively and immutably by `hardware_pin_map.h` as the single authoritative source of truth.
+  - **Operational Profiles Hardware Mapping Strategy**: Documented the profile-dependent pinout architecture:
+    * `HVAC_MODE_TELEMETRY_ONLY`: 100% on-board local inputs `ALM_IN_1..16` (`&mcp23s17_0` and `&mcp23s17_1`) monitor Compressor and Fan run auxiliary contacts for up to 8 AC units ($8 \times 2 = 16\text{ DIs}$) correlatively, requiring ZERO external Modbus I/O modules (`MBSL32DI` or Waveshare).
+    * `HVAC_MODE_HYBRID_FULL` & `HVAC_MODE_HVAC_CONTROL_ONLY`: On-board inputs `ALM_IN_1..16` serve as 4 safety alarm cutouts (HP, LP, FLOW, VOLT) for local Units 1..4. Remote Modbus `MBSL32DI` handles Units 5..8 safety cutouts (ch 0..15) and Units 1..8 auxiliary run feedbacks (ch 16..31), while Waveshare handles Units 5..8 actuation relays.
+  - **EEPROM Storage Optimization**: Sized `config_hvac_t` down to ~188 bytes (saving 288 bytes per slot in `CONFIG_DOMAIN_HVAC`), eliminating the risk of EEPROM corruption altering physical pin routing.
 - **2026-11-09**: Added per-unit HVAC state transition logging in `ao_hvac.c`, including previous/new state, commanded AA/SM/G relay values, and startup/fan delay timers. This makes unexpected transitions such as `RUNNING -> STOPPING` observable in runtime logs.
 - **2026-11-09**: Fixed HVAC Control Sequence, Staggered Delays, Pinout Mapping, Bypass Alarm Polarity, and Relay G Fan Control (`doc/issues/2026-11-09-hvac-control-delay-sequence-pinout-review.md`):
   - **H-02 (`increment_fault` & `Rescue Boost`)**: Separated mechanical fault counter increment (`hvac_unit_entity_increment_fault`) from `UNIT_STATE_BLOCKED_ALARM` lockout (`hvac_unit_entity_update_alarms`) so the 1st cooling timeout (`Rescue Boost`) keeps active turn units `RUNNING` while starting backup units staggered.

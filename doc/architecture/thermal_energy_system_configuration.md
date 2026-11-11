@@ -71,6 +71,9 @@ Parameters defining the physical layout of the telecom shelter or server room:
 - `design_outdoor_temp_c` ($T_{ext,design}$): Design outdoor temperature per AHRI 210/240 ($35.0\,^\circ\text{C}$).
 - `derating_coefficient` ($k_{ext}$): High-ambient thermal derating slope ($0.005\,^\circ\text{C}^{-1}$).
 
+> [!NOTE]
+> **Physical Hardware Pinouts Separation**: In accordance with Clean Architecture and firmware safety invariants, physical terminal blocks, expander pin routing, and Modbus coil/register maps are strictly excluded from EEPROM storage. They are defined immutably at compile time in `hardware_pin_map.h` as the single authoritative source of truth. EEPROM persists only commissioning parameters and thermodynamic setpoints.
+
 ### Category B: Calibration & Trim Offsets
 Parameters required to maintain laboratory-grade measurement accuracy:
 - `pt100_lead_wire_resistance` ($\Delta R_{cable}$): Resistance trim in $\Omega$ subtracted from internal INA826 channels.
@@ -169,7 +172,7 @@ Offset Range        Size     Ping-Pong Slots   Domain Identifier                
 0x0000 - 0x00FF     256 B    2 x 128 B         CONFIG_DOMAIN_DEVICE             Serial, Hardware Rev, Alias
 0x0100 - 0x017F     128 B    2 x 64 B          CONFIG_DOMAIN_NET_ETH            Ethernet IP, DHCP, MAC
 0x0180 - 0x03FF     640 B    2 x 320 B         CONFIG_DOMAIN_NET_WIFI           Wi-Fi Mode, SSID, PSK
-0x0400 - 0x087F    1152 B    2 x 576 B         CONFIG_DOMAIN_HVAC               HVAC Sequencer Operational Config
+0x0400 - 0x087F    1152 B    2 x 576 B         CONFIG_DOMAIN_HVAC               HVAC Sequencer Config (~188 B payload; units[8] moved to pin map)
 0x0880 - 0x09FF     384 B    2 x 192 B         CONFIG_DOMAIN_CALIBRATION        Analog Offsets & Gain Trims
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 0x0A00 - 0x0FFF    1536 B    2 x 768 B         CONFIG_DOMAIN_THERMAL_SITE       [NEW] Site Topology, Airflow, Capacities
@@ -225,3 +228,62 @@ BUILD_ASSERT(sizeof(thermal_hourly_record_t) == 64, "Hourly record MUST be exact
 
 - **Storage Efficiency**: 64 bytes per hour = $1.536\text{ KB/day}$ = $560.64\text{ KB/year}$.
 - **Fast Boot Recovery**: At system startup, the controller reads the last 720 records ($46.08\text{ KB}$) from MicroSD into SRAM in under $10\text{ ms}$, validating CRCs and restoring the 30-day window without resetting the 168-hour learning counter.
+
+---
+
+## 7. Operational Profiles Hardware Mapping Strategy in `hardware_pin_map.h`
+
+To eliminate redundant hardware declarations in EEPROM storage, `hardware_pin_map.h` is established as the **single authoritative source of truth** for all physical wiring. Physical channels are partitioned and mapped according to the active system operational profile (`system_operation_mode_t` / `hvac_operation_mode_t`):
+
+### 7.1 Profile 1: `HVAC_MODE_TELEMETRY_ONLY` (Audit & Passive Diagnostics)
+- **Target**: Sites where existing third-party thermostats or BMS control the HVAC units, and BrightC V3 acts purely as an edge psychrometric and exergy auditing computer (Revision F Mathematical Model).
+- **Actuation**: Zero physical relays are actuated. `relay_sm = 0` (mechanical bypass mode).
+- **Monitoring Scope**: Up to 8 AC units ($AC_1 \dots AC_8$).
+- **Feedback Inputs per Unit**: Exactly 2 auxiliary dry contacts (1 + 1):
+  1. Compressor Run auxiliary feedback (`fb_compressor`)
+  2. Evaporator Fan Run auxiliary feedback (`fb_fan`)
+- **Total Monitored Feedback Channels**: 16 digital inputs ($8 \times 2 = 16$).
+- **100% On-Board Local Inputs**: Sourced exclusively from the 24 optocoupled inputs on the BrightC V3 PCB (`ALM_IN_1` to `ALM_IN_16`, spanning pins 0..11 on `&mcp23s17_0` and pins 0..3 on `&mcp23s17_1`):
+
+```
+Terminal Block    Expander Pin       Telemetry-Only Role                  Hybrid / Control Role
+──────────────────────────────────────────────────────────────────────────────────────────────────
+ALM_IN_1          mcp23s17_0 Pin 0   AC1 Compressor Run (fb_compressor)   AC1 High-Pressure Alarm (HP)
+ALM_IN_2          mcp23s17_0 Pin 1   AC1 Fan Run (fb_fan)                 AC1 Low-Pressure Alarm (LP)
+ALM_IN_3          mcp23s17_0 Pin 2   AC2 Compressor Run (fb_compressor)   AC1 Flow Alarm (FLOW)
+ALM_IN_4          mcp23s17_0 Pin 3   AC2 Fan Run (fb_fan)                 AC1 Voltage Alarm (VOLT)
+ALM_IN_5          mcp23s17_0 Pin 4   AC3 Compressor Run (fb_compressor)   AC2 High-Pressure Alarm (HP)
+ALM_IN_6          mcp23s17_0 Pin 5   AC3 Fan Run (fb_fan)                 AC2 Low-Pressure Alarm (LP)
+ALM_IN_7          mcp23s17_0 Pin 6   AC4 Compressor Run (fb_compressor)   AC2 Flow Alarm (FLOW)
+ALM_IN_8          mcp23s17_0 Pin 7   AC4 Fan Run (fb_fan)                 AC2 Voltage Alarm (VOLT)
+ALM_IN_9          mcp23s17_0 Pin 8   AC5 Compressor Run (fb_compressor)   AC3 High-Pressure Alarm (HP)
+ALM_IN_10         mcp23s17_0 Pin 9   AC5 Fan Run (fb_fan)                 AC3 Low-Pressure Alarm (LP)
+ALM_IN_11         mcp23s17_0 Pin 10  AC6 Compressor Run (fb_compressor)   AC3 Flow Alarm (FLOW)
+ALM_IN_12         mcp23s17_0 Pin 11  AC6 Fan Run (fb_fan)                 AC3 Voltage Alarm (VOLT)
+ALM_IN_13         mcp23s17_1 Pin 0   AC7 Compressor Run (fb_compressor)   AC4 High-Pressure Alarm (HP)
+ALM_IN_14         mcp23s17_1 Pin 1   AC7 Fan Run (fb_fan)                 AC4 Low-Pressure Alarm (LP)
+ALM_IN_15         mcp23s17_1 Pin 2   AC8 Compressor Run (fb_compressor)   AC4 Flow Alarm (FLOW)
+ALM_IN_16         mcp23s17_1 Pin 3   AC8 Fan Run (fb_fan)                 AC4 Voltage Alarm (VOLT)
+──────────────────────────────────────────────────────────────────────────────────────────────────
+ALM_IN_17         mcp23s17_1 Pin 4   Smoke / Fire Interlock (DI_ROLE_SMOKE_FIRE)
+ALM_IN_18         mcp23s17_1 Pin 5   Door Open Alarm (DI_ROLE_DOOR_OPEN)
+ALM_IN_19         mcp23s17_1 Pin 6   Water Leak Alarm (DI_ROLE_WATER_LEAK)
+ALM_IN_20         mcp23s17_1 Pin 7   Surge Protector / DPS (DI_ROLE_SURGE_PROTECTOR)
+ALM_IN_21         mcp23s17_1 Pin 8   Phase Monitor Trip (DI_ROLE_PHASE_MONITOR)
+ALM_IN_22..24     mcp23s17_1 Pin 9..11 User Spares
+```
+
+> [!IMPORTANT]
+> **Zero External Modbus Hardware Overhead**: In `HVAC_MODE_TELEMETRY_ONLY`, all 8 AC units and shelter safety inputs are processed entirely through the local SPI expanders. No external RS-485 Modbus digital input module (`MBSL32DI`) or relay module is required.
+
+### 7.2 Profiles 2 & 3: `HVAC_MODE_HYBRID_FULL` & `HVAC_MODE_HVAC_CONTROL_ONLY`
+- **Target**: Sites where BrightC V3 acts as the primary autonomous sequencer driving contactors with lead-lag $N+M$ rotation, anti-inrush staggering, and safety interlocks.
+- **Units 1..4 (Local Actuation & Safety Cutouts)**:
+  * Driven by on-board relays on `&mcp23s17_2` (`relay_aa`, `relay_sm`, `relay_g`).
+  * Safety cutouts (`HP`, `LP`, `FLOW`, `VOLT`) wired to local inputs `ALM_IN_1` through `ALM_IN_16` (4 inputs per unit).
+- **Units 5..8 (Remote Modbus Expansion, configured when `total_units > 4`)**:
+  * Driven by remote Modbus RTU relay module (Waveshare 32CH, Slave Addr 2, coils 0..11).
+  * Safety cutouts (`HP`, `LP`, `FLOW`, `VOLT`) wired to remote Modbus `MBSL32DI` (Slave Addr 4), channels 0..15.
+- **Telemetry Feedback for All Units 1..8 in Hybrid Mode**:
+  * Fans 1..8 auxiliary contacts (`fb_fan`): Remote Modbus `MBSL32DI` channels 16..23.
+  * Compressors 1..8 auxiliary contacts (`fb_compressor`): Remote Modbus `MBSL32DI` channels 24..31.

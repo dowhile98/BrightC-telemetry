@@ -64,8 +64,8 @@ Base Offset   Total Size    Logical Domain             Structure and Purpose
 
 ### 2.2 CONFIG_DOMAIN_HVAC Specification & Lifecycle
 - **Payload Structure**: [`config_hvac_t`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/include/common/hvac_types.h) defined in `app/include/common/hvac_types.h`.
-- **Payload Size**: ~460–476 bytes (including `hvac_operation_mode_t`, 4 thermal groups with temperature setpoints, safety timers, $N+M$ redundancy metrics, 8 unit hardware routing endpoints for GPIO/SPI/Modbus, and safety interlocks).
-- **Allocated Memory**: 2048 bytes at base address `0x2800` organized into 2 ping-pong slots of 1024 bytes each, leaving ample headroom over the 32-byte `microconf` header plus payload.
+- **Payload Size**: ~188 bytes (optimized from legacy ~476 bytes by removing the redundant 288-byte `hvac_unit_hw_config_t units[8]` array, leaving `hardware_pin_map.h` as the single authoritative source of truth for physical hardware routing). Encapsulates `hvac_operation_mode_t`, 4 thermal groups with temperature setpoints, safety timers, $N+M$ redundancy metrics, and safety interlocks.
+- **Allocated Memory**: 2048 bytes at base address `0x2800` organized into 2 ping-pong slots of 1024 bytes each, leaving ample headroom (> 800 bytes) over the 32-byte `microconf` header plus payload.
 - **Lifecycle & Synchronization**:
   1. **Bootstrapping**: Loaded synchronously during `composition_root_init()` before Active Object threads start. If empty or corrupted CRC, defaults are loaded.
   2. **Runtime Mutation**: Modifications (via HMI, CLI, or cloud command) update RAM and emit `CONFIG_EVENT_DIRTY` on `chan_system_config`.

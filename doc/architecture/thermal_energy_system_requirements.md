@@ -32,7 +32,9 @@ The **Thermal and Energy System** (`thermal_energy`) serves as the edge thermody
 - **Sensor Index Mapping**: Dynamic assignment of flat sensor IDs (1..59) to semantic pairs and probes without hardcoded physical bindings.
 - **Return Grille Humidity Acquisition**: Ingestion of industrial 4–20 mA relative humidity transmitter ($HR_{ret}$) on connector `J9`, selectable via Kconfig, with NAMUR NE43 loop break detection (< 3.5 mA).
 - **Total Electrical Metering**: Ingestion of 3-phase electrical parameters from the existing `JSY-MK-339` Modbus meter ($P_{elec\_total}$, voltages, currents, power factors, kWh).
-- **Physical Equipment Run Feedback**: Debounced auxiliary contacts for evaporator supply fans ($U_{vent\_ON}$) and compressors ($c_1 \dots c_4$).
+- **Physical Equipment Run Feedback**: Debounced auxiliary contacts for evaporator supply fans ($U_{vent\_ON}$) and compressors ($c_1 \dots c_8$):
+  * **In `HVAC_MODE_TELEMETRY_ONLY`**: Up to 8 AC units (16 digital inputs = 8 compressors + 8 fans) are monitored 100% locally via on-board inputs `ALM_IN_1..16` (`&mcp23s17_0` and `&mcp23s17_1`). ZERO external Modbus I/O modules required!
+  * **In `HVAC_MODE_HYBRID_FULL` & `HVAC_MODE_HVAC_CONTROL_ONLY`**: Auxiliary contacts are acquired from remote Modbus `MBSL32DI` channels 16..23 (Fans 1..8) and channels 24..31 (Compressors 1..8), while on-board inputs `ALM_IN_1..16` provide 4 dedicated safety alarm cutouts per local unit (HP, LP, FLOW, VOLT).
 - **Compressor Stabilization State Machine**: 5-state temporal sequence per compressor (`OFF`, `INRUSH_WAIT`, `STEP_LOAD_CAPTURE`, `THERMAL_WARMUP`, `STEADY_STATE`).
 - **Psychrometric & Thermodynamic Engine**: Real-time evaluation of $P_{atm}(Z)$, saturation and partial vapor pressure ($P_{ws}, P_w$), absolute humidity ($\omega_{ret}$), dew point ($T_{rocio}$), dry air density ($\rho_{da}$), fan-governed dry air mass flow rate ($\dot{m}_{da}$), sensible capacity ($Q_{sensible}$), latent capacity ($Q_{latente}$), total capacity ($Q_{total}$), condensate flow rate ($\dot{m}_{cond}$), Sensible Heat Factor ($SHF$), $COP_{real}$, $COP_{sensible}$, and Second Law exergetic efficiency ($\eta_{II}$).
 - **Predictive Analytics & Baseline Learning**:
@@ -91,7 +93,7 @@ The **Thermal and Energy System** (`thermal_energy`) serves as the edge thermody
   - If $I_{loop} > 21.0\text{ mA}$, the system shall declare an **Over-Current Fault** (`HR_ret` quality = `INVALID`).
 
 ### 3.3 Equipment Auxiliary Contacts & Airflow Governance
-- **REQ-FEEDBACK-01**: The system shall monitor optocoupled auxiliary contacts for evaporator supply fans ($U_{vent\_ON}$) and compressors ($c_1 \dots c_4$).
+- **REQ-FEEDBACK-01**: The system shall monitor optocoupled auxiliary contacts for evaporator supply fans ($U_{vent\_ON}$) and compressors ($c_1 \dots c_8$).
 - **REQ-FEEDBACK-02**: Contactor signals shall be debounced at 50 Hz (20 ms interval) requiring 25 consecutive stable samples (500 ms) before state commitment per REVF §2.3.
 - **REQ-FEEDBACK-03 (Decoupling Rule F-01)**: Dry air mass flow ($\dot{m}_{da,total}$) and pair airflow contributions shall be governed **strictly** by confirmed active fan contacts ($u \in U_{vent\_ON}$), irrespective of compressor thermostat status.
 - **REQ-FEEDBACK-04**: A fan or compressor state shall be evaluated as:
@@ -99,6 +101,10 @@ The **Thermal and Energy System** (`thermal_energy`) serves as the edge thermody
   - `CONFIRMED_OFF`: Contact open and debounced.
   - `UNKNOWN`: Contact unmapped, disabled, or source communication lost.
 - **REQ-FEEDBACK-05**: Under no circumstances shall firmware assume an unmapped or unknown fan is running. If fan feedback is `UNKNOWN`, its associated unit mass flow shall be evaluated as $0.0\text{ kg/s}$, and its capacity flagged as `UNAVAILABLE`.
+- **REQ-FEEDBACK-06 (Operational Profile Routing)**:
+  - When operational mode is `HVAC_MODE_TELEMETRY_ONLY`, feedback contacts for up to 8 AC units shall be routed 1:1 to on-board local inputs `ALM_IN_1..16` (`AC1: ALM_IN_1 Comp, ALM_IN_2 Fan`, `AC2: ALM_IN_3 Comp, ALM_IN_4 Fan`, ..., `AC8: ALM_IN_15 Comp, ALM_IN_16 Fan`), requiring zero external Modbus I/O modules.
+  - When operational mode is `HVAC_MODE_HYBRID_FULL` or `HVAC_MODE_HVAC_CONTROL_ONLY`, feedback contacts shall be routed to remote Modbus `MBSL32DI` channels 16..23 (`fb_fan`) and 24..31 (`fb_compressor`), freeing local inputs `ALM_IN_1..16` for safety alarm cutouts (HP, LP, FLOW, VOLT) of local Units 1..4.
+- **REQ-FEEDBACK-07 (Authoritative Pinout Invariant)**: All physical channel mappings shall be defined immutably at compile time in `hardware_pin_map.h`. The persistent storage configuration (`config_hvac_t`) shall not contain hardware routing tables.
 
 ### 3.4 Compressor Temporal State Machine
 - **REQ-FSM-01**: The system shall maintain an independent 5-phase temporal state machine for each configured compressor $c$:

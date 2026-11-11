@@ -25,6 +25,9 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-10**: Documented HVAC Configuration Optimization in Storage Architecture:
+  - Pruned redundant hardware mapping array `units[8]` (288 B) from `config_hvac_t` (`CONFIG_DOMAIN_HVAC`), reducing payload footprint from ~476 B to ~188 B and freeing 288 B in EEPROM slot.
+  - Formally established `hardware_pin_map.h` as the single authoritative source of truth for physical terminal blocks and expander routing.
 - **2026-11-07**: Optimized EEPROM Payload Sizing & Buffer Allocation:
   - Recalculated 64-byte EEPROM page-aligned layout for all 5 active domains (`DEVICE`: 128B slot, `NET_ETH`: 64B slot, `NET_WIFI`: 320B slot, `HVAC`: 576B slot, `CALIBRATION`: 192B slot).
   - Reduced `ADAPTER_STORAGE_MICROCONF_MAX_PAYLOAD` from 992B down to 544B (saving >2 KB static RAM).

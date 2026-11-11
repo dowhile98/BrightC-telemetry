@@ -436,6 +436,63 @@ Before any evaluation cycle, `sensor_topology_validate()` verifies:
 4. No single flat sensor ID appears more than once across supply, return, room, or outdoor assignments.
 5. If an assigned flat ID is unmapped or unregistered in `k_brightc_sensor_catalog`, configuration is rejected with `-EINVAL`.
 
+### 6.2 Operational Profiles Hardware Mapping Strategy (`hardware_pin_map.h`)
+
+To eliminate redundant hardware declarations in EEPROM storage, `hardware_pin_map.h` is established as the **single authoritative source of truth** for all physical pinouts. Physical channel routing adapts deterministically based on the active operational profile:
+
+#### 1. Profile `HVAC_MODE_TELEMETRY_ONLY` (Audit & Passive Telemetry):
+- **Monitored Equipment**: Up to 8 AC units ($AC_1 \dots AC_8$).
+- **Actuation**: Relays disengaged (`relay_sm = 0`, mechanical bypass); zero actuation relays used.
+- **Feedback Contacts**: Exactly 2 auxiliary dry contacts per unit (1 + 1):
+  * Compressor Run feedback (`fb_compressor`)
+  * Evaporator Fan Run feedback (`fb_fan`)
+- **Total Feedback Channels**: 16 digital inputs ($8 \times 2 = 16$).
+- **100% On-Board Local Inputs**: Sourced exclusively from local optocoupled inputs `ALM_IN_1` through `ALM_IN_16` on the BrightC V3 PCB (`&mcp23s17_0` pins 0..11 and `&mcp23s17_1` pins 0..3):
+
+```
+Physical Terminal    Expander Pin       Role in HVAC_MODE_TELEMETRY_ONLY
+──────────────────────────────────────────────────────────────────────────────────
+ALM_IN_1             mcp23s17_0 Pin 0   AC1 Compressor Run Feedback (fb_compressor)
+ALM_IN_2             mcp23s17_0 Pin 1   AC1 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_3             mcp23s17_0 Pin 2   AC2 Compressor Run Feedback (fb_compressor)
+ALM_IN_4             mcp23s17_0 Pin 3   AC2 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_5             mcp23s17_0 Pin 4   AC3 Compressor Run Feedback (fb_compressor)
+ALM_IN_6             mcp23s17_0 Pin 5   AC3 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_7             mcp23s17_0 Pin 6   AC4 Compressor Run Feedback (fb_compressor)
+ALM_IN_8             mcp23s17_0 Pin 7   AC4 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_9             mcp23s17_0 Pin 8   AC5 Compressor Run Feedback (fb_compressor)
+ALM_IN_10            mcp23s17_0 Pin 9   AC5 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_11            mcp23s17_0 Pin 10  AC6 Compressor Run Feedback (fb_compressor)
+ALM_IN_12            mcp23s17_0 Pin 11  AC6 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_13            mcp23s17_1 Pin 0   AC7 Compressor Run Feedback (fb_compressor)
+ALM_IN_14            mcp23s17_1 Pin 1   AC7 Evaporator Fan Run Feedback (fb_fan)
+ALM_IN_15            mcp23s17_1 Pin 2   AC8 Compressor Run Feedback (fb_compressor)
+ALM_IN_16            mcp23s17_1 Pin 3   AC8 Evaporator Fan Run Feedback (fb_fan)
+──────────────────────────────────────────────────────────────────────────────────
+ALM_IN_17            mcp23s17_1 Pin 4   Smoke / Fire Interlock (DI_ROLE_SMOKE_FIRE)
+ALM_IN_18            mcp23s17_1 Pin 5   Door Open Contact (DI_ROLE_DOOR_OPEN)
+ALM_IN_19            mcp23s17_1 Pin 6   Water Leak Sensor (DI_ROLE_WATER_LEAK)
+ALM_IN_20            mcp23s17_1 Pin 7   Surge Protector / DPS (DI_ROLE_SURGE_PROTECTOR)
+ALM_IN_21            mcp23s17_1 Pin 8   Phase Monitor Trip (DI_ROLE_PHASE_MONITOR)
+ALM_IN_22..24        mcp23s17_1 Pin 9..11 User Spares
+```
+
+> [!IMPORTANT]
+> **Zero External Modbus Hardware Requirement**: In `HVAC_MODE_TELEMETRY_ONLY`, all 8 AC units and environmental shelter contacts are monitored **100% locally on the controller PCB**. Zero external Modbus I/O modules (`MBSL32DI` or Waveshare) are required.
+
+#### 2. Profiles `HVAC_MODE_HYBRID_FULL` & `HVAC_MODE_HVAC_CONTROL_ONLY`:
+- **Actuation & Safety Partitioning**:
+  * Units 1..4 (Local): Actuated via on-board relays on `&mcp23s17_2` (`relay_aa`, `relay_sm`, `relay_g`). 4 dedicated safety alarm cutouts per unit (`alarm_hp`, `alarm_lp`, `alarm_flow`, `alarm_volt`) occupy local inputs `ALM_IN_1` through `ALM_IN_16`.
+  * Units 5..8 (Remote, when `total_units > 4`): Actuated via remote RS-485 Modbus relay module (Waveshare 32CH, coils 0..11). 4 dedicated safety alarm cutouts per unit occupy remote Modbus `MBSL32DI` channels 0..15.
+- **Auxiliary Telemetry Feedbacks in Hybrid Mode**:
+  * Fans 1..8 auxiliary contacts (`fb_fan`): Remote Modbus `MBSL32DI` channels 16..23.
+  * Compressors 1..8 auxiliary contacts (`fb_compressor`): Remote Modbus `MBSL32DI` channels 24..31.
+
+### 6.3 EEPROM Storage Optimization & Invariant Governance
+- **Removal of Redundant Hardware Routing**: The 288-byte array `hvac_unit_hw_config_t units[8]` has been completely removed from `config_hvac_t`.
+- **Storage Footprint**: `config_hvac_t` shrinks from ~476 bytes down to **~188 bytes**, freeing **288 bytes** of non-volatile storage per slot in `AT24C256C`.
+- **Integrity Guarantee**: Physical hardware routing is immutable, preventing any possibility of EEPROM corruption altering physical terminal blocks or relay assignments in the field.
+
 ---
 
 ## 7. Decoupled Presentation & Persistence Plane
