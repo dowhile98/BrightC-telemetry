@@ -19,6 +19,10 @@
 #include <math.h>
 #include <string.h>
 
+#if defined(CONFIG_CMSIS_DSP) && !defined(CONFIG_ZTEST)
+#include <arm_math.h>
+#endif
+
 /* ========================================================================= */
 /* OLS Model Management & Solvers                                            */
 /* ========================================================================= */
@@ -79,6 +83,85 @@ int ols_model_solve(ols_model_t *self, double lambda)
         lambda = OLS_DEFAULT_TIKHONOV_LAMBDA;
     }
 
+#if defined(CONFIG_CMSIS_DSP) && !defined(CONFIG_ZTEST)
+    /*
+     * ARM CMSIS-DSP Hardware-Accelerated 4x4 Matrix Solver.
+     * Uses arm_mat_init_f64, arm_mat_inverse_f64, and vector multiplication.
+     */
+    float64_t a_data[16];
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            a_data[i * 4 + j] = self->xtx[i][j];
+        }
+        a_data[i * 4 + i] += lambda;
+    }
+
+    /* Compute 1-norm of regularized matrix A: ||A||_1 = max_j sum_i |A_ij| */
+    double norm_a = 0.0;
+    for (int j = 0; j < 4; j++) {
+        double col_sum = 0.0;
+        for (int i = 0; i < 4; i++) {
+            col_sum += fabs(a_data[i * 4 + j]);
+        }
+        if (col_sum > norm_a) {
+            norm_a = col_sum;
+        }
+    }
+
+    float64_t inv_data[16];
+    arm_matrix_instance_f64 mat_a;
+    arm_matrix_instance_f64 mat_inv;
+    arm_matrix_instance_f64 mat_xty;
+    arm_matrix_instance_f64 mat_beta;
+
+    arm_mat_init_f64(&mat_a, 4, 4, a_data);
+    arm_mat_init_f64(&mat_inv, 4, 4, inv_data);
+
+    arm_status status = arm_mat_inverse_f64(&mat_a, &mat_inv);
+    if (status != ARM_MATH_SUCCESS) {
+        self->ols_trained = false;
+        return -EDOM;
+    }
+
+    /* Compute 1-norm of inverse matrix A^-1 */
+    double norm_inv = 0.0;
+    for (int j = 0; j < 4; j++) {
+        double col_sum = 0.0;
+        for (int i = 0; i < 4; i++) {
+            col_sum += fabs(inv_data[i * 4 + j]);
+        }
+        if (col_sum > norm_inv) {
+            norm_inv = col_sum;
+        }
+    }
+
+    /* Condition number kappa_1(A) = ||A||_1 * ||A^-1||_1 */
+    double cond = norm_a * norm_inv;
+    if (isnan(cond) || isinf(cond) || cond > 1.0e16) {
+        self->ols_trained = false;
+        return -EDOM;
+    }
+    self->condition_number = (float)cond;
+
+    /* Solve beta = A^-1 * (X^T * Y) */
+    arm_mat_init_f64(&mat_xty, 4, 1, (float64_t *)self->xty);
+    arm_mat_init_f64(&mat_beta, 4, 1, (float64_t *)self->beta);
+    status = arm_mat_mult_f64(&mat_inv, &mat_xty, &mat_beta);
+    if (status != ARM_MATH_SUCCESS) {
+        self->ols_trained = false;
+        return -EDOM;
+    }
+
+    for (int i = 0; i < 4; i++) {
+        if (isnan(self->beta[i]) || isinf(self->beta[i])) {
+            self->ols_trained = false;
+            return -EDOM;
+        }
+    }
+
+    self->ols_trained = true;
+    return 0;
+#else
     /*
      * Build augmented matrix [A | I_4] of size 4 x 8 where A = X^T * X + lambda * I_4.
      * Gauss-Jordan elimination with partial pivoting inverts A and solves A * beta = X^T * Y.
@@ -188,6 +271,7 @@ int ols_model_solve(ols_model_t *self, double lambda)
 
     self->ols_trained = true;
     return 0;
+#endif
 }
 
 float ols_model_predict_q(const ols_model_t *self, float t_ret, float t_ext, float f_carga)

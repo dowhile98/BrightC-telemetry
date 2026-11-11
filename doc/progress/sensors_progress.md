@@ -1,6 +1,6 @@
 # Sensors & Mathematical Model Subsystem Progress
 
-- **Status**: **IN_PROGRESS (99%)**
+- **Status**: **COMPLETE (100%)**
 - **Architecture Reference**: [`doc/architecture/sensor_subsystem.md`](../architecture/sensor_subsystem.md)
 
 ---
@@ -9,6 +9,10 @@
 
 | Component | File Path | Status | Description |
 | :--- | :--- | :---: | :--- |
+| **Thermal & Energy Port Contract** | `app/include/interfaces/i_thermal_energy.h` | 100% | Rule §4.1.D fat-pointer port contract (`i_thermal_energy_t`, `i_thermal_energy_api_t`), safety predicate `i_thermal_energy_is_bound()`, and type-safe defensive wrappers |
+| **Thermal & Energy Fake Double** | `tests/fakes/include/fake_thermal_energy.h`, `tests/fakes/src/fake_thermal_energy.c` | 100% | In-memory test double implementing `i_thermal_energy_t` for consumer testing with ring history support |
+| **Hardware FPU & CMSIS-DSP** | `app/prj.conf`, `app/src/domain/thermal_energy/predictive_analytics.c` | 100% | Cortex-M7 FPv5-D16 hardware FPU + CMSIS-DSP `arm_mat_inverse_f64` and vector multiplication with ISO C99 fallback |
+| **Sensor Matrix Normalizer Adapter** | `app/src/infrastructure/adapters/sensor_matrix_mapper.c/.h` | 100% | Signal ingestion layer mapping flat temperatures, J9 4-20mA humidity, JSY-MK-339 3-phase AC power, and mode-dependent contacts into `thermal_energy_capture_t` |
 | **Thermal & Energy Types** | `app/include/common/thermal_energy_types.h` | 100% | Universal types (`quality_status_t`, `compressor_fsm_state_t`), array bounds, DTO contracts (`thermal_energy_capture_t`, `thermal_energy_result_t`), and dynamic Kconfig-configurable `thermal_hourly_record_t` |
 | **Thermal Storage Configs** | `app/include/common/config_types.h`, `app_defaults.h` | 100% | EEPROM ping-pong layouts for `CONFIG_DOMAIN_THERMAL_SITE` (0x0A00, 1536 B, payload 184 B) and `CONFIG_DOMAIN_THERMAL_BASELINE` (0x1000, 1024 B, payload 216 B), validation predicates, and defaults |
 | **Humidity Transducer (Domain)** | `app/src/domain/thermal_energy/humidity_transducer.c/.h` | 100% | 4-20 mA NAMUR NE43 return relative humidity transducer, fault bounds (<3.8 mA, >20.5 mA), and calibration |
@@ -31,6 +35,8 @@
 ## 2. Pending Work
 - [ ] Implement `adapter_temperature_bank.c` linking Modbus/internal sensors to `i_temperature_bank_t`.
 - [ ] Implement `adapter_energy_meter.c` linking JSY-MK-339 to `i_energy_meter_t`.
+- [x] Implement Phase 4 Interface Port Contract (`i_thermal_energy.h`), Fake (`fake_thermal_energy.c/.h`), and Signal Ingestion Layer (`sensor_matrix_mapper.c/.h`).
+- [x] Enable Hardware FPU (`CONFIG_FPU=y`, `CONFIG_FPU_SHARING=y`) & CMSIS-DSP Acceleration (`arm_mat_inverse_f64`).
 - [x] Implement Mathematical Model Revision F Phase 3 Domain Services (`predictive_analytics.c/.h`, `test_predictive_ols.c`).
 - [x] Implement Mathematical Model Revision F Phase 2 Domain Services (`humidity_transducer.c`, `psychrometrics.c`, `thermodynamics.c`, `compressor_fsm.c`).
 - [x] Implement ADC driver for 5 on-board PT100 channels (INA826) and 4-20mA current loop inputs (J9).
@@ -38,6 +44,19 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Implemented Phase 4 (Interface Port Contract & Signal Ingestion Layer) + Hardware FPU & CMSIS-DSP Acceleration:
+  - Enabled Hardware Double-Precision FPU (`CONFIG_FPU=y`, `CONFIG_FPU_SHARING=y`) and ARM CMSIS-DSP (`CONFIG_CMSIS_DSP=y`) in `app/prj.conf`.
+  - Added hardware-accelerated 4x4 matrix solve (`arm_mat_init_f64`, `arm_mat_inverse_f64`, `arm_mat_mult_f64`) in `app/src/domain/thermal_energy/predictive_analytics.c` under `#if defined(CONFIG_CMSIS_DSP) && !defined(CONFIG_ZTEST)` with pure C99 Gauss-Jordan fallback for host simulation.
+  - Authored abstract port contract `app/include/interfaces/i_thermal_energy.h` adhering strictly to Rule §4.1.D fat-pointer encapsulation (`i_thermal_energy_api_t`, `i_thermal_energy_t`, `i_thermal_energy_is_bound()`, validated wrappers).
+  - Implemented in-memory test double `tests/fakes/include/fake_thermal_energy.h` and `tests/fakes/src/fake_thermal_energy.c`.
+  - Implemented normalizer adapter `app/src/infrastructure/adapters/sensor_matrix_mapper.c/.h` converting multi-source raw hardware readings into `thermal_energy_capture_t`:
+    - Temperatures mapped according to `config_thermal_site_t` (supply, return, room, outdoor).
+    - Return humidity mapped from 4-20 mA J9 CH1 via `humidity_transducer_process()`.
+    - 3-phase electrical power ingested from `energy_reading_t`.
+    - Auxiliary contacts mapped based on HVAC mode (`ALM_IN_1..16` in telemetry-only or `MBSL32DI` in hybrid/control).
+  - Authored unit test suites `test_thermal_energy_port.c` (7 tests) and `test_sensor_matrix_mapper.c` (8 tests); all 60 tests in `tests/unit/thermal_energy/` pass 100% on `native_sim`.
+  - Verified target build on physical board `brightc-controllerv3` (STM32H743): 0 errors, 0 warnings (Flash: 16.61%, RAM: 38.54%).
+
 - **2026-11-11**: Implemented Phase 3 of Thermal and Energy Subsystem (REVF Baseline Mathematical Model Domain - Predictive Analytics & OLS Regression):
   - Created `app/src/domain/thermal_energy/predictive_analytics.c/.h`:
     - 4-variable OLS regression model (`ols_model_t`) in IEEE 754 64-bit `double` (`xtx[4][4]`, `xty[4]`, `beta[4]`).

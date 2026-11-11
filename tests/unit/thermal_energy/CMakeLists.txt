@@ -11,14 +11,19 @@ target_sources(app PRIVATE
     src/test_thermodynamics.c
     src/test_compressor_fsm.c
     src/test_predictive_ols.c
+    src/test_thermal_energy_port.c
+    src/test_sensor_matrix_mapper.c
+    ${APP_DIR}/tests/fakes/src/fake_thermal_energy.c
     ${APP_DIR}/app/src/domain/thermal_energy/humidity_transducer.c
     ${APP_DIR}/app/src/domain/thermal_energy/psychrometrics.c
     ${APP_DIR}/app/src/domain/thermal_energy/thermodynamics.c
     ${APP_DIR}/app/src/domain/thermal_energy/compressor_fsm.c
     ${APP_DIR}/app/src/domain/thermal_energy/predictive_analytics.c
+    ${APP_DIR}/app/src/infrastructure/adapters/sensor_matrix_mapper.c
 )
 
 target_include_directories(app PRIVATE
     ${APP_DIR}/app/include
     ${APP_DIR}/app/src
+    ${APP_DIR}/tests/fakes/include
 )
