@@ -30,6 +30,15 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-10**: Completed Comprehensive Architectural Analysis & Specifications for REVF Thermal & Energy Subsystem (`doc/tasks/2.thermal.md`):
+  - Audited existing codebase against REVF: verified domain algorithms (`thermodynamic_engine.c/.h`), ADC DMA driver, 16-channel Modbus RTU, JSY-MK-339 codec, and 500 ms contactor debouncing.
+  - Authored 6 authoritative architecture specifications under `doc/architecture/`:
+    - `thermal_energy_system_analysis.md`: Detailed audit, module taxonomy, hardware profiles, blocker/risk analysis (FPU configuration, 64-byte wire sizing, concurrency lockout).
+    - `thermal_energy_system_requirements.md`: Phase 1 vs Phase 2 boundaries, equipment feedback decoupling ($U_{vent\_ON}$), data quality contracts, and non-functional invariants.
+    - `thermal_energy_system_architecture.md`: Clean Architecture component boundaries, abstract interface `i_thermal_energy_t`, coherent capture cache, 720h RAM ring buffer, and decoupled consumer query port.
+    - `thermal_energy_system_configuration.md`: Kconfig ADC channel selection for 4-20mA humidity, EEPROM memory layout (allocating domains `CONFIG_DOMAIN_THERMAL_SITE` and `BASELINE`), and exact 64-byte MicroSD wire record format.
+    - `thermal_energy_system_mathematical_model.md`: Exhaustive algorithm-by-algorithm mapping, compressor stabilization FSM, Tikhonov regularized OLS in 64-bit `double`, and floating-point safety guards.
+    - `thermal_energy_system_test_plan.md`: Test pyramid covering unit test suites on `native_sim`, integration Zbus synchronization tests, and HIL validation on STM32H743.
 - **2026-11-09**: Redesigned internal ADC acquisition and RTD temperature conversion pipeline:
   - Fixed 16-bit ADC sample data type bug (`uint16_t` 0..65535 instead of `int16_t` in `adc_dma_engine.h`, `adc_dma_engine.c`, and `adapter_sensor_zephyr.c`) preventing false OPEN/INVALID from sign extension.
   - Implemented burst oversampling (16 samples per channel) with min/max rejection in `adc_dma_engine.c` to eliminate single-shot EMI noise and aliasing.
