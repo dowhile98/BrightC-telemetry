@@ -10,10 +10,12 @@ target_sources(app PRIVATE
     src/test_psychrometrics.c
     src/test_thermodynamics.c
     src/test_compressor_fsm.c
+    src/test_predictive_ols.c
     ${APP_DIR}/app/src/domain/thermal_energy/humidity_transducer.c
     ${APP_DIR}/app/src/domain/thermal_energy/psychrometrics.c
     ${APP_DIR}/app/src/domain/thermal_energy/thermodynamics.c
     ${APP_DIR}/app/src/domain/thermal_energy/compressor_fsm.c
+    ${APP_DIR}/app/src/domain/thermal_energy/predictive_analytics.c
 )
 
 target_include_directories(app PRIVATE

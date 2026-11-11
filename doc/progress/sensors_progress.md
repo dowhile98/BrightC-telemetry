@@ -15,6 +15,7 @@
 | **Psychrometrics (Domain)** | `app/src/domain/thermal_energy/psychrometrics.c/.h` | 100% | Moist air thermodynamic properties: barometric pressure altitude correction, Magnus-Tetens saturation vapor pressure, mixing ratio, moist air enthalpy, dew point, wet-bulb estimation, air density |
 | **Thermodynamic Engine Rev F (Domain)** | `app/src/domain/thermal_energy/thermodynamics.c/.h` | 100% | Mass flow rate, sensible/latent heat balance, total cooling capacity, COP (instantaneous, baseline, Carnot), exergy efficiency, and NaN/Inf-safe numerical floating-point operations |
 | **Compressor FSM & Coherence (Domain)** | `app/src/domain/thermal_energy/compressor_fsm.c/.h` | 100% | 5-state compressor stabilization FSM (`COMPR_STATE_OFF`, `STARTING`, `STABILIZING`, `STEADY`, `FAULT`), anti-cycling timing, thermal capacity gating, and inrush power suppression |
+| **Predictive Analytics & OLS (Domain)** | `app/src/domain/thermal_energy/predictive_analytics.c/.h` | 100% | 4-variable OLS solver in double precision with Tikhonov regularization, condition number calculation, expected COP, % mechanical degradation, filter fouling & F-04 precedence days remaining, decoupled refrigerant leak detection, hotspot/bypass/moisture alerts, and weather derating/free cooling margin |
 | **Sensor Types** | `app/include/common/sensor_types.h`, `energy_types.h` | 100% | Data structures for RTDs, energy meters, pressure, humidity; multi-concentrator Modbus (up to 4 CWT concentrators = 64 channels) and Revision F limits (16 pairs, 16 room probes, 8 outdoor probes) |
 | **Domain Interfaces** | `app/include/interfaces/i_sensor_matrix.h`, `i_energy_meter.h`, `i_temperature_bank.h` | 100% | Pure abstract ports for sensor ingestion |
 | **Matrix Mapper** | `app/src/domain/services/sensor_matrix_mapper.c` | 100% | Normalizes raw channel data across multi-concentrator CWTs and internal/J9 channels to unified sensor matrix and flat 64-channel snapshot (`sensor_matrix_pack_flat_snapshot`) |
@@ -30,12 +31,26 @@
 ## 2. Pending Work
 - [ ] Implement `adapter_temperature_bank.c` linking Modbus/internal sensors to `i_temperature_bank_t`.
 - [ ] Implement `adapter_energy_meter.c` linking JSY-MK-339 to `i_energy_meter_t`.
+- [x] Implement Mathematical Model Revision F Phase 3 Domain Services (`predictive_analytics.c/.h`, `test_predictive_ols.c`).
 - [x] Implement Mathematical Model Revision F Phase 2 Domain Services (`humidity_transducer.c`, `psychrometrics.c`, `thermodynamics.c`, `compressor_fsm.c`).
 - [x] Implement ADC driver for 5 on-board PT100 channels (INA826) and 4-20mA current loop inputs (J9).
 
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Implemented Phase 3 of Thermal and Energy Subsystem (REVF Baseline Mathematical Model Domain - Predictive Analytics & OLS Regression):
+  - Created `app/src/domain/thermal_energy/predictive_analytics.c/.h`:
+    - 4-variable OLS regression model (`ols_model_t`) in IEEE 754 64-bit `double` (`xtx[4][4]`, `xty[4]`, `beta[4]`).
+    - Gauss-Jordan elimination with partial pivoting for normal equations inversion, 1-norm matrix condition number calculation ($\kappa_1$), and Tikhonov diagonal regularization ($\lambda = 10^{-6}$) handling ill-conditioned collinear matrices.
+    - Expected COP calculation defended against $P_{elec} < 0.5\text{ kW}$.
+    - Mechanical degradation percentage index ($\% \text{Degradation} = \text{clamp}_{0..100}(\max(\Delta COP / COP, \Delta \eta_{II} / \eta_{II}) \times 100)$).
+    - Air filter fouling index ($\% \text{Filter}$) and F-04 Precedence Hierarchy maintenance days remaining ($100\text{ days}$ lockout for $N < 168\text{ h}$, $90\text{ days}$ healthy ceiling, and degradation rate projection).
+    - Outdoor-decoupled refrigerant leak / coil fouling index with $50\%$ filter fouling lockout and $0.20$ load fraction gating.
+    - Environmental anomaly checks: room hotspot ($> 3.5\,^\circ\text{C}$ spread), airflow bypass ($> 27\,^\circ\text{C}$ hotspot or $> 3.0\,^\circ\text{C}$ gradient), and moisture ingress ($> 30\%$ latent, $SHF < 0.70$, or $\omega_{ret} > 0.012\text{ kg/kg}$).
+    - Weather-corrected nominal capacity derating ($0.5\%$ per $^\circ\text{C}$ above $35\,^\circ\text{C}$), safe redundant capacity ($Q_{max\_safe}$), and free cooling margin ($kW_{free}$).
+  - Added unit test suite `predictive_ols_suite` in `tests/unit/thermal_energy/src/test_predictive_ols.c` (14 unit tests, 100% pass rate).
+  - Verified target build on `brightc-controllerv3` (Flash: 16.73%, RAM: 38.03%).
+  - Verified pure domain layer invariant (0 Zephyr headers, 0 dynamic allocations, 0 static mutable state).
 - **2026-11-11**: Implemented Phase 2 of Thermal and Energy Subsystem (REVF Baseline Mathematical Model Domain Services):
   - Created `app/src/domain/thermal_energy/humidity_transducer.c/.h`: 4-20 mA NAMUR NE43 current loop transducer for return air relative humidity, under-range (<3.8 mA) and over-range (>20.5 mA) fault signaling, and 2-point linear calibration.
   - Created `app/src/domain/thermal_energy/psychrometrics.c/.h`: Moist air properties calculation including barometric pressure altitude compensation, Magnus-Tetens saturation vapor pressure, partial vapor pressure, mixing ratio $W$, moist air enthalpy $h$, dew point, wet-bulb estimation, and air density $\rho$.

@@ -57,6 +57,7 @@ target_sources(app PRIVATE
     src/domain/thermal_energy/psychrometrics.c
     src/domain/thermal_energy/thermodynamics.c
     src/domain/thermal_energy/compressor_fsm.c
+    src/domain/thermal_energy/predictive_analytics.c
 )
 
 if(CONFIG_SHELL)
