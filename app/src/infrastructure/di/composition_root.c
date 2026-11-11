@@ -414,138 +414,148 @@ int composition_root_init_storage(app_container_t *self)
     if (i_config_storage_is_bound(&self->storage.port))
     {
         /* 1. DEVICE */
-        uint8_t dev_buf[sizeof(config_envelope_header_t) + sizeof(config_device_t)];
-        size_t dev_size = 0U;
-        config_device_t dev_cfg;
-        memset(&dev_cfg, 0, sizeof(dev_cfg));
-        size_t dev_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_DEVICE,
-                                  dev_buf, sizeof(dev_buf), &dev_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_DEVICE, dev_buf, dev_size,
-                                   &dev_cfg, sizeof(dev_cfg), &dev_unpacked) == 0 &&
-            dev_unpacked == sizeof(config_device_t))
         {
-            self->device_cfg = dev_cfg;
-            LOG_INF("Loaded DEVICE config from storage");
+            uint8_t dev_buf[sizeof(config_envelope_header_t) + sizeof(config_device_t)];
+            size_t dev_size = 0U;
+            config_device_t dev_cfg;
+            memset(&dev_cfg, 0, sizeof(dev_cfg));
+            size_t dev_unpacked = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_DEVICE,
+                                      dev_buf, sizeof(dev_buf), &dev_size) == 0 &&
+                config_envelope_unpack(CONFIG_DOMAIN_DEVICE, dev_buf, dev_size,
+                                       &dev_cfg, sizeof(dev_cfg), &dev_unpacked) == 0 &&
+                dev_unpacked == sizeof(config_device_t))
+            {
+                self->device_cfg = dev_cfg;
+                LOG_INF("Loaded DEVICE config from storage");
+            }
         }
 
         /* 2. CALIBRATION */
-        uint8_t cal_buf[sizeof(config_envelope_header_t) + sizeof(config_calibration_t)];
-        size_t cal_size = 0U;
-        config_calibration_t cal_cfg;
-        memset(&cal_cfg, 0, sizeof(cal_cfg));
-        size_t cal_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_CALIBRATION,
-                                  cal_buf, sizeof(cal_buf), &cal_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_CALIBRATION, cal_buf, cal_size,
-                                   &cal_cfg, sizeof(cal_cfg), &cal_unpacked) == 0 &&
-            cal_unpacked == sizeof(config_calibration_t))
         {
-            self->calibration_cfg = cal_cfg;
-            LOG_INF("Loaded CALIBRATION config from storage");
+            uint8_t cal_buf[sizeof(config_envelope_header_t) + sizeof(config_calibration_t)];
+            size_t cal_size = 0U;
+            config_calibration_t cal_cfg;
+            memset(&cal_cfg, 0, sizeof(cal_cfg));
+            size_t cal_unpacked = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_CALIBRATION,
+                                      cal_buf, sizeof(cal_buf), &cal_size) == 0 &&
+                config_envelope_unpack(CONFIG_DOMAIN_CALIBRATION, cal_buf, cal_size,
+                                       &cal_cfg, sizeof(cal_cfg), &cal_unpacked) == 0 &&
+                cal_unpacked == sizeof(config_calibration_t))
+            {
+                self->calibration_cfg = cal_cfg;
+                LOG_INF("Loaded CALIBRATION config from storage");
+            }
         }
 
         /* 3. HVAC */
-        uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-        size_t hvac_size = 0U;
-        config_hvac_t hvac_cfg;
-        memset(&hvac_cfg, 0, sizeof(hvac_cfg));
-        size_t hvac_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                  hvac_buf, sizeof(hvac_buf), &hvac_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_HVAC, hvac_buf, hvac_size,
-                                   &hvac_cfg, sizeof(hvac_cfg), &hvac_unpacked) == 0 &&
-            hvac_unpacked == sizeof(config_hvac_t) &&
-            config_hvac_is_valid(&hvac_cfg))
         {
-            self->hvac.config = hvac_cfg;
-            LOG_INF("Loaded HVAC config from storage (mode=%u, units=%u)",
-                    (unsigned int)self->hvac.config.operation_mode,
-                    (unsigned int)self->hvac.config.total_units);
-        }
-        else
-        {
-            LOG_INF("No valid HVAC config in storage, applying defaults");
-            size_t pack_len = 0U;
-            if (config_envelope_pack(CONFIG_DOMAIN_HVAC, &self->hvac.config,
-                                     sizeof(self->hvac.config), hvac_buf,
-                                     sizeof(hvac_buf), &pack_len) == 0)
+            uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
+            size_t hvac_size = 0U;
+            config_hvac_t hvac_cfg;
+            memset(&hvac_cfg, 0, sizeof(hvac_cfg));
+            size_t hvac_unpacked = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                      hvac_buf, sizeof(hvac_buf), &hvac_size) == 0 &&
+                config_envelope_unpack(CONFIG_DOMAIN_HVAC, hvac_buf, hvac_size,
+                                       &hvac_cfg, sizeof(hvac_cfg), &hvac_unpacked) == 0 &&
+                hvac_unpacked == sizeof(config_hvac_t) &&
+                config_hvac_is_valid(&hvac_cfg))
             {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                                    hvac_buf, pack_len);
-                if (save_rc != 0)
+                self->hvac.config = hvac_cfg;
+                LOG_INF("Loaded HVAC config from storage (mode=%u, units=%u)",
+                        (unsigned int)self->hvac.config.operation_mode,
+                        (unsigned int)self->hvac.config.total_units);
+            }
+            else
+            {
+                LOG_INF("No valid HVAC config in storage, applying defaults");
+                size_t pack_len = 0U;
+                if (config_envelope_pack(CONFIG_DOMAIN_HVAC, &self->hvac.config,
+                                         sizeof(self->hvac.config), hvac_buf,
+                                         sizeof(hvac_buf), &pack_len) == 0)
                 {
-                    LOG_ERR("Failed to persist default HVAC config: %d", save_rc);
+                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                                        hvac_buf, pack_len);
+                    if (save_rc != 0)
+                    {
+                        LOG_ERR("Failed to persist default HVAC config: %d", save_rc);
+                    }
                 }
             }
         }
 
         /* 4. THERMAL_SITE */
-        uint8_t site_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
-        size_t site_size = 0U;
-        config_thermal_site_t site_cfg;
-        memset(&site_cfg, 0, sizeof(site_cfg));
-        size_t site_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
-                                  site_buf, sizeof(site_buf), &site_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, site_buf, site_size,
-                                   &site_cfg, sizeof(site_cfg), &site_unpacked) == 0 &&
-            site_unpacked == sizeof(config_thermal_site_t) &&
-            config_thermal_site_is_valid(&site_cfg))
         {
-            self->thermal_site_cfg = site_cfg;
-            LOG_INF("Loaded THERMAL_SITE config from storage (pairs=%u, altitude=%d m)",
-                    (unsigned int)self->thermal_site_cfg.configured_pairs_count,
-                    (int)self->thermal_site_cfg.site_altitude_m);
-        }
-        else
-        {
-            LOG_INF("No valid THERMAL_SITE config in storage, applying defaults");
-            size_t pack_len = 0U;
-            if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, &self->thermal_site_cfg,
-                                     sizeof(self->thermal_site_cfg), site_buf,
-                                     sizeof(site_buf), &pack_len) == 0)
+            uint8_t site_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
+            size_t site_size = 0U;
+            config_thermal_site_t site_cfg;
+            memset(&site_cfg, 0, sizeof(site_cfg));
+            size_t site_unpacked = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
+                                      site_buf, sizeof(site_buf), &site_size) == 0 &&
+                config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, site_buf, site_size,
+                                       &site_cfg, sizeof(site_cfg), &site_unpacked) == 0 &&
+                site_unpacked == sizeof(config_thermal_site_t) &&
+                config_thermal_site_is_valid(&site_cfg))
             {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
-                                                    site_buf, pack_len);
-                if (save_rc != 0)
+                self->thermal_site_cfg = site_cfg;
+                LOG_INF("Loaded THERMAL_SITE config from storage (pairs=%u, altitude=%d m)",
+                        (unsigned int)self->thermal_site_cfg.configured_pairs_count,
+                        (int)self->thermal_site_cfg.site_altitude_m);
+            }
+            else
+            {
+                LOG_INF("No valid THERMAL_SITE config in storage, applying defaults");
+                size_t pack_len = 0U;
+                if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, &self->thermal_site_cfg,
+                                         sizeof(self->thermal_site_cfg), site_buf,
+                                         sizeof(site_buf), &pack_len) == 0)
                 {
-                    LOG_ERR("Failed to persist default THERMAL_SITE config: %d", save_rc);
+                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
+                                                        site_buf, pack_len);
+                    if (save_rc != 0)
+                    {
+                        LOG_ERR("Failed to persist default THERMAL_SITE config: %d", save_rc);
+                    }
                 }
             }
         }
 
         /* 5. THERMAL_BASELINE */
-        uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
-        size_t base_size = 0U;
-        config_thermal_baseline_t base_cfg;
-        memset(&base_cfg, 0, sizeof(base_cfg));
-        size_t base_unpacked = 0U;
-        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
-                                  base_buf, sizeof(base_buf), &base_size) == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, base_buf, base_size,
-                                   &base_cfg, sizeof(base_cfg), &base_unpacked) == 0 &&
-            base_unpacked == sizeof(config_thermal_baseline_t) &&
-            config_thermal_baseline_is_valid(&base_cfg))
         {
-            self->thermal_baseline_cfg = base_cfg;
-            LOG_INF("Loaded THERMAL_BASELINE config from storage (valid=%u, hours=%u)",
-                    (unsigned int)self->thermal_baseline_cfg.is_valid,
-                    (unsigned int)self->thermal_baseline_cfg.training_hours_accumulated);
-        }
-        else
-        {
-            LOG_INF("No valid THERMAL_BASELINE config in storage, applying defaults");
-            size_t pack_len = 0U;
-            if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &self->thermal_baseline_cfg,
-                                     sizeof(self->thermal_baseline_cfg), base_buf,
-                                     sizeof(base_buf), &pack_len) == 0)
+            uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
+            size_t base_size = 0U;
+            config_thermal_baseline_t base_cfg;
+            memset(&base_cfg, 0, sizeof(base_cfg));
+            size_t base_unpacked = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
+                                      base_buf, sizeof(base_buf), &base_size) == 0 &&
+                config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, base_buf, base_size,
+                                       &base_cfg, sizeof(base_cfg), &base_unpacked) == 0 &&
+                base_unpacked == sizeof(config_thermal_baseline_t) &&
+                config_thermal_baseline_is_valid(&base_cfg))
             {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
-                                                    base_buf, pack_len);
-                if (save_rc != 0)
+                self->thermal_baseline_cfg = base_cfg;
+                LOG_INF("Loaded THERMAL_BASELINE config from storage (valid=%u, hours=%u)",
+                        (unsigned int)self->thermal_baseline_cfg.is_valid,
+                        (unsigned int)self->thermal_baseline_cfg.training_hours_accumulated);
+            }
+            else
+            {
+                LOG_INF("No valid THERMAL_BASELINE config in storage, applying defaults");
+                size_t pack_len = 0U;
+                if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &self->thermal_baseline_cfg,
+                                         sizeof(self->thermal_baseline_cfg), base_buf,
+                                         sizeof(base_buf), &pack_len) == 0)
                 {
-                    LOG_ERR("Failed to persist default THERMAL_BASELINE config: %d", save_rc);
+                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
+                                                        base_buf, pack_len);
+                    if (save_rc != 0)
+                    {
+                        LOG_ERR("Failed to persist default THERMAL_BASELINE config: %d", save_rc);
+                    }
                 }
             }
         }

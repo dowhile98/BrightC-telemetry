@@ -1151,34 +1151,60 @@ static int cmd_alarm_status(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static const alarm_descriptor_t *s_alarm_catalog_buf[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+
 static int cmd_alarm_list(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
 
-    app_facade_alarm_item_t items[CONFIG_ALARM_MANAGER_MAX_ALARMS];
-    size_t count = app_facade_alarm_get_active_list(items, ARRAY_SIZE(items));
+    size_t total = app_facade_alarm_get_catalog(s_alarm_catalog_buf, ARRAY_SIZE(s_alarm_catalog_buf));
+    bool header_printed = false;
 
-    if (count == 0U) {
+    for (size_t i = 0U; i < total; i++) {
+        const alarm_descriptor_t *desc = s_alarm_catalog_buf[i];
+        if (desc == NULL) {
+            continue;
+        }
+
+        alarm_snapshot_entry_t snap = {0};
+        if (app_facade_alarm_get_snapshot(desc->alarm_id, &snap, NULL) != 0) {
+            continue;
+        }
+        if (snap.state == ALARM_STATE_INACTIVE) {
+            continue;
+        }
+
+        if (!header_printed) {
+            shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
+            shell_print(sh, "| ID     | Name                 | Level    | Category      | Value    | Active(s)  | Acked |");
+            shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
+            header_printed = true;
+        }
+
+        alarm_level_t level = ALARM_LEVEL_INFO;
+        if (snap.severity == ALARM_SEVERITY_FATAL || snap.severity == ALARM_SEVERITY_CRITICAL) {
+            level = ALARM_LEVEL_CRITICAL;
+        } else if (snap.severity == ALARM_SEVERITY_WARNING) {
+            level = ALARM_LEVEL_WARNING;
+        }
+
+        uint32_t active_s = snap.active_duration_ms / 1000U;
+        shell_print(sh, "| 0x%04X | %-20.20s | %-8s | %-13s | %8.2f | %10u | %-5s |",
+                    desc->alarm_id,
+                    desc->name ? desc->name : "UNKNOWN",
+                    alarm_level_str(level),
+                    alarm_category_str(desc->source_category),
+                    (double)snap.last_trigger_value,
+                    active_s,
+                    (snap.state == ALARM_STATE_ACKNOWLEDGED) ? "YES" : "NO");
+    }
+
+    if (!header_printed) {
         shell_print(sh, "No active alarms.");
         return 0;
     }
 
-    shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
-    shell_print(sh, "| ID     | Name                 | Level    | Category      | Value    | Active(s)  | Acked |");
-    shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
-
-    for (size_t i = 0U; i < count; i++) {
-        uint32_t active_s = items[i].active_duration_ms / 1000U;
-        shell_print(sh, "| 0x%04X | %-20.20s | %-8s | %-13s | %8.2f | %10u | %-5s |",
-                    items[i].alarm_id,
-                    items[i].name ? items[i].name : "UNKNOWN",
-                    alarm_level_str(items[i].level),
-                    alarm_category_str(items[i].category),
-                    (double)items[i].trigger_val,
-                    active_s,
-                    items[i].acknowledged ? "YES" : "NO");
-    }
     shell_print(sh, "+--------+----------------------+----------+---------------+----------+------------+-------+");
 
     return 0;
@@ -1189,8 +1215,7 @@ static int cmd_alarm_catalog(const struct shell *sh, size_t argc, char **argv)
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
 
-    const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS];
-    size_t count = app_facade_alarm_get_catalog(catalog, ARRAY_SIZE(catalog));
+    size_t count = app_facade_alarm_get_catalog(s_alarm_catalog_buf, ARRAY_SIZE(s_alarm_catalog_buf));
 
     shell_print(sh, "=== Registered Alarm Catalog (%zu descriptors) ===", count);
     shell_print(sh, "+--------+----------------+---------------+----------+-------+-------+-------+--------------------------------+");
@@ -1198,7 +1223,7 @@ static int cmd_alarm_catalog(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "+--------+----------------+---------------+----------+-------+-------+-------+--------------------------------+");
 
     for (size_t i = 0U; i < count; i++) {
-        const alarm_descriptor_t *desc = catalog[i];
+        const alarm_descriptor_t *desc = s_alarm_catalog_buf[i];
         if (desc == NULL) {
             continue;
         }

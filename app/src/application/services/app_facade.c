@@ -923,8 +923,10 @@ int app_facade_storage_reload_all(void)
         } else {
             reload_err = -EIO;
         }
+    }
 
-        /* 6. THERMAL_SITE */
+    /* 7. THERMAL_SITE */
+    {
         uint8_t site_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
         config_thermal_site_t site_cfg;
         memset(&site_cfg, 0, sizeof(site_cfg));
@@ -941,8 +943,10 @@ int app_facade_storage_reload_all(void)
         } else {
             reload_err = -EIO;
         }
+    }
 
-        /* 7. THERMAL_BASELINE */
+    /* 8. THERMAL_BASELINE */
+    {
         uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
         config_thermal_baseline_t base_cfg;
         memset(&base_cfg, 0, sizeof(base_cfg));

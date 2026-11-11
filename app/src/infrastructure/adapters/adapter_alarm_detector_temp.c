@@ -64,22 +64,21 @@ int adapter_alarm_detector_temp_set_group_config(adapter_alarm_detector_temp_t *
     self->groups[group_idx].hyst_c = (hyst_c > 0.0f) ? hyst_c : 1.0f;
     self->groups[group_idx].enabled = now_enabled;
 
-    for (uint8_t i = 0; i < ADAPTER_TEMP_MAX_SENSORS; i++) {
-        uint8_t src_idx = sensor_to_source_idx(&self->groups[group_idx], i);
-        alarm_eval_temp_low_init(&self->eval_low[group_idx][i], t_low_c, self->groups[group_idx].hyst_c);
-        alarm_eval_temp_high_init(&self->eval_high[group_idx][i], t_high_c, self->groups[group_idx].hyst_c);
+    for (uint8_t src_idx = 0; src_idx < ADAPTER_TEMP_MAX_GROUP_SOURCES; src_idx++) {
+        alarm_eval_temp_low_init(&self->eval_low[group_idx][src_idx], t_low_c, self->groups[group_idx].hyst_c);
+        alarm_eval_temp_high_init(&self->eval_high[group_idx][src_idx], t_high_c, self->groups[group_idx].hyst_c);
 
         if (!now_enabled && was_enabled) {
-            if (self->last_is_low[group_idx][i]) {
-                self->last_is_low[group_idx][i] = false;
+            if (self->last_is_low[group_idx][src_idx]) {
+                self->last_is_low[group_idx][src_idx] = false;
                 if (self->manager != NULL) {
                     (void)ao_alarm_manager_post_source_condition(self->manager,
                                                                  s_temp_low_ids[group_idx],
                                                                  src_idx, false, 0.0f);
                 }
             }
-            if (self->last_is_high[group_idx][i]) {
-                self->last_is_high[group_idx][i] = false;
+            if (self->last_is_high[group_idx][src_idx]) {
+                self->last_is_high[group_idx][src_idx] = false;
                 if (self->manager != NULL) {
                     (void)ao_alarm_manager_post_source_condition(self->manager,
                                                                  s_temp_high_ids[group_idx],
@@ -185,6 +184,9 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
             if (sensor_id < grp->min_id || sensor_id > grp->max_id) {
                 continue;
             }
+            if ((uint8_t)(sensor_id - grp->min_id) >= ADAPTER_TEMP_MAX_GROUP_SOURCES) {
+                continue;
+            }
             assigned_sensors++;
             if ((snapshot->valid_mask & (1ULL << i)) != 0ULL) {
                 valid_sensors++;
@@ -200,6 +202,9 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
             if (sensor_id < grp->min_id || sensor_id > grp->max_id) {
                 continue; /* Probe not assigned to this group */
             }
+            if ((uint8_t)(sensor_id - grp->min_id) >= ADAPTER_TEMP_MAX_GROUP_SOURCES) {
+                continue;
+            }
 
             uint8_t src_idx = sensor_to_source_idx(grp, i);
             bool is_valid = ((snapshot->valid_mask & (1ULL << i)) != 0ULL);
@@ -208,16 +213,16 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
                 if (valid_sensors > 0U) {
                     /* Other probes in the group are healthy: clear any stale thermal alarm
                      * from this disconnected/unpopulated channel and reset its evaluator. */
-                    alarm_eval_temp_low_init(&self->eval_low[g][i], grp->t_low_c, grp->hyst_c);
-                    alarm_eval_temp_high_init(&self->eval_high[g][i], grp->t_high_c, grp->hyst_c);
-                    if (self->last_is_low[g][i]) {
-                        self->last_is_low[g][i] = false;
+                    alarm_eval_temp_low_init(&self->eval_low[g][src_idx], grp->t_low_c, grp->hyst_c);
+                    alarm_eval_temp_high_init(&self->eval_high[g][src_idx], grp->t_high_c, grp->hyst_c);
+                    if (self->last_is_low[g][src_idx]) {
+                        self->last_is_low[g][src_idx] = false;
                         (void)ao_alarm_manager_post_source_condition(self->manager,
                                                                      s_temp_low_ids[g],
                                                                      src_idx, false, 0.0f);
                     }
-                    if (self->last_is_high[g][i]) {
-                        self->last_is_high[g][i] = false;
+                    if (self->last_is_high[g][src_idx]) {
+                        self->last_is_high[g][src_idx] = false;
                         (void)ao_alarm_manager_post_source_condition(self->manager,
                                                                      s_temp_high_ids[g],
                                                                      src_idx, false, 0.0f);
@@ -231,18 +236,18 @@ void adapter_alarm_detector_temp_process_snapshot(adapter_alarm_detector_temp_t 
             float temp = snapshot->temperatures[i];
 
             /* Evaluate Low Temperature */
-            bool is_low = alarm_eval_temp_low_update(&self->eval_low[g][i], temp);
-            if (is_low != self->last_is_low[g][i]) {
-                self->last_is_low[g][i] = is_low;
+            bool is_low = alarm_eval_temp_low_update(&self->eval_low[g][src_idx], temp);
+            if (is_low != self->last_is_low[g][src_idx]) {
+                self->last_is_low[g][src_idx] = is_low;
                 (void)ao_alarm_manager_post_source_condition(self->manager,
                                                              s_temp_low_ids[g],
                                                              src_idx, is_low, temp);
             }
 
             /* Evaluate High Temperature */
-            bool is_high = alarm_eval_temp_high_update(&self->eval_high[g][i], temp);
-            if (is_high != self->last_is_high[g][i]) {
-                self->last_is_high[g][i] = is_high;
+            bool is_high = alarm_eval_temp_high_update(&self->eval_high[g][src_idx], temp);
+            if (is_high != self->last_is_high[g][src_idx]) {
+                self->last_is_high[g][src_idx] = is_high;
                 (void)ao_alarm_manager_post_source_condition(self->manager,
                                                              s_temp_high_ids[g],
                                                              src_idx, is_high, temp);
