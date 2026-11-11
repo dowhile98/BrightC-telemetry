@@ -17,6 +17,7 @@
 | **Sensor Matrix Normalizer Adapter** | `app/src/infrastructure/adapters/sensor_matrix_mapper.c/.h` | 100% | Signal ingestion layer mapping flat temperatures, J9 4-20mA humidity, JSY-MK-339 3-phase AC power, and mode-dependent contacts into `thermal_energy_capture_t` |
 | **Thermal & Energy Types** | `app/include/common/thermal_energy_types.h` | 100% | Universal types (`quality_status_t`, `compressor_fsm_state_t`), array bounds, DTO contracts (`thermal_energy_capture_t`, `thermal_energy_result_t`), and dynamic Kconfig-configurable `thermal_hourly_record_t` |
 | **Thermal Storage Configs** | `app/include/common/config_types.h`, `app_defaults.h` | 100% | EEPROM ping-pong layouts for `CONFIG_DOMAIN_THERMAL_SITE` (0x0A00, 1536 B, payload 184 B) and `CONFIG_DOMAIN_THERMAL_BASELINE` (0x1000, 1024 B, payload 216 B), validation predicates, and defaults |
+| **Thermal Shell CLI & Facade** | `app/src/presentation/shell/shell_brightc.c`, `app/src/application/services/app_facade.c/.h` | 100% | Clean Architecture Presentation layer CLI (`thermal status`, `pairs`, `compressors`, `diagnostics`, `baseline`, `site`, `history`, `recalibrate`) consuming facade APIs and safe `i_thermal_energy_t` port wrappers |
 | **Humidity Transducer (Domain)** | `app/src/domain/thermal_energy/humidity_transducer.c/.h` | 100% | 4-20 mA NAMUR NE43 return relative humidity transducer, fault bounds (<3.8 mA, >20.5 mA), and calibration |
 | **Psychrometrics (Domain)** | `app/src/domain/thermal_energy/psychrometrics.c/.h` | 100% | Moist air thermodynamic properties: barometric pressure altitude correction, Magnus-Tetens saturation vapor pressure, mixing ratio, moist air enthalpy, dew point, wet-bulb estimation, air density |
 | **Thermodynamic Engine Rev F (Domain)** | `app/src/domain/thermal_energy/thermodynamics.c/.h` | 100% | Mass flow rate, sensible/latent heat balance, total cooling capacity, COP (instantaneous, baseline, Carnot), exergy efficiency, and NaN/Inf-safe numerical floating-point operations |
@@ -47,6 +48,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Implemented Zephyr Shell Presentation Interface for Thermal & Energy Subsystem:
+  - Added Thermal Energy APIs to `app_facade.h` and `app_facade.c`: `app_facade_thermal_get_result()`, `app_facade_thermal_get_capture()`, `app_facade_thermal_get_hourly_history()`, `app_facade_thermal_get_baseline()`, `app_facade_thermal_get_site_config()`, and `app_facade_thermal_trigger_recalibration()`. Delegated strictly via safe defensive wrappers over `i_thermal_energy_t` port handle (Invariant 1: 0 `api->` dereferences).
+  - Implemented `thermal` shell command in `app/src/presentation/shell/shell_brightc.c` with 8 rich subcommands (`status`, `pairs`, `compressors`, `diagnostics`, `baseline`, `site`, `history`, `recalibrate`). Presentation layer interacts exclusively with `app_facade.h` (0 references to container or Active Objects).
+  - Added unit test in `tests/unit/modbus/src/test_composition_root.c` validating facade APIs, error codes, and recalibration trigger.
+  - Verified target hardware build on `brightc-controllerv3`: 0 errors, 0 warnings (Flash: 372432 B / 17.76%, RAM: 255324 B / 48.70%).
+  - Verified architectural invariants: `grep -rn "api->" app/src/presentation/` (0 matches), `grep -rn "g_app" app/src/presentation/` (0 matches).
 - **2026-11-11**: Remediated 5 Audit Findings in Thermal & Energy Subsystem (`doc/issues/2026-11-11-thermal-energy-system-audit-findings.md`):
   - **THERMAL-ISSUE-001**: Passed and wired `hvac_operation_mode_t` in `ao_thermal_energy_init()`, added `ao_thermal_energy_set_hvac_mode()`, propagated operational mode into `sensor_matrix_mapper_build_capture`, and wired dynamic profile updates in `composition_root.c` (`app_container_set_hvac_config`).
   - **THERMAL-ISSUE-002**: Wrapped `ao_thermal_energy_feed_energy_reading()` and snapshot retrieval in `ao_thermal_energy_step()` with `result_mutex` to eliminate torn reads between `ao_modbus` and `ao_thermal_energy`.

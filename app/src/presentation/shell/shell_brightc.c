@@ -116,6 +116,29 @@ static const char *alarm_category_str(alarm_category_t cat)
     }
 }
 
+static const char *thermal_quality_str(quality_status_t q)
+{
+    switch (q) {
+    case QUALITY_VALID:       return "VALID";
+    case QUALITY_SUSPECT:     return "SUSPECT";
+    case QUALITY_FAILED:      return "FAILED";
+    case QUALITY_UNAVAILABLE: return "UNAVAILABLE";
+    default:                  return "UNKNOWN";
+    }
+}
+
+static const char *compressor_fsm_state_str(compressor_fsm_state_t state)
+{
+    switch (state) {
+    case COMPRESSOR_STATE_OFF:               return "OFF";
+    case COMPRESSOR_STATE_INRUSH_WAIT:       return "INRUSH_WAIT";
+    case COMPRESSOR_STATE_STEP_LOAD_CAPTURE: return "STEP_LOAD_CAPTURE";
+    case COMPRESSOR_STATE_THERMAL_WARMUP:    return "THERMAL_WARMUP";
+    case COMPRESSOR_STATE_STEADY_STATE:      return "STEADY_STATE";
+    default:                                 return "UNKNOWN";
+    }
+}
+
 /* =========================================================================
  * HVAC Shell Commands
  * ========================================================================= */
@@ -1310,3 +1333,379 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_alarm,
 );
 
 SHELL_CMD_REGISTER(alarm, &sub_alarm, "Alarm management subsystem commands", NULL);
+
+/* =========================================================================
+ * Thermal and Energy Subsystem Shell Commands
+ * ========================================================================= */
+
+static int cmd_thermal_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    thermal_energy_result_t res;
+    int err = app_facade_thermal_get_result(&res);
+    if (err != 0) {
+        shell_error(sh, "Failed to get thermal result: %d", err);
+        return err;
+    }
+
+    thermal_energy_capture_t cap;
+    (void)app_facade_thermal_get_capture(&cap);
+
+    config_thermal_baseline_t base;
+    (void)app_facade_thermal_get_baseline(&base);
+
+    shell_print(sh, "=== Thermal & Energy System Status ===");
+    shell_print(sh, "  Overall Quality:     %s", thermal_quality_str(res.overall_quality));
+    shell_print(sh, "  Generation ID:       %u", res.generation_id);
+    shell_print(sh, "  Calculation Time:    %u us", res.calculation_duration_us);
+
+    shell_print(sh, "--- Psychrometrics & Airflow ---");
+    shell_print(sh, "  P_atm:               %.2f kPa", (double)res.p_atm_kpa);
+    shell_print(sh, "  T_ret_mean:          %.2f degC", (double)res.t_ret_mean);
+    shell_print(sh, "  T_inj_mean:          %.2f degC", (double)res.t_inj_mean);
+    shell_print(sh, "  Delta T_clima:       %.2f degC", (double)res.delta_t_clima_mean);
+    shell_print(sh, "  HR_ret:              %.1f %%", (double)cap.humidity_return_pct);
+    shell_print(sh, "  omega_ret:           %.4f kg/kg", (double)res.humidity_ratio_ret);
+    shell_print(sh, "  T_rocio:             %.2f degC", (double)res.t_rocio_ret);
+    shell_print(sh, "  Air Mass Flow (m_da):%.3f kg/s", (double)res.m_dot_da_total);
+
+    shell_print(sh, "--- Room Ambient ---");
+    shell_print(sh, "  T_sala_mean:         %.2f degC", (double)res.t_sala_mean);
+    shell_print(sh, "  T_sala_max:          %.2f degC", (double)res.t_sala_max);
+    shell_print(sh, "  T_sala_min:          %.2f degC", (double)res.t_sala_min);
+    shell_print(sh, "  Spread (Tmax-Tmin):  %.2f degC", (double)res.delta_t_sala_spread);
+    shell_print(sh, "  Bypass Gradient:     %.2f degC", (double)res.delta_t_bypass);
+
+    shell_print(sh, "--- Cooling Capacities & Balance ---");
+    shell_print(sh, "  Q_sensible:          %.2f kW", (double)res.q_sensible_total);
+    shell_print(sh, "  Q_latente:           %.2f kW", (double)res.q_latente_total);
+    shell_print(sh, "  Q_total:             %.2f kW", (double)res.q_total);
+    shell_print(sh, "  Condensate Rate:     %.2f L/h", (double)res.m_dot_condensate_lph);
+    shell_print(sh, "  SHF:                 %.3f", (double)res.shf);
+    shell_print(sh, "  %% Latent:            %.1f %%", (double)res.pct_latent_heat);
+
+    shell_print(sh, "--- Efficiency & Exergy ---");
+    shell_print(sh, "  Active Elec Power:   %.2f kW", (double)res.active_electrical_power_kw);
+    shell_print(sh, "  COP_real:            %.2f", (double)res.cop_real);
+    shell_print(sh, "  COP_sensible:        %.2f", (double)res.cop_sensible);
+    shell_print(sh, "  COP_Carnot:          %.2f", (double)res.cop_carnot);
+    shell_print(sh, "  eta_II (Exergy):     %.1f %%", (double)res.eta_ii_pct);
+
+    shell_print(sh, "--- Baseline OLS Status ---");
+    shell_print(sh, "  Trained:             %s", res.ols_trained ? "YES" : "NO");
+    shell_print(sh, "  Training Hours:      %u / 168 h", res.training_hours_accumulated);
+    shell_print(sh, "  Condition Number:    %.2f", (double)base.ols_condition_number);
+
+    return 0;
+}
+
+static int cmd_thermal_pairs(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    config_thermal_site_t site;
+    int err = app_facade_thermal_get_site_config(&site);
+    if (err != 0) {
+        shell_error(sh, "Failed to get site configuration: %d", err);
+        return err;
+    }
+
+    thermal_energy_capture_t cap;
+    (void)app_facade_thermal_get_capture(&cap);
+
+    thermal_energy_result_t res;
+    (void)app_facade_thermal_get_result(&res);
+
+    uint8_t count = site.configured_pairs_count;
+    if (count > THERMAL_MAX_PAIRS) {
+        count = THERMAL_MAX_PAIRS;
+    }
+
+    shell_print(sh, "=== Configured Thermal Pairs (%u active) ===", count);
+    shell_print(sh, "+------+------+--------------------+--------------------+----------+----------+----------+----------+-----------+----------+");
+    shell_print(sh, "| Pair | Unit | Supply Probe       | Return Probe       | Delta T  | Q_sens   | Q_latent | Filter %% | Days Rem. | Leak Prob|");
+    shell_print(sh, "+------+------+--------------------+--------------------+----------+----------+----------+----------+-----------+----------+");
+
+    for (uint8_t i = 0U; i < count; i++) {
+        uint8_t sup_id = site.pair_mapping_table[i].supply_flat_id;
+        uint8_t ret_id = site.pair_mapping_table[i].return_flat_id;
+        uint8_t unit_id = site.pair_mapping_table[i].hvac_unit_id;
+        float t_inj = cap.t_inj[i];
+        float t_ret = cap.t_ret[i];
+        float dt = res.delta_t_pair[i];
+        float qs = res.q_sensible_pair[i];
+        float ql = res.q_latente_pair[i];
+        float filt_pct = res.pct_filter_restriction[i];
+        uint16_t days = res.filter_days_remaining[i];
+        float leak_pct = res.pct_refrigerant_leak[i];
+
+        char sup_buf[24];
+        char ret_buf[24];
+        snprintf(sup_buf, sizeof(sup_buf), "#%u: %.1f C", sup_id, (double)t_inj);
+        snprintf(ret_buf, sizeof(ret_buf), "#%u: %.1f C", ret_id, (double)t_ret);
+
+        shell_print(sh, "|  %2u  |  %2u  | %-18s | %-18s | %6.2f C | %6.2f kW| %6.2f kW| %6.1f %% |   %5u   |  %5.1f %% |",
+                    i + 1U, unit_id, sup_buf, ret_buf,
+                    (double)dt, (double)qs, (double)ql,
+                    (double)filt_pct, days, (double)leak_pct);
+    }
+    shell_print(sh, "+------+------+--------------------+--------------------+----------+----------+----------+----------+-----------+----------+");
+
+    return 0;
+}
+
+static int cmd_thermal_compressors(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    thermal_energy_result_t res;
+    int err = app_facade_thermal_get_result(&res);
+    if (err != 0) {
+        shell_error(sh, "Failed to get thermal result: %d", err);
+        return err;
+    }
+
+    config_thermal_baseline_t base;
+    (void)app_facade_thermal_get_baseline(&base);
+
+    thermal_hourly_record_t hist;
+    (void)app_facade_thermal_get_hourly_history(0, &hist);
+
+    shell_print(sh, "=== Compressor Temporal FSM Status (Up to 8 Units) ===");
+    shell_print(sh, "+------+--------------------+--------------------+---------------+-------------+-------------+");
+    shell_print(sh, "| Unit | FSM State          | Elapsed Duration   | Delta P (kW)  | Start Count | Short Trips |");
+    shell_print(sh, "+------+--------------------+--------------------+---------------+-------------+-------------+");
+
+    for (uint8_t u = 0U; u < THERMAL_MAX_HVAC_UNITS; u++) {
+        compressor_fsm_state_t st = res.comp_fsm_state[u];
+        float dp = base.compressor_power_signatures[u];
+
+        const char *elapsed_desc;
+        switch (st) {
+        case COMPRESSOR_STATE_OFF:
+            elapsed_desc = "t_on = 0s";
+            break;
+        case COMPRESSOR_STATE_INRUSH_WAIT:
+            elapsed_desc = "t_on < 15s";
+            break;
+        case COMPRESSOR_STATE_STEP_LOAD_CAPTURE:
+            elapsed_desc = "t_on = 15s";
+            break;
+        case COMPRESSOR_STATE_THERMAL_WARMUP:
+            elapsed_desc = "15s < t_on < 180s";
+            break;
+        case COMPRESSOR_STATE_STEADY_STATE:
+            elapsed_desc = "t_on >= 180s";
+            break;
+        default:
+            elapsed_desc = "UNKNOWN";
+            break;
+        }
+
+        shell_print(sh, "|  %2u  | %-18s | %-18s | %10.2f kW | %11u | %11u |",
+                    u + 1U,
+                    compressor_fsm_state_str(st),
+                    elapsed_desc,
+                    (double)dp,
+                    hist.comp_starts_count,
+                    0U);
+    }
+    shell_print(sh, "+------+--------------------+--------------------+---------------+-------------+-------------+");
+
+    return 0;
+}
+
+static int cmd_thermal_diagnostics(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    thermal_energy_result_t res;
+    int err = app_facade_thermal_get_result(&res);
+    if (err != 0) {
+        shell_error(sh, "Failed to get thermal result: %d", err);
+        return err;
+    }
+
+    bool alert_hotspot  = (res.diagnostic_alarm_mask & (1U << 0)) != 0U;
+    bool alert_bypass   = (res.diagnostic_alarm_mask & (1U << 1)) != 0U;
+    bool alert_moisture = (res.diagnostic_alarm_mask & (1U << 2)) != 0U;
+
+    shell_print(sh, "=== Predictive Analytics & Diagnostics ===");
+    shell_print(sh, "--- Active Diagnostic Alerts ---");
+    shell_print(sh, "  Hotspot (> 3.5 degC):  [%s] (Spread = %.2f degC)",
+                alert_hotspot ? "ALERT ACTIVE" : "OK", (double)res.delta_t_sala_spread);
+    shell_print(sh, "  Bypass (> 3.0 degC):   [%s] (Gradient = %.2f degC)",
+                alert_bypass ? "ALERT ACTIVE" : "OK", (double)res.delta_t_bypass);
+    shell_print(sh, "  Moisture (> 30 %%):     [%s] (Latent Load = %.1f %%)",
+                alert_moisture ? "ALERT ACTIVE" : "OK", (double)res.pct_latent_heat);
+
+    shell_print(sh, "--- Predictive Modeling ---");
+    shell_print(sh, "  Expected Q_total:      %.2f kW", (double)res.q_total_expected_kw);
+    shell_print(sh, "  Expected COP:          %.2f", (double)res.cop_expected);
+    shell_print(sh, "  Mechanical Degradation:%.1f %%", (double)res.pct_mechanical_degradation);
+
+    shell_print(sh, "--- Weather & Redundancy Margins ---");
+    shell_print(sh, "  Weather-Corrected Q:   %.2f kW", (double)res.q_nominal_weather_corrected);
+    shell_print(sh, "  Safe Redundant Q_max:  %.2f kW", (double)res.q_max_safe);
+    shell_print(sh, "  Free Cooling Margin:   %.2f kW", (double)res.kw_free_cooling_margin);
+
+    return 0;
+}
+
+static int cmd_thermal_baseline(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    config_thermal_baseline_t base;
+    int err = app_facade_thermal_get_baseline(&base);
+    if (err != 0) {
+        shell_error(sh, "Failed to get thermal baseline: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Machine-Learned Thermal Baseline (EEPROM Domain 6) ===");
+    shell_print(sh, "  Status:              %s", base.is_valid ? "VALID / TRAINED" : "UNTRAINED");
+    shell_print(sh, "  Training Hours:      %u / 168 h", base.training_hours_accumulated);
+    shell_print(sh, "  Timestamp (UNIX):    %u", base.training_timestamp_unix);
+    shell_print(sh, "  Condition Number:    %.2f", (double)base.ols_condition_number);
+    shell_print(sh, "  Baseline Exergy:     %.1f %%", (double)base.baseline_exergetic_efficiency);
+    shell_print(sh, "--- OLS Regression Coefficients ---");
+    shell_print(sh, "  beta_0 (Intercept):  %.6f", base.ols_beta_coefficients[0]);
+    shell_print(sh, "  beta_1 (T_ret):      %.6f", base.ols_beta_coefficients[1]);
+    shell_print(sh, "  beta_2 (T_ext):      %.6f", base.ols_beta_coefficients[2]);
+    shell_print(sh, "  beta_3 (f_carga):    %.6f", base.ols_beta_coefficients[3]);
+
+    return 0;
+}
+
+static int cmd_thermal_site(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    config_thermal_site_t site;
+    int err = app_facade_thermal_get_site_config(&site);
+    if (err != 0) {
+        shell_error(sh, "Failed to get site configuration: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Site Thermal & HVAC Topology (EEPROM Domain 5) ===");
+    shell_print(sh, "  Schema Version:      %u", site.version);
+    shell_print(sh, "  Site Altitude (Z):   %d m", (int)site.site_altitude_m);
+    shell_print(sh, "  Pairs Count (N):     %u", site.configured_pairs_count);
+    shell_print(sh, "  Room Probes (M):     %u", site.configured_room_probes);
+    shell_print(sh, "  Outdoor Probes (L):  %u", site.configured_outdoor_probes);
+    shell_print(sh, "  Req Redundancy (U):  %u units", site.required_redundancy_units);
+    shell_print(sh, "  Design Outdoor Temp: %.1f degC", (double)site.design_outdoor_temp_c);
+    shell_print(sh, "  Derating Coeff:      %.4f", (double)site.derating_coefficient);
+
+    shell_print(sh, "--- HVAC Units Nominal Ratings ---");
+    shell_print(sh, "+------+--------------------+--------------------+");
+    shell_print(sh, "| Unit | Airflow V_nom(m3/h)| Capacity Q_nom(kW) |");
+    shell_print(sh, "+------+--------------------+--------------------+");
+    for (uint8_t u = 0U; u < THERMAL_MAX_HVAC_UNITS; u++) {
+        shell_print(sh, "|  %2u  |      %10.1f    |        %8.2f    |",
+                    u + 1U,
+                    (double)site.nominal_airflow_m3h[u],
+                    (double)site.nominal_capacity_kw[u]);
+    }
+    shell_print(sh, "+------+--------------------+--------------------+");
+
+    return 0;
+}
+
+static int cmd_thermal_history(const struct shell *sh, size_t argc, char **argv)
+{
+    uint16_t hours = 6U;
+    if (argc > 1) {
+        char *endptr = NULL;
+        unsigned long val = strtoul(argv[1], &endptr, 10);
+        if (endptr == argv[1] || val == 0U) {
+            shell_error(sh, "Invalid hours count: %s", argv[1]);
+            return -EINVAL;
+        }
+        if (val > 24U) {
+            shell_warn(sh, "Clamping requested %lu hours to maximum of 24", val);
+            val = 24U;
+        }
+        hours = (uint16_t)val;
+    }
+
+    shell_print(sh, "=== Thermal Hourly History (Last %u Hours) ===", hours);
+    shell_print(sh, "+-----+------------+------------+------------+-------+---------+---------+--------+----------+----------+");
+    shell_print(sh, "| Ago | Timestamp  | Q_tot(kWh) | P_el(kWh)  |  COP  | T_sala  | T_ext   | eta_II | CompMask | FanMask  |");
+    shell_print(sh, "+-----+------------+------------+------------+-------+---------+---------+--------+----------+----------+");
+
+    for (uint16_t h = 0U; h < hours; h++) {
+        thermal_hourly_record_t rec;
+        int err = app_facade_thermal_get_hourly_history(h, &rec);
+        if (err == -ENOENT) {
+            if (h == 0U) {
+                shell_print(sh, "No closed hourly records recorded yet.");
+            }
+            break;
+        }
+        if (err != 0) {
+            shell_error(sh, "Failed to read history at offset %u: %d", h, err);
+            break;
+        }
+
+        float q_total = rec.sensible_capacity_kw + rec.latent_capacity_kw;
+        float cop = (float)rec.cop_real_x100 / 100.0f;
+        float eta_ii = (float)rec.eta_ii_x100 / 100.0f;
+        float t_sala = (float)rec.t_room_x10[0] / 10.0f;
+        float t_ext  = (float)rec.t_outdoor_x10[0] / 10.0f;
+
+        shell_print(sh, "| %3u | %10u | %10.2f | %10.2f | %5.2f | %6.1fC | %6.1fC | %5.1f%% |  0x%04X  |  0x%04X  |",
+                    h,
+                    rec.timestamp_unix,
+                    (double)q_total,
+                    (double)rec.active_power_kw,
+                    (double)cop,
+                    (double)t_sala,
+                    (double)t_ext,
+                    (double)eta_ii,
+                    rec.comp_state_mask,
+                    rec.fan_state_mask);
+    }
+    shell_print(sh, "+-----+------------+------------+------------+-------+---------+---------+--------+----------+----------+");
+
+    return 0;
+}
+
+static int cmd_thermal_recalibrate(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int err = app_facade_thermal_trigger_recalibration();
+    if (err != 0) {
+        shell_error(sh, "Failed to trigger thermal recalibration: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "Thermal baseline OLS recalibration triggered successfully.");
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_thermal,
+    SHELL_CMD(status, NULL, "Thermodynamic status and psychrometrics", cmd_thermal_status),
+    SHELL_CMD(pairs, NULL, "Thermal supply/return pair metrics and diagnostics", cmd_thermal_pairs),
+    SHELL_CMD(compressors, NULL, "Compressor temporal FSM states and step loads", cmd_thermal_compressors),
+    SHELL_CMD(diagnostics, NULL, "Predictive alerts, derating, and safe margins", cmd_thermal_diagnostics),
+    SHELL_CMD(baseline, NULL, "Machine-learned baseline OLS coefficients and exergy", cmd_thermal_baseline),
+    SHELL_CMD(site, NULL, "Site thermal and HVAC topology configuration", cmd_thermal_site),
+    SHELL_CMD_ARG(history, NULL, "Dump last N hourly datalogger records: thermal history [hours]", cmd_thermal_history, 1, 1),
+    SHELL_CMD(recalibrate, NULL, "Trigger baseline OLS recalibration", cmd_thermal_recalibrate),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_CMD_REGISTER(thermal, &sub_thermal, "Thermal and energy thermodynamic monitoring commands", NULL);
+

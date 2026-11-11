@@ -61,6 +61,14 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_alarm_detector_hvac.c
     ${APP_DIR}/app/src/application/active_objects/ao_alarm_manager.c
     ${APP_DIR}/app/src/application/zbus/alarm_channels.c
+    ${APP_DIR}/app/src/application/active_objects/ao_thermal_energy.c
+    ${APP_DIR}/app/src/application/zbus/thermal_channels.c
+    ${APP_DIR}/app/src/infrastructure/adapters/sensor_matrix_mapper.c
+    ${APP_DIR}/app/src/domain/thermal_energy/humidity_transducer.c
+    ${APP_DIR}/app/src/domain/thermal_energy/psychrometrics.c
+    ${APP_DIR}/app/src/domain/thermal_energy/thermodynamics.c
+    ${APP_DIR}/app/src/domain/thermal_energy/compressor_fsm.c
+    ${APP_DIR}/app/src/domain/thermal_energy/predictive_analytics.c
 )
 
 target_include_directories(app PRIVATE

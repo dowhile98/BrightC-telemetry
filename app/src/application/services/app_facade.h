@@ -25,6 +25,7 @@
 #include "common/alarm_types.h"
 #include "common/modbus_types.h"
 #include "common/sensor_types.h"
+#include "common/thermal_energy_types.h"
 #include "application/zbus/sensor_channels.h"
 
 #ifdef __cplusplus
@@ -651,6 +652,58 @@ int app_facade_alarm_set_buzzer_mute(bool muted);
  * @return true if muted, false otherwise.
  */
 bool app_facade_alarm_is_buzzer_muted(void);
+
+/* =========================================================================
+ * Thermal and Energy Subsystem Presentation APIs
+ * ========================================================================= */
+
+/**
+ * @brief Retrieve latest thermodynamic calculation snapshot.
+ *
+ * @param[out] out_result Destination result structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_thermal_get_result(thermal_energy_result_t *out_result);
+
+/**
+ * @brief Retrieve latest raw multi-source telemetry capture snapshot.
+ *
+ * @param[out] out_capture Destination capture structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_thermal_get_capture(thermal_energy_capture_t *out_capture);
+
+/**
+ * @brief Retrieve a compressed hourly history record from the 720h ring buffer.
+ *
+ * @param[in]  hours_ago  History offset (0 = most recent closed hour, up to 719).
+ * @param[out] out_record Destination hourly record structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_thermal_get_hourly_history(uint16_t hours_ago, thermal_hourly_record_t *out_record);
+
+/**
+ * @brief Retrieve the active learned steady-state baseline parameters.
+ *
+ * @param[out] out_baseline Destination baseline configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_thermal_get_baseline(config_thermal_baseline_t *out_baseline);
+
+/**
+ * @brief Retrieve active site thermal topology configuration from RAM.
+ *
+ * @param[out] out_site_cfg Destination site configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_thermal_get_site_config(config_thermal_site_t *out_site_cfg);
+
+/**
+ * @brief Trigger recalibration and re-training of the steady-state baseline.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_thermal_trigger_recalibration(void);
 
 #ifdef __cplusplus
 }

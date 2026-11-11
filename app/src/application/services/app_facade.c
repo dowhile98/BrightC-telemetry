@@ -18,6 +18,7 @@
 #include <zephyr/sys/reboot.h>
 
 #include "infrastructure/di/composition_root.h"
+#include "interfaces/i_thermal_energy.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -1254,3 +1255,73 @@ bool app_facade_alarm_is_buzzer_muted(void)
 
     return app_container_is_alarm_buzzer_muted(s_app);
 }
+
+/* =========================================================================
+ * Thermal and Energy Subsystem Presentation APIs
+ * ========================================================================= */
+
+int app_facade_thermal_get_result(thermal_energy_result_t *out_result)
+{
+    if (s_app == NULL || out_result == NULL) {
+        return -EINVAL;
+    }
+
+    i_thermal_energy_t port = composition_root_get_thermal_energy_port(s_app);
+    return i_thermal_energy_get_latest_result(&port, out_result);
+}
+
+int app_facade_thermal_get_capture(thermal_energy_capture_t *out_capture)
+{
+    if (s_app == NULL || out_capture == NULL) {
+        return -EINVAL;
+    }
+
+    i_thermal_energy_t port = composition_root_get_thermal_energy_port(s_app);
+    return i_thermal_energy_get_latest_capture(&port, out_capture);
+}
+
+int app_facade_thermal_get_hourly_history(uint16_t hours_ago, thermal_hourly_record_t *out_record)
+{
+    if (s_app == NULL || out_record == NULL) {
+        return -EINVAL;
+    }
+
+    i_thermal_energy_t port = composition_root_get_thermal_energy_port(s_app);
+    return i_thermal_energy_get_hourly_history(&port, hours_ago, out_record);
+}
+
+int app_facade_thermal_get_baseline(config_thermal_baseline_t *out_baseline)
+{
+    if (s_app == NULL || out_baseline == NULL) {
+        return -EINVAL;
+    }
+
+    i_thermal_energy_t port = composition_root_get_thermal_energy_port(s_app);
+    return i_thermal_energy_get_baseline(&port, out_baseline);
+}
+
+int app_facade_thermal_get_site_config(config_thermal_site_t *out_site_cfg)
+{
+    if (s_app == NULL || out_site_cfg == NULL) {
+        return -EINVAL;
+    }
+
+    const config_thermal_site_t *cfg = app_container_get_thermal_site_config(s_app);
+    if (cfg == NULL) {
+        return -ENODATA;
+    }
+
+    *out_site_cfg = *cfg;
+    return 0;
+}
+
+int app_facade_thermal_trigger_recalibration(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    i_thermal_energy_t port = composition_root_get_thermal_energy_port(s_app);
+    return i_thermal_energy_trigger_baseline_recalibration(&port);
+}
+

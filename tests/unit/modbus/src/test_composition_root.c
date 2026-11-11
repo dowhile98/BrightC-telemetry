@@ -691,3 +691,42 @@ ZTEST(composition_root_suite, test_composition_root_di_feed_and_hvac_safety_inte
 
     (void)composition_root_deinit(&s_app);
 }
+
+ZTEST(composition_root_suite, test_app_facade_thermal_queries)
+{
+    (void)composition_root_deinit(&s_app);
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    /* Uninitialized defensive checks */
+    thermal_energy_result_t res;
+    thermal_energy_capture_t cap;
+    thermal_hourly_record_t hist;
+    config_thermal_baseline_t base;
+    config_thermal_site_t site;
+
+    zassert_equal(app_facade_thermal_get_result(NULL), -EINVAL);
+    zassert_equal(app_facade_thermal_get_capture(NULL), -EINVAL);
+    zassert_equal(app_facade_thermal_get_hourly_history(0, NULL), -EINVAL);
+    zassert_equal(app_facade_thermal_get_baseline(NULL), -EINVAL);
+    zassert_equal(app_facade_thermal_get_site_config(NULL), -EINVAL);
+    zassert_equal(app_facade_thermal_trigger_recalibration(), -EINVAL);
+
+    /* Initialize composition root and facade */
+    zassert_equal(composition_root_init(&s_app), 0, "Composition root init failed");
+    zassert_equal(app_facade_init(&s_app), 0, "Facade init failed");
+
+    /* Test valid queries */
+    zassert_equal(app_facade_thermal_get_result(&res), 0, "Thermal get result failed");
+    zassert_equal(app_facade_thermal_get_capture(&cap), 0, "Thermal get capture failed");
+    zassert_equal(app_facade_thermal_get_hourly_history(0, &hist), -ENOENT, "Empty history must return -ENOENT");
+    zassert_equal(app_facade_thermal_get_baseline(&base), 0, "Thermal get baseline failed");
+    zassert_equal(app_facade_thermal_get_site_config(&site), 0, "Thermal get site config failed");
+    zassert_true(site.configured_pairs_count > 0U, "Site pairs count must be > 0");
+
+    /* Trigger recalibration */
+    zassert_equal(app_facade_thermal_trigger_recalibration(), 0, "Trigger recalibration failed");
+
+    (void)composition_root_deinit(&s_app);
+}
+
