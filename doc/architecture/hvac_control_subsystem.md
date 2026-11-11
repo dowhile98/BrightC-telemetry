@@ -311,9 +311,28 @@ typedef enum {
     BYPASS_CAUSE_ALL_FAULTS      = BIT(3), /**< All units in group reached max fault count (3). */
     BYPASS_CAUSE_SENSOR_FAULT    = BIT(4), /**< 0 valid sensors reporting in group. */
     BYPASS_CAUSE_REMOTE_COMMAND  = BIT(5), /**< Forced bypass via HMI / Modbus / SNMP / Web. */
-    BYPASS_CAUSE_DISCREPANCY     = BIT(6)  /**< Contactor feedback failed to close after commanding. */
+    BYPASS_CAUSE_DISCREPANCY     = BIT(6), /**< Contactor feedback failed to close after commanding. */
+    BYPASS_CAUSE_IO_FAULT        = BIT(7)  /**< Relay output adapter cannot be driven. */
 } bypass_cause_flag_t;
 ```
+
+#### 6.2.1 Control-Authority Loss (`BYPASS_CAUSE_IO_FAULT`)
+`ao_hvac_step()` tracks a per-unit counter of **consecutive** `i_hvac_unit_set_tri_state()` failures
+(`actuator_consecutive_failures[]`). Any successful actuation resets that unit's counter.
+
+- When a unit belonging to a group reaches `AO_HVAC_ACTUATOR_FAULT_THRESHOLD` (3) consecutive
+  failures, the group asserts `BYPASS_CAUSE_IO_FAULT` and drops into `GROUP_STATE_BYPASS`
+  (reusing the existing `BYPASS_ENTERED` event).
+- The cause is **self-clearing**: as soon as every unit of the group actuates successfully again,
+  the flag is released and the group leaves BYPASS through the normal bypass-clear hysteresis.
+- Rationale: a controller that cannot drive its relay outputs has lost control authority. Reporting
+  unit states as if the commands had reached the hardware would be a silent unsafe condition.
+
+Staleness of the digital-input feed is handled in the same protective direction: a remote safety
+channel whose last acquisition failed (`di_snapshot_msg_t.stale_mask`) is consumed by
+`on_hvac_di_feed_cb()` as **asserted**, so HP/LP/FLOW/VOLT lockouts engage instead of the unit being
+started blind. This applies only to per-unit mechanical alarms, never to the FIRE contact nor to the
+bypass maintenance switch (a missing expander must not latch a fire shutdown).
 
 ---
 

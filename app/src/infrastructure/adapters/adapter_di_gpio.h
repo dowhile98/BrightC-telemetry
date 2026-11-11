@@ -26,12 +26,17 @@ typedef struct {
     struct k_spinlock   modbus_lock;
     uint32_t            modbus_raw_inputs;
     bool                modbus_valid;
+    int64_t             modbus_last_update_ms;
+    uint32_t            modbus_stale_timeout_ms;
     bool                is_ready;
 
     int64_t             mcp23s17_cache_time_ms[2];
     uint16_t            mcp23s17_cached_value[2];
     bool                mcp23s17_cache_valid[2];
 } adapter_di_gpio_t;
+
+/** Default age after which a remote Modbus DI snapshot is no longer trusted. */
+#define ADAPTER_DI_MODBUS_STALE_TIMEOUT_MS 3000U
 
 /**
  * @brief Explicitly refresh the 16-bit cached port values from MCP23S17 expanders in a single batched SPI read.
@@ -51,6 +56,15 @@ int adapter_di_gpio_refresh(adapter_di_gpio_t *self);
  * @param[in]     is_valid True if Modbus polling succeeded.
  */
 void adapter_di_gpio_set_modbus_raw(adapter_di_gpio_t *self, uint32_t raw_inputs, bool is_valid);
+
+/**
+ * @brief Override how long a remote Modbus DI snapshot stays trusted.
+ *
+ * @param[in,out] self        Adapter instance.
+ * @param[in]     timeout_ms  Maximum age of a snapshot before reads fail with
+ *                            -ENODATA. Pass 0 to disable the age check.
+ */
+void adapter_di_gpio_set_modbus_stale_timeout_ms(adapter_di_gpio_t *self, uint32_t timeout_ms);
 
 /**
  * @brief Initialize the GPIO Digital Input adapter.

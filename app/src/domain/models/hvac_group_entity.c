@@ -142,6 +142,9 @@ bool hvac_group_entity_add_unit(hvac_group_entity_t *self, hvac_unit_entity_t *u
         return false;
     }
 
+    /* Apply the group configuration the group already owns so the result does
+     * not depend on whether set_config() ran before or after this call. */
+    unit->startup_delay_s = self->delay_on_s;
     reconcile_unit_fan_state(unit, self->enable_fan_delay);
     self->units[self->unit_count++] = unit;
     return true;

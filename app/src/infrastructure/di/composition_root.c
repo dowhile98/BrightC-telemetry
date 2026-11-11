@@ -1399,35 +1399,17 @@ static void on_hvac_di_feed_cb(const struct zbus_channel *chan)
                                        BYPASS_CAUSE_PHYSICAL_SWITCH, bypass_sw_active);
     }
 
-    /* 3. HVAC Unit Mechanical Alarms (Units 0..7) */
+    /* 3. HVAC Unit Mechanical Alarms (Units 0..7).
+     * A channel whose last acquisition failed is unknown, not healthy: it is
+     * reported as asserted so the affected unit is never started blind. */
     for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
     {
-        bool hp = false;
-        bool lp = false;
-        bool flow = false;
-        bool volt = false;
-
         di_role_t base_role = (di_role_t)(DI_ROLE_UNIT_0_ALARM_HP + (u * 4U));
 
-        for (uint8_t i = 0U; i < msg->channel_count; i++)
-        {
-            if (msg->roles[i] == base_role)
-            {
-                hp = msg->is_active[i];
-            }
-            else if (msg->roles[i] == (di_role_t)(base_role + 1U))
-            {
-                lp = msg->is_active[i];
-            }
-            else if (msg->roles[i] == (di_role_t)(base_role + 2U))
-            {
-                flow = msg->is_active[i];
-            }
-            else if (msg->roles[i] == (di_role_t)(base_role + 3U))
-            {
-                volt = msg->is_active[i];
-            }
-        }
+        bool hp = di_snapshot_role_active_or_stale(msg, base_role);
+        bool lp = di_snapshot_role_active_or_stale(msg, (di_role_t)(base_role + 1U));
+        bool flow = di_snapshot_role_active_or_stale(msg, (di_role_t)(base_role + 2U));
+        bool volt = di_snapshot_role_active_or_stale(msg, (di_role_t)(base_role + 3U));
 
         (void)ao_hvac_set_unit_alarms(&s_active_container->hvac.ao, u, hp, lp, flow, volt);
     }

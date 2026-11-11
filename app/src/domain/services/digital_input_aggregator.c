@@ -48,6 +48,7 @@ int di_aggregator_init(di_aggregator_t *self,
         self->statuses[i].role = configs[i].role;
         self->statuses[i].raw_level = false;
         self->statuses[i].is_active = false;
+        self->statuses[i].is_stale = false;
         self->statuses[i].active_duration_s = 0U;
         self->statuses[i].transition_count = 0U;
         self->statuses[i].last_transition_ms = 0ULL;
@@ -74,6 +75,7 @@ int di_aggregator_reconfigure(di_aggregator_t *self,
         self->statuses[i].role = configs[i].role;
         self->statuses[i].raw_level = false;
         self->statuses[i].is_active = false;
+        self->statuses[i].is_stale = false;
         self->statuses[i].active_duration_s = 0U;
         self->statuses[i].transition_count = 0U;
         self->statuses[i].last_transition_ms = self->current_time_ms;
@@ -103,6 +105,7 @@ int di_aggregator_scan(di_aggregator_t *self,
         }
 
         /* Sample raw hardware pin if reader callback is bound */
+        bool sample_ok = true;
         if (self->raw_reader != NULL) {
             bool pin_level = false;
             int ret = self->raw_reader(self->reader_ctx,
@@ -112,8 +115,13 @@ int di_aggregator_scan(di_aggregator_t *self,
                                        &pin_level);
             if (ret == 0) {
                 self->raw_inputs[i] = pin_level;
+            } else {
+                sample_ok = false;
             }
         }
+        /* A failed acquisition keeps the last confirmed value but must never be
+         * presented as fresh data: consumers decide how to fail safely. */
+        self->statuses[i].is_stale = !sample_ok;
 
         bool raw_pin = self->raw_inputs[i];
         self->statuses[i].raw_level = raw_pin;
@@ -231,6 +239,7 @@ int di_aggregator_pack_snapshot(const di_aggregator_t *self, di_snapshot_msg_t *
 
     uint64_t active_mask = 0ULL;
     uint64_t raw_mask = 0ULL;
+    uint64_t stale_mask = 0ULL;
 
     for (size_t i = 0; i < self->channel_count && i < (size_t)DI_CHANNEL_MAX; i++) {
         out_snapshot->roles[i] = self->configs[i].role;
@@ -241,6 +250,10 @@ int di_aggregator_pack_snapshot(const di_aggregator_t *self, di_snapshot_msg_t *
             raw_mask |= (1ULL << i);
         }
 
+        if (self->statuses[i].is_stale) {
+            stale_mask |= (1ULL << i);
+        }
+
         if (self->configs[i].enabled && self->statuses[i].is_active) {
             active_mask |= (1ULL << i);
         }
@@ -248,6 +261,7 @@ int di_aggregator_pack_snapshot(const di_aggregator_t *self, di_snapshot_msg_t *
 
     out_snapshot->active_mask = active_mask;
     out_snapshot->raw_mask = raw_mask;
+    out_snapshot->stale_mask = stale_mask;
 
     return 0;
 }

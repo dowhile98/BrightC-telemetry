@@ -285,6 +285,7 @@ typedef struct {
     di_role_t role;                  /**< Semantic role */
     bool      raw_level;             /**< Most recent un-debounced pin level */
     bool      is_active;             /**< Confirmed normalized active state */
+    bool      is_stale;              /**< Last acquisition failed (value retained) */
     uint32_t  active_duration_s;     /**< Seconds spent continuously in active state */
     uint32_t  transition_count;      /**< Lifetime state change counter */
     uint64_t  last_transition_ms;    /**< Uptime timestamp of last state change */
@@ -422,6 +423,22 @@ static inline int i_digital_input_get_active_mask(const i_digital_input_t *port,
 - **Integration**: Queries the already-running `ao_modbus` and `i_slave_registry_t`.
 - **Zero Bus Latency**: Does **not** perform blocking RS-485 transactions during the scan cycle. Instead, it reads the latest cached coil/discrete inputs updated by the background Modbus polling loop.
 - **Bypass Configuration**: In `di_channel_config_t`, all Modbus channels set `debounce_ms = 0`, ensuring that new Modbus data updates the logical state immediately without adding artificial filtering delay.
+- **Data Freshness (staleness)**: Because the cached snapshot is refreshed asynchronously, an unreachable `MBSL32DI` would otherwise keep reporting its last bitmap forever. `adapter_di_gpio_read()` therefore rejects remote samples whose age exceeds `ADAPTER_DI_MODBUS_STALE_TIMEOUT_MS` (3000 ms, overridable at runtime with
+  `adapter_di_gpio_set_modbus_stale_timeout_ms()`, `0` disables the check) returning `-ENODATA`.
+  `adapter_di_gpio_set_modbus_raw()` stamps `modbus_last_update_ms` on every accepted poll.
+
+### 6.3 Acquisition-Failure Propagation (Staleness Contract)
+When `raw_reader()` returns an error, `di_aggregator_scan()` **retains** the last confirmed value
+(so the debounce integrator is not perturbed by a transient poll failure) but marks the channel
+`di_channel_status_t.is_stale = true`. The flag clears on the next successful acquisition.
+
+- `di_aggregator_pack_snapshot()` exports the aggregate as `di_snapshot_msg_t.stale_mask`.
+- `di_snapshot_role_active_or_stale()` is the consumer-side helper: it resolves a role and returns
+  `is_active || stale`, i.e. **unknown is reported as asserted**.
+- Consumers must fail in the protective direction. `lis_hvac_di_feed` uses this helper for the
+  per-unit HP/LP/FLOW/VOLT lockouts so a unit is never started blind when its remote safety channel
+  cannot be read. The FIRE contact and the front-panel bypass switch deliberately do **not** use it:
+  a missing expander must not latch a fire shutdown or force maintenance bypass.
 
 ---
 

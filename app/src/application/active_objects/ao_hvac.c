@@ -118,7 +118,6 @@ int ao_hvac_init(ao_hvac_t *self,
         for (uint8_t g = 0U; g < groups_to_init; g++) {
             self->group_active[g] = true;
             hvac_group_entity_init(&self->groups[g], g);
-            hvac_group_entity_set_config(&self->groups[g], &config->groups[g]);
 
             for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
                 if ((config->groups[g].unit_mask & (1U << u)) != 0U) {
@@ -133,6 +132,10 @@ int ao_hvac_init(ao_hvac_t *self,
                     (void)hvac_group_entity_add_unit(&self->groups[g], &self->units[u]);
                 }
             }
+
+            /* Apply the group configuration after the units exist so its
+             * per-unit propagation is effective at boot as well. */
+            hvac_group_entity_set_config(&self->groups[g], &config->groups[g]);
         }
 
         /* Ensure all remaining units are initialized safely */
@@ -352,12 +355,38 @@ int ao_hvac_step(ao_hvac_t *self)
                 if (act_err != 0) {
                     LOG_ERR("Actuator failed for unit %u: %d", u, act_err);
                     self->actuator_fault_count++;
+                    if (self->actuator_consecutive_failures[u] < UINT16_MAX) {
+                        self->actuator_consecutive_failures[u]++;
+                    }
+                } else {
+                    self->actuator_consecutive_failures[u] = 0U;
                 }
             }
         }
     }
 
-    /* 3. Evaluate global bypass condition and drive Alarm 1 relay */
+    /* 3. Consume actuation failures: losing the ability to drive the relay
+     * outputs is a loss of control authority, so the group fails toward bypass
+     * instead of reporting commands that never reached the hardware. */
+    for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
+        if (!self->group_active[g]) {
+            continue;
+        }
+
+        bool io_fault = false;
+        for (uint8_t k = 0U; k < self->groups[g].unit_count; k++) {
+            const hvac_unit_entity_t *unit = self->groups[g].units[k];
+            if ((unit != NULL) &&
+                (self->actuator_consecutive_failures[unit->unit_id] >= AO_HVAC_ACTUATOR_FAULT_THRESHOLD)) {
+                io_fault = true;
+                break;
+            }
+        }
+
+        hvac_group_entity_set_bypass_cause(&self->groups[g], BYPASS_CAUSE_IO_FAULT, io_fault);
+    }
+
+    /* 4. Evaluate global bypass condition and drive Alarm 1 relay */
     bool any_bypass = false;
     for (uint8_t g = 0U; g < HVAC_MAX_GROUPS; g++) {
         if (self->group_active[g] && (self->groups[g].state == GROUP_STATE_BYPASS || self->groups[g].bypass_causes_mask != 0U)) {
@@ -704,7 +733,6 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
 
     for (uint8_t g = 0U; g < count; g++) {
         self->group_active[g] = true;
-        hvac_group_entity_set_config(&self->groups[g], &cfg->groups[g]);
 
         for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
             if ((cfg->groups[g].unit_mask & (1U << u)) != 0U) {
@@ -712,6 +740,9 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
                 (void)hvac_group_entity_add_unit(&self->groups[g], &self->units[u]);
             }
         }
+
+        /* Propagate the new configuration once the units are bound. */
+        hvac_group_entity_set_config(&self->groups[g], &cfg->groups[g]);
     }
 
     /* Synchronize physical relay routing on runtime profile update */

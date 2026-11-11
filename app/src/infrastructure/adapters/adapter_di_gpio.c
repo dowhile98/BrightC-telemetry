@@ -68,6 +68,7 @@ int adapter_di_gpio_init(adapter_di_gpio_t *self,
     }
 
     self->is_ready = true;
+    self->modbus_stale_timeout_ms = ADAPTER_DI_MODBUS_STALE_TIMEOUT_MS;
     self->mcp23s17_cache_time_ms[0] = -1;
     self->mcp23s17_cache_time_ms[1] = -1;
     (void)adapter_di_gpio_refresh(self);
@@ -185,6 +186,13 @@ int adapter_di_gpio_read(void *ctx,
             k_spin_unlock(&self->modbus_lock, key);
             return -ENODATA;
         }
+        if (self->modbus_stale_timeout_ms > 0U) {
+            int64_t age_ms = k_uptime_get() - self->modbus_last_update_ms;
+            if (age_ms > (int64_t)self->modbus_stale_timeout_ms) {
+                k_spin_unlock(&self->modbus_lock, key);
+                return -ENODATA;
+            }
+        }
         *out_raw = ((self->modbus_raw_inputs & (1U << pin_idx)) != 0U);
         k_spin_unlock(&self->modbus_lock, key);
         return 0;
@@ -201,5 +209,18 @@ void adapter_di_gpio_set_modbus_raw(adapter_di_gpio_t *self, uint32_t raw_inputs
     k_spinlock_key_t key = k_spin_lock(&self->modbus_lock);
     self->modbus_raw_inputs = raw_inputs;
     self->modbus_valid = is_valid;
+    if (is_valid) {
+        self->modbus_last_update_ms = k_uptime_get();
+    }
+    k_spin_unlock(&self->modbus_lock, key);
+}
+
+void adapter_di_gpio_set_modbus_stale_timeout_ms(adapter_di_gpio_t *self, uint32_t timeout_ms)
+{
+    if (self == NULL) {
+        return;
+    }
+    k_spinlock_key_t key = k_spin_lock(&self->modbus_lock);
+    self->modbus_stale_timeout_ms = timeout_ms;
     k_spin_unlock(&self->modbus_lock, key);
 }

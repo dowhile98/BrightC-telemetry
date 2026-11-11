@@ -15,7 +15,7 @@
 | **Zbus Channels** | `app/src/application/zbus/digital_input_channels.c` | 100% | `chan_digital_input_state` (transition events) & `chan_digital_input_snapshot` (consolidated 64-channel state, masks, durations) |
 | **HVAC Safety Wiring** | `app/src/infrastructure/di/composition_root.c` | 100% | `lis_hvac_di_feed` synchronous listener driving fire shutdown (`ao_hvac_set_fire`) and unit mechanical alarm lockouts (`ao_hvac_set_unit_alarms`) |
 | **Application Facade** | `app/src/application/services/app_facade.c` | 100% | Decoupled atomic queries (`app_facade_di_get_status`, `app_facade_di_get_raw`, `app_facade_di_get_snapshot`) via Zbus |
-| **Unit Tests** | `tests/unit/digital_input/` | 100% | 18 tests passing on `native_sim` (100%) |
+| **Unit Tests** | `tests/unit/digital_input/` | 100% | 21 tests passing on `native_sim` (100%) |
 
 ---
 
@@ -25,6 +25,22 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Data Freshness (Staleness) Contract for Remote Acquisitions:
+  - `adapter_di_gpio.h/.c`: added `modbus_last_update_ms` / `modbus_stale_timeout_ms` and
+    `ADAPTER_DI_MODBUS_STALE_TIMEOUT_MS` (3000 ms). `adapter_di_gpio_read()` returns `-ENODATA` for an expired
+    Modbus snapshot; `adapter_di_gpio_set_modbus_raw()` stamps the arrival time; new
+    `adapter_di_gpio_set_modbus_stale_timeout_ms()` allows overriding the window (0 disables it), which keeps
+    the behaviour unit-testable without 3 s waits.
+  - `digital_input_types.h`: `di_channel_status_t.is_stale`, `di_snapshot_msg_t.stale_mask`, and the pure helper
+    `di_snapshot_role_active_or_stale()` (unknown ⇒ treated as asserted).
+  - `digital_input_aggregator.c`: a failed `raw_reader()` keeps the last confirmed value but flags the channel
+    stale, clears it on the next success, and exports the aggregate in `stale_mask`.
+  - `composition_root.c` (`on_hvac_di_feed_cb`): per-unit HP/LP/FLOW/VOLT lockouts now use the helper so an
+    unreadable safety channel engages the lockout instead of being trusted as healthy. FIRE and the
+    front-panel bypass switch are intentionally excluded.
+  - New tests: `test_di_aggregator_marks_stale_channels_on_reader_failure`,
+    `test_adapter_di_gpio_invalidates_stale_modbus_samples`, `test_snapshot_role_active_or_stale_treats_unknown_as_asserted`;
+    `tests/unit/digital_input/CMakeLists.txt` now compiles `adapter_di_gpio.c`. 21/21 tests passing (100% PASS).
 - **2026-11-11**: Implemented Phase A & Phase B Hardware Pin Map and Digital Input Semantic Roles refactoring:
   - Extended `di_role_t` in `digital_input_types.h` with dedicated feedback roles `DI_ROLE_FAN_5_AUX`..`DI_ROLE_FAN_8_AUX` and `DI_ROLE_COMPRESSOR_5_AUX`..`DI_ROLE_COMPRESSOR_8_AUX`.
   - Added role string representations in `role_to_name()` in `app_facade.c`.

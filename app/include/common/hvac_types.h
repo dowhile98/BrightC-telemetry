@@ -197,6 +197,7 @@ typedef enum {
     BYPASS_CAUSE_SENSOR_FAULT    = (1U << 4), /**< Zero healthy sensors reporting in group */
     BYPASS_CAUSE_REMOTE_COMMAND  = (1U << 5), /**< Forced bypass via HMI/Modbus/SNMP */
     BYPASS_CAUSE_DISCREPANCY     = (1U << 6), /**< Contactor feedback discrepancy detected */
+    BYPASS_CAUSE_IO_FAULT        = (1U << 7), /**< Relay output adapter cannot be driven */
 } hvac_bypass_cause_t;
 
 /**

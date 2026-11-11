@@ -43,6 +43,24 @@ ZTEST_SUITE(hvac_group_suite, NULL, NULL, hvac_group_before, NULL, NULL);
  * 1. Generic N+M Redundancy Rotation Tests (7+1, 6+2, 2+1, circular shifting)
  *============================================================================*/
 
+ZTEST(hvac_group_suite, test_add_unit_applies_group_stagger_delay)
+{
+    /* A unit added to a configured group must inherit the group configuration,
+     * independent of whether set_config() ran before or after add_unit(). */
+    hvac_group_entity_t group;
+    hvac_unit_entity_t unit;
+
+    hvac_group_entity_init(&group, 0U);
+    group.delay_on_s = 17U;
+
+    hvac_unit_entity_init(&unit, 0U, 3U, 0U, 30U, 180U, false);
+    zassert_equal(unit.startup_delay_s, 0U, "Unit must start with the initialized delay");
+
+    zassert_true(hvac_group_entity_add_unit(&group, &unit), "add_unit must succeed");
+    zassert_equal(unit.startup_delay_s, 17U,
+                  "Newly added unit must inherit the group anti-inrush delay");
+}
+
 ZTEST(hvac_group_suite, test_generic_n_plus_m_rotation_7_1)
 {
     /* 8 units total, 7 active in turn (7+1 scheme) */
@@ -1081,9 +1099,6 @@ ZTEST(hvac_group_suite, test_periodic_set_fire_false_does_not_abort_staggered_co
                       "set_fire(false) must NOT push Unit 0 into STOPPING");
 
         hvac_group_entity_tick_1s(&s_group);
-        for (uint8_t u = 0U; u < 4U; u++) {
-            hvac_unit_entity_tick_1s(&s_units[u]);
-        }
         hvac_group_entity_evaluate(&s_group, &cooling_metrics);
     }
 
@@ -1117,9 +1132,6 @@ ZTEST(hvac_group_suite, test_periodic_set_fire_false_does_not_abort_staggered_co
             hvac_group_entity_set_fire(&s_group, false);
         }
         hvac_group_entity_tick_1s(&s_group);
-        for (uint8_t u = 0U; u < 4U; u++) {
-            hvac_unit_entity_tick_1s(&s_units[u]);
-        }
         hvac_group_entity_evaluate(&s_group, &boost_metrics);
     }
 

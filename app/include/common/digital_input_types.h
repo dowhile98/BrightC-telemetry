@@ -301,6 +301,7 @@ typedef struct {
     di_role_t role;                  /**< Semantic role */
     bool      raw_level;             /**< Most recent un-debounced pin level */
     bool      is_active;             /**< Confirmed normalized active state */
+    bool      is_stale;              /**< True when the last acquisition failed (value retained) */
     uint32_t  active_duration_s;     /**< Seconds spent continuously in active state */
     uint32_t  transition_count;      /**< Lifetime state change counter */
     uint64_t  last_transition_ms;    /**< Uptime timestamp of last state change */
@@ -324,6 +325,7 @@ typedef struct {
 typedef struct {
     uint64_t  active_mask;                        /**< 64-bit mask of normalized active channels */
     uint64_t  raw_mask;                           /**< 64-bit mask of raw physical pin levels */
+    uint64_t  stale_mask;                         /**< 64-bit mask of channels whose last acquisition failed */
     uint8_t   channel_count;                      /**< Number of configured channels in snapshot */
     di_role_t roles[DI_CHANNEL_MAX];              /**< Semantic role assigned to each channel */
     bool      is_active[DI_CHANNEL_MAX];          /**< True if channel is asserted/alarmed */
@@ -331,6 +333,38 @@ typedef struct {
     uint64_t  timestamp_ms;                       /**< Acquisition timestamp */
     uint32_t  sequence;                           /**< Monotonically increasing sequence number */
 } di_snapshot_msg_t;
+
+/**
+ * @brief Resolve a role from a snapshot, treating a stale sample as asserted.
+ *
+ * Safety inputs whose acquisition failed must not be reported as healthy. This
+ * helper returns true when the channel is active OR when its last sample is
+ * stale (unknown), which makes the caller fail in the protective direction.
+ *
+ * @param[in] snapshot Consolidated DI snapshot (may be NULL).
+ * @param[in] role     Semantic role to look up.
+ * @return true if the role is active or stale; false if inactive, absent, or snapshot is NULL.
+ */
+static inline bool di_snapshot_role_active_or_stale(const di_snapshot_msg_t *snapshot, di_role_t role)
+{
+    if (snapshot == NULL) {
+        return false;
+    }
+
+    uint8_t count = snapshot->channel_count;
+    if (count > (uint8_t)DI_CHANNEL_MAX) {
+        count = (uint8_t)DI_CHANNEL_MAX;
+    }
+
+    for (uint8_t i = 0U; i < count; i++) {
+        if (snapshot->roles[i] == role) {
+            bool stale = ((snapshot->stale_mask >> i) & 1ULL) != 0ULL;
+            return snapshot->is_active[i] || stale;
+        }
+    }
+
+    return false;
+}
 
 /*============================================================================*
  * POLARITY NORMALIZATION & VALIDATION HELPERS

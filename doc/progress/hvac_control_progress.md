@@ -21,7 +21,7 @@
 | **HVAC Active Object Coordinator** | `app/src/application/active_objects/ao_hvac.h`, `.c` | 100% | Canonical 5-phase lifecycle Active Object with dynamic runtime configuration update support (`ao_hvac_set_group_config`, `ao_hvac_apply_config`), hot topology rebuild, and Zbus event transitions |
 | **Composition Root Integration** | `app/src/infrastructure/di/composition_root.h`, `.c` | 100% | Subsystem 6 integrated in `app_container_t`: boot-time storage loading with default fallback (`k_default_hvac_cfg`), debounced dirty-marking via `ao_storage`, `lis_hvac_event_logger` listener wiring |
 | **In-Memory Fakes** | `tests/fakes/include/fake_hvac_unit.h`, `.c`, `fake_relay.h`, `.c` | 100% | In-memory `i_hvac_unit_t` and `i_relay_t` implementations with call tracking and fault injection |
-| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **62/62 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
+| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **65/65 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
 ---
 
 ## 2. Pending Work
@@ -48,6 +48,25 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Review Findings 1–4 (Safety Hardening):
+  - **F1 — Stale DI feed fail-safe**: `adapter_di_gpio` now rejects remote Modbus DI snapshots older than
+    `ADAPTER_DI_MODBUS_STALE_TIMEOUT_MS` (3 s) with `-ENODATA`; the aggregator exposes
+    `di_channel_status_t.is_stale` and `di_snapshot_msg_t.stale_mask`; `on_hvac_di_feed_cb()` uses the new
+    pure helper `di_snapshot_role_active_or_stale()` so an unreadable HP/LP/FLOW/VOLT channel is consumed as
+    asserted (per-unit mechanical alarms only — never FIRE nor the bypass switch).
+  - **F2 — Control-authority loss**: Added `BYPASS_CAUSE_IO_FAULT` (`BIT(7)`) plus per-unit
+    `actuator_consecutive_failures[]` in `ao_hvac`; `AO_HVAC_ACTUATOR_FAULT_THRESHOLD` (3) consecutive
+    actuation failures force the group into `GROUP_STATE_BYPASS` (reusing the existing `BYPASS_ENTERED`
+    event). Self-clearing once actuation recovers.
+  - **F3 — Stagger delay propagation**: `hvac_group_entity_add_unit()` now applies `startup_delay_s = delay_on_s`;
+    `hvac_group_entity_set_config()` moved **after** unit binding in `ao_hvac_init()` and `ao_hvac_apply_config()`
+    so boot-time and runtime reconfiguration behave identically.
+  - **F4 — Test fidelity**: Removed the duplicated per-unit tick in
+    `test_periodic_set_fire_false_does_not_abort_staggered_cooling_or_boost`, which was advancing the
+    simulated clock by 2 s per iteration.
+  - **Verification**: HVAC 65/65 (unit 8, group 22, ao_hvac 23, actuator 8, relay_gpio 4); Digital Inputs 21/21;
+    full `west twister -T tests/unit -p native_sim` → **373/373 cases, 10/10 configs, 0 warnings**.
+    Primary target `brightc-controllerv3` compiles clean (Flash 17.85%, RAM 49.65%).
 - **2026-11-11**: Initialization Sequence & Profile-Driven Actuator/Modbus Synchronization:
   - **Actuator Mode Initialization API**: Added `adapter_hvac_actuator_init_for_mode(self, mode, remote_relay, local_relay)` in `adapter_hvac_actuator.h/.c` to dynamically initialize hardware routing based on `hardware_pin_map_get_unit_for_mode(mode, u)`.
   - **Boot-Order Refactoring in Composition Root**: In `composition_root_init_storage()`, loaded persistent `self->hvac.config` from EEPROM (with fallback defaults) prior to Modbus, DI, and HVAC initializers.

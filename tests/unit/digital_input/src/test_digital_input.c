@@ -15,6 +15,7 @@
 #include "common/app_defaults.h"
 #include "interfaces/i_digital_input.h"
 #include "domain/services/digital_input_aggregator.h"
+#include "infrastructure/adapters/adapter_di_gpio.h"
 #include "application/zbus/digital_input_channels.h"
 #include "application/active_objects/ao_digital_input.h"
 #include "fake_digital_input.h"
@@ -240,6 +241,7 @@ typedef struct {
     bool raw_spi_pin_0;
     bool raw_modbus_bit_3;
     bool raw_spi_pin_1;
+    bool fail_modbus;
 } test_reader_fixture_t;
 
 static int test_raw_reader_cb(void *ctx,
@@ -258,6 +260,9 @@ static int test_raw_reader_cb(void *ctx,
         return 0;
     }
     if (source == DI_SOURCE_EXTERNAL_MODBUS && dev_id == 1U && pin_idx == 3U) {
+        if (fix->fail_modbus) {
+            return -ENODATA;
+        }
         *out_raw = fix->raw_modbus_bit_3;
         return 0;
     }
@@ -412,6 +417,125 @@ ZTEST(digital_input_suite, test_di_aggregator_multi_source_and_dual_debounce)
     ret = di_aggregator_get_state(&aggregator, DI_ROLE_HIGH_PRESSURE_1, &is_active);
     zassert_equal(ret, 0, "get_state must succeed");
     zassert_true(is_active, "High Pressure 1 alarm must be asserted when NC contact opens");
+}
+
+ZTEST(digital_input_suite, test_snapshot_role_active_or_stale_treats_unknown_as_asserted)
+{
+    /* Safety inputs must never be reported as healthy when their acquisition
+     * failed: an unknown remote alarm channel is treated as asserted. */
+    di_snapshot_msg_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    snapshot.channel_count = 2U;
+    snapshot.roles[0] = DI_ROLE_UNIT_4_ALARM_HP;
+    snapshot.is_active[0] = false;
+    snapshot.roles[1] = DI_ROLE_UNIT_5_ALARM_HP;
+    snapshot.is_active[1] = false;
+    snapshot.stale_mask = (1ULL << 1U);
+
+    zassert_false(di_snapshot_role_active_or_stale(&snapshot, DI_ROLE_UNIT_4_ALARM_HP),
+                  "Fresh inactive channel must not be reported as asserted");
+    zassert_true(di_snapshot_role_active_or_stale(&snapshot, DI_ROLE_UNIT_5_ALARM_HP),
+                 "Stale channel must be reported as asserted");
+
+    snapshot.is_active[0] = true;
+    zassert_true(di_snapshot_role_active_or_stale(&snapshot, DI_ROLE_UNIT_4_ALARM_HP),
+                 "Fresh active channel must be reported as asserted");
+
+    zassert_false(di_snapshot_role_active_or_stale(&snapshot, DI_ROLE_UNIT_7_ALARM_HP),
+                  "Absent role must not be reported as asserted");
+    zassert_false(di_snapshot_role_active_or_stale(NULL, DI_ROLE_UNIT_4_ALARM_HP),
+                  "NULL snapshot must not be reported as asserted");
+}
+
+ZTEST(digital_input_suite, test_adapter_di_gpio_invalidates_stale_modbus_samples)
+{
+    /* The MBSL32DI poll is asynchronous: once it stops arriving, the cached
+     * bitmap must stop being reported as valid remote digital input data. */
+    adapter_di_gpio_t adapter;
+    zassert_equal(adapter_di_gpio_init(&adapter, NULL, NULL), 0, "adapter init must succeed");
+
+    bool raw = false;
+
+    /* No Modbus snapshot received yet */
+    zassert_equal(adapter_di_gpio_read(&adapter, DI_SOURCE_EXTERNAL_MODBUS, 0U, 3U, &raw),
+                  -ENODATA, "Modbus read must fail before the first snapshot");
+
+    adapter_di_gpio_set_modbus_raw(&adapter, 0x00000008U, true);
+    zassert_equal(adapter_di_gpio_read(&adapter, DI_SOURCE_EXTERNAL_MODBUS, 0U, 3U, &raw), 0,
+                  "Modbus read must succeed on a fresh snapshot");
+    zassert_true(raw, "Bit 3 must be reflected from the fresh bitmap");
+
+    adapter_di_gpio_set_modbus_stale_timeout_ms(&adapter, 10U);
+    k_msleep(40);
+
+    zassert_equal(adapter_di_gpio_read(&adapter, DI_SOURCE_EXTERNAL_MODBUS, 0U, 3U, &raw),
+                  -ENODATA, "Modbus read must reject an expired snapshot");
+
+    /* A fresh poll restores validity */
+    adapter_di_gpio_set_modbus_raw(&adapter, 0x00000008U, true);
+    zassert_equal(adapter_di_gpio_read(&adapter, DI_SOURCE_EXTERNAL_MODBUS, 0U, 3U, &raw), 0,
+                  "Modbus read must recover after a fresh snapshot");
+}
+
+ZTEST(digital_input_suite, test_di_aggregator_marks_stale_channels_on_reader_failure)
+{
+    /* A remote Modbus channel whose poll fails must be flagged stale while
+     * retaining its last confirmed state, instead of being silently trusted
+     * as fresh data forever. */
+    di_aggregator_t aggregator;
+    test_reader_fixture_t fix = {
+        .raw_modbus_bit_3 = true,
+        .fail_modbus = false,
+    };
+
+    di_channel_config_t cfg = {
+        .role = DI_ROLE_FAN_1_AUX,
+        .source_type = DI_SOURCE_EXTERNAL_MODBUS,
+        .source_dev_id = 1U,
+        .pin_index = 3U,
+        .active_level = DI_ACTIVE_HIGH,
+        .contact_type = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms = 0U,
+        .enabled = true,
+    };
+
+    zassert_equal(di_aggregator_init(&aggregator, &cfg, 1U, test_raw_reader_cb, &fix), 0,
+                  "di_aggregator_init must succeed");
+
+    zassert_equal(di_aggregator_scan(&aggregator, 20U, NULL, 0U, NULL), 0, "Scan 1 must succeed");
+
+    di_channel_status_t status;
+    zassert_equal(di_aggregator_get_status(&aggregator, DI_ROLE_FAN_1_AUX, &status), 0,
+                  "get_status must succeed");
+    zassert_false(status.is_stale, "Fresh sample must not be stale");
+    zassert_true(status.is_active, "Fresh asserted sample must be active");
+
+    /* Remote module stops answering */
+    fix.fail_modbus = true;
+    zassert_equal(di_aggregator_scan(&aggregator, 20U, NULL, 0U, NULL), 0, "Scan 2 must succeed");
+
+    zassert_equal(di_aggregator_get_status(&aggregator, DI_ROLE_FAN_1_AUX, &status), 0,
+                  "get_status must succeed");
+    zassert_true(status.is_stale, "Channel must be flagged stale after reader failure");
+    zassert_true(status.is_active, "Last confirmed state must be retained while stale");
+
+    di_snapshot_msg_t snapshot;
+    zassert_equal(di_aggregator_pack_snapshot(&aggregator, &snapshot), 0,
+                  "pack_snapshot must succeed");
+    zassert_true((snapshot.stale_mask & (1ULL << 0U)) != 0ULL,
+                 "Snapshot stale_mask must report the stale channel");
+
+    /* Remote module recovers */
+    fix.fail_modbus = false;
+    zassert_equal(di_aggregator_scan(&aggregator, 20U, NULL, 0U, NULL), 0, "Scan 3 must succeed");
+
+    zassert_equal(di_aggregator_get_status(&aggregator, DI_ROLE_FAN_1_AUX, &status), 0,
+                  "get_status must succeed");
+    zassert_false(status.is_stale, "Stale flag must clear when reader recovers");
+
+    zassert_equal(di_aggregator_pack_snapshot(&aggregator, &snapshot), 0,
+                  "pack_snapshot must succeed");
+    zassert_equal(snapshot.stale_mask, 0ULL, "Snapshot stale_mask must clear on recovery");
 }
 
 ZTEST(digital_input_suite, test_di_aggregator_error_and_boundary_handling)

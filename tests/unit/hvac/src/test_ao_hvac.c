@@ -586,6 +586,41 @@ ZTEST(ao_hvac_suite, test_actuator_error_handling)
     fake_hvac_unit_set_errors(0, 0);
 }
 
+ZTEST(ao_hvac_suite, test_persistent_actuator_failure_engages_io_bypass)
+{
+    /* A controller that cannot drive its relay outputs has lost control
+     * authority: the group must fail toward bypass instead of silently
+     * pretending the units are being commanded. */
+    int ret = ao_hvac_init(&s_ao, &k_default_hvac_config_hybrid_4units, &s_actuator_port,
+                           &s_queue, s_test_stack, K_THREAD_STACK_SIZEOF(s_test_stack));
+    zassert_equal(ret, 0, "ao_hvac_init failed");
+
+    float rtd_temps[5] = { 29.0f, 29.0f, 29.0f, 29.0f, 29.0f };
+    zassert_equal(ao_hvac_feed_temperatures(&s_ao, rtd_temps, 0x001FU, 5U), 0,
+                  "ao_hvac_feed_temperatures failed");
+
+    fake_hvac_unit_set_errors(-EIO, 0);
+    for (int i = 0; i < (int)AO_HVAC_ACTUATOR_FAULT_THRESHOLD - 1; i++) {
+        zassert_equal(ao_hvac_step(&s_ao), 0, "ao_hvac_step must run");
+        zassert_equal((s_ao.groups[0].bypass_causes_mask & (uint32_t)BYPASS_CAUSE_IO_FAULT), 0U,
+                      "IO fault bypass must not engage before the fault threshold");
+    }
+
+    zassert_equal(ao_hvac_step(&s_ao), 0, "ao_hvac_step must run");
+    zassert_true((s_ao.groups[0].bypass_causes_mask & (uint32_t)BYPASS_CAUSE_IO_FAULT) != 0U,
+                 "Sustained actuator failures must engage IO fault bypass");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_BYPASS,
+                  "Group must switch to BYPASS when control authority is lost");
+
+    /* Actuation recovers */
+    fake_hvac_unit_set_errors(0, 0);
+    zassert_equal(ao_hvac_step(&s_ao), 0, "ao_hvac_step must run");
+    zassert_equal((s_ao.groups[0].bypass_causes_mask & (uint32_t)BYPASS_CAUSE_IO_FAULT), 0U,
+                  "IO fault bypass must clear when actuation recovers");
+    zassert_equal(s_ao.groups[0].state, GROUP_STATE_IDLE,
+                  "Group must leave BYPASS when control authority is restored");
+}
+
 ZTEST(ao_hvac_suite, test_multi_room_disjoint_sensor_ranges)
 {
     /* Phase 3: Multi-room disjoint sensor ranges across two independent groups

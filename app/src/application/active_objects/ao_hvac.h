@@ -41,6 +41,9 @@ extern "C" {
 /** Default periodic evaluation period: 1000 ms = 1 Hz. */
 #define AO_HVAC_PERIOD_MS 1000U
 
+/** Consecutive actuation failures before the group is forced into bypass. */
+#define AO_HVAC_ACTUATOR_FAULT_THRESHOLD 3U
+
 /** Timeout to wait for the Active Object thread to exit on stop. */
 #define AO_HVAC_STOP_WAIT_MS 1000U
 
@@ -102,6 +105,7 @@ typedef struct {
     volatile bool     terminate;
     bool              is_initialized;
     uint32_t          actuator_fault_count; /**< Counter of failed actuation attempts */
+    uint16_t          actuator_consecutive_failures[HVAC_MAX_UNITS_TOTAL]; /**< Per-unit consecutive actuation failures */
 
     /* Previous states for transition event generation */
     hvac_group_state_t prev_group_state[HVAC_MAX_GROUPS];
