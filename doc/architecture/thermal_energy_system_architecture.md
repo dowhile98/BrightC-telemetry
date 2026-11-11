@@ -60,7 +60,7 @@ flowchart TD
     subgraph Consumers["Decoupled Presentation & Persistence Plane"]
         RES_SNAP --> I_QUERY["i_thermal_energy_query_t (Fat-Pointer Handle)"]
         RES_SNAP --> CHAN_EVT["chan_thermal_energy_update (Zbus Event)"]
-        I_QUERY --> HMI["DWIN 4.3\" HMI"]
+        I_QUERY --> HMI["DWIN 4.3&quot; HMI"]
         I_QUERY --> MB_TCP["Modbus TCP Server"]
         I_QUERY --> SNMP["SNMP Agent"]
         I_QUERY --> REST["Local RESTful API"]
