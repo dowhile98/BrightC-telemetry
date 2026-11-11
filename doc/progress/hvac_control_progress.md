@@ -9,19 +9,19 @@
 
 | Component | File Path | Status | Description |
 | :--- | :--- | :---: | :--- |
-| **Domain Types & Limits** | `app/include/common/hvac_types.h` | 100% | Pure C99 domain types, limits, enums, hardware routing endpoints, config structs, and pure validators |
-| **Storage Configuration Domain** | `app/include/common/config_types.h` | 100% | `CONFIG_DOMAIN_HVAC` (base `0x2800`, total `2048` B, 2 ping-pong slots of `1024` B) |
-| **Default Configuration Profiles** | `app/include/common/default_config_profiles.h` | 100% | Centralized immutable profiles for Hybrid 4-unit baseline, Control-only 8-unit, Telemetry-only, DI mappings, and profile switchers |
+| **Domain Types & Limits** | `app/include/common/hvac_types.h` | 100% | Pure C99 domain types, limits, enums, hardware routing endpoints, config structs (`config_hvac_t` 188 B, `_Static_assert`), and pure validators |
+| **Storage Configuration Domain** | `app/include/common/config_types.h` | 100% | `CONFIG_DOMAIN_HVAC` (base `0x0400`, total `1152` B, 2 ping-pong slots of `576` B) |
+| **Default Configuration Profiles** | `app/include/common/default_config_profiles.h`, `app_defaults.h` | 100% | Centralized immutable profiles for Hybrid 4-unit baseline, Control-only 8-unit, Telemetry-only, DI mappings, and profile switchers |
 | **Actuator Port Contract** | `app/include/interfaces/i_hvac_unit.h` | 100% | Rule §4.1.D fat-pointer handle `i_hvac_unit_t`, v-table `i_hvac_unit_api_t`, validated wrappers |
 | **AC Unit Domain Entity** | `app/src/domain/models/hvac_unit_entity.h`, `.c` | 100% | Pure C99/C11 FSM: staggered anti-inrush, 180s lockout, eviction after max faults, fan purge sub-FSM |
 | **HVAC Group Domain Entity** | `app/src/domain/models/hvac_group_entity.h`, `.c` | 100% | Pure C99/C11 aggregate root: generic $N+M$ rotation, 2-stage cooling timeout rescue, bypass hysteresis, fire interlock |
-| **Actuator Infrastructure Adapter** | `app/src/infrastructure/adapters/adapter_hvac_actuator.h`, `.c` | 100% | Implements `i_hvac_unit_api_t`: translates tri-states into physical relays across Modbus or local backends |
+| **Actuator Infrastructure Adapter** | `app/src/infrastructure/adapters/adapter_hvac_actuator.h`, `.c` | 100% | Implements `i_hvac_unit_api_t`: translates tri-states into physical relays across Modbus or local backends; supports `adapter_hvac_actuator_apply_mode()` and default routing from `hardware_pin_map.h` |
 | **On-Board Relay GPIO Adapter** | `app/src/infrastructure/adapters/adapter_relay_gpio.h`, `.c` | 100% | Concrete adapter implementing `i_relay_t` for the 18 internal on-board relays across `mcp23s17_2` and `mcp23s17_3` |
 | **Zbus Status & Event Channels** | `app/src/application/zbus/hvac_channels.h`, `.c` | 100% | Defines `chan_hvac_status` (telemetry snapshot) and `chan_hvac_event` (`hvac_event_t` discrete transition events) |
 | **HVAC Active Object Coordinator** | `app/src/application/active_objects/ao_hvac.h`, `.c` | 100% | Canonical 5-phase lifecycle Active Object with dynamic runtime configuration update support (`ao_hvac_set_group_config`, `ao_hvac_apply_config`), hot topology rebuild, and Zbus event transitions |
 | **Composition Root Integration** | `app/src/infrastructure/di/composition_root.h`, `.c` | 100% | Subsystem 6 integrated in `app_container_t`: boot-time storage loading with default fallback (`k_default_hvac_cfg`), debounced dirty-marking via `ao_storage`, `lis_hvac_event_logger` listener wiring |
 | **In-Memory Fakes** | `tests/fakes/include/fake_hvac_unit.h`, `.c`, `fake_relay.h`, `.c` | 100% | In-memory `i_hvac_unit_t` and `i_relay_t` implementations with call tracking and fault injection |
-| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **59/59 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
+| **HVAC Unit Test Suite** | `tests/unit/hvac/` | 100% | **62/62 tests passing on `native_sim` across 5 test suites** (unit, group, actuator, relay GPIO, and Active Object suites) |
 ---
 
 ## 2. Pending Work
@@ -48,6 +48,26 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Initialization Sequence & Profile-Driven Actuator/Modbus Synchronization:
+  - **Actuator Mode Initialization API**: Added `adapter_hvac_actuator_init_for_mode(self, mode, remote_relay, local_relay)` in `adapter_hvac_actuator.h/.c` to dynamically initialize hardware routing based on `hardware_pin_map_get_unit_for_mode(mode, u)`.
+  - **Boot-Order Refactoring in Composition Root**: In `composition_root_init_storage()`, loaded persistent `self->hvac.config` from EEPROM (with fallback defaults) prior to Modbus, DI, and HVAC initializers.
+  - **Profile-Driven Hardware Wiring**:
+    * `composition_root_init_modbus()` filters slaves: in `HVAC_MODE_TELEMETRY_ONLY`, `MBSL32DI` and `WAVESHARE_RELAY` are skipped; in control/hybrid modes, `WAVESHARE_RELAY` is registered only when `total_units > 4`.
+    * `composition_root_init_digital_inputs()` binds DI profile using `hardware_pin_map_get_di_profile(op_mode, &di_count)` with the persisted mode.
+    * `composition_root_init_hvac()` dynamically populates `hw_units` from `hardware_pin_map_get_unit_for_mode(op_mode, u)`, binds remote relay only if present, and invokes `adapter_hvac_actuator_apply_mode(self, op_mode)`.
+  - **Verification**: All 5 test suites pass (HVAC, DI, Modbus, Storage, Alarm). Primary hardware target `brightc-controllerv3` compiles cleanly (Flash: 16.60%, RAM: 37.44%).
+- **2026-11-11**: Phase C & Phase D Execution (Hardware Pin Map & Storage Optimization):
+  - **Pruned `hvac_unit_hw_config_t units[8]` from `config_hvac_t`**: Removed 288 bytes of redundant pin definition routing from `config_hvac_t` (`app/include/common/hvac_types.h`). Struct size is exactly 188 bytes, verified with `_Static_assert(sizeof(config_hvac_t) == 188U, ...)`.
+  - **Simplified HVAC Config Validation**: `config_hvac_is_valid()` validates operation mode, group counts, setpoints, and unit masks without depending on mutable hardware endpoints in the storage struct.
+  - **Decoupled Default Profiles**: Pruned `.units = { ... }` blocks from `k_default_hvac_config_hybrid_4units` and `k_default_hvac_config_control_only_8units` in `app/include/common/app_defaults.h`.
+  - **Actuator Hardware Profile Routing**:
+    * Updated `adapter_hvac_actuator_init()` to populate `hw_config` from `hardware_pin_map_get_unit_for_mode(HVAC_MODE_HYBRID_FULL, u)` when `hw_config == NULL`.
+    * Implemented `adapter_hvac_actuator_apply_mode(self, mode)` sourcing immutable mappings from `hardware_pin_map.h` and invalidating cached tri-states.
+    * Added unit tests in `test_adapter_hvac_actuator.c` covering NULL default initialization and profile-driven remapping.
+  - **Composition Root & AO Wiring**:
+    * In `composition_root_init_hvac()`, initializes `adapter_hvac_actuator` using `hardware_pin_map_get_hvac_units(NULL)` and applies profile mode.
+    * In `app_container_set_hvac_config()` and `ao_hvac_apply_config()`, replaced per-unit `set_hw_config` loops with `adapter_hvac_actuator_apply_mode()`.
+  - **Test Verification**: 62/62 tests passing in `tests/unit/hvac` (100% PASS), 18/18 tests passing in `tests/unit/digital_input` (100% PASS), 11/11 tests passing in `tests/unit/storage` (100% PASS), 17/17 tests passing in `tests/unit/alarm` (100% PASS), and 99/99 tests passing in `tests/unit/modbus` (100% PASS). Primary target compilation clean (Flash 16.57%, RAM 37.44%).
 - **2026-11-10**: Updated Subsystem Architecture & Storage Specifications:
   - **Removal of Redundant Hardware Routing from EEPROM**: Removed `hvac_unit_hw_config_t units[8]` (288 B) from persistent `config_hvac_t`. Physical terminal block, expander pin, and Modbus coil routing is now governed exclusively and immutably by `hardware_pin_map.h` as the single authoritative source of truth.
   - **Operational Profiles Hardware Mapping Strategy**: Documented the profile-dependent pinout architecture:

@@ -38,10 +38,18 @@ typedef enum {
     DI_ROLE_FAN_2_AUX,               /**< Evaporator Fan 2 Run Feedback (U_vent_ON) */
     DI_ROLE_FAN_3_AUX,               /**< Evaporator Fan 3 Run Feedback (U_vent_ON) */
     DI_ROLE_FAN_4_AUX,               /**< Evaporator Fan 4 Run Feedback (U_vent_ON) */
+    DI_ROLE_FAN_5_AUX,               /**< Evaporator Fan 5 Run Feedback (U_vent_ON) */
+    DI_ROLE_FAN_6_AUX,               /**< Evaporator Fan 6 Run Feedback (U_vent_ON) */
+    DI_ROLE_FAN_7_AUX,               /**< Evaporator Fan 7 Run Feedback (U_vent_ON) */
+    DI_ROLE_FAN_8_AUX,               /**< Evaporator Fan 8 Run Feedback (U_vent_ON) */
     DI_ROLE_COMPRESSOR_1_AUX,        /**< Compressor 1 Run Auxiliary Contact (c1) */
     DI_ROLE_COMPRESSOR_2_AUX,        /**< Compressor 2 Run Auxiliary Contact (c2) */
     DI_ROLE_COMPRESSOR_3_AUX,        /**< Compressor 3 Run Auxiliary Contact (c3) */
     DI_ROLE_COMPRESSOR_4_AUX,        /**< Compressor 4 Run Auxiliary Contact (c4) */
+    DI_ROLE_COMPRESSOR_5_AUX,        /**< Compressor 5 Run Auxiliary Contact (c5) */
+    DI_ROLE_COMPRESSOR_6_AUX,        /**< Compressor 6 Run Auxiliary Contact (c6) */
+    DI_ROLE_COMPRESSOR_7_AUX,        /**< Compressor 7 Run Auxiliary Contact (c7) */
+    DI_ROLE_COMPRESSOR_8_AUX,        /**< Compressor 8 Run Auxiliary Contact (c8) */
 
     /* HVAC Safety Interlocks */
     DI_ROLE_HIGH_PRESSURE_1,         /**< High Pressure Cutout Switch Circuit 1 */

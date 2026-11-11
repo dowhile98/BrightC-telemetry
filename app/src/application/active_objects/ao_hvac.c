@@ -716,9 +716,8 @@ int ao_hvac_apply_config(ao_hvac_t *self, const config_hvac_t *cfg)
 
     /* Synchronize physical relay routing on runtime profile update */
     if (self->actuator_adapter != NULL) {
-        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
-            (void)adapter_hvac_actuator_set_hw_config(self->actuator_adapter, u, &cfg->units[u]);
-        }
+        (void)adapter_hvac_actuator_apply_mode(self->actuator_adapter,
+                                               (hvac_operation_mode_t)cfg->operation_mode);
         (void)adapter_hvac_actuator_set_bypass_alarm_contact_type(
             self->actuator_adapter,
             (hvac_alarm_contact_type_t)cfg->bypass_alarm_contact_type);

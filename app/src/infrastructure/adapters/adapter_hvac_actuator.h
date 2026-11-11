@@ -59,6 +59,34 @@ int adapter_hvac_actuator_init(adapter_hvac_actuator_t *self,
                                const i_relay_t *local_relay);
 
 /**
+ * @brief Initialize the HVAC actuator adapter for a specific operational mode.
+ *
+ * Populates unit routing from hardware_pin_map_get_unit_for_mode(mode, u).
+ *
+ * @param[out] self         Adapter instance to initialize.
+ * @param[in]  mode         HVAC operational mode.
+ * @param[in]  remote_relay Bound remote relay port handle (may be NULL if unassigned).
+ * @param[in]  local_relay  Bound local relay port handle (may be NULL if unassigned).
+ * @return 0 on success, -EINVAL on NULL @p self or invalid mode.
+ */
+int adapter_hvac_actuator_init_for_mode(adapter_hvac_actuator_t *self,
+                                        hvac_operation_mode_t mode,
+                                        const i_relay_t *remote_relay,
+                                        const i_relay_t *local_relay);
+
+/**
+ * @brief Reconfigure the hardware routing table for the given operation mode.
+ *
+ * Sourced immutably from hardware_pin_map_get_unit_for_mode(mode, u).
+ *
+ * @param[in,out] self Adapter instance.
+ * @param[in]     mode HVAC operation profile.
+ * @return 0 on success, -EINVAL on NULL self or invalid mode.
+ */
+int adapter_hvac_actuator_apply_mode(adapter_hvac_actuator_t *self,
+                                     hvac_operation_mode_t mode);
+
+/**
  * @brief Update the hardware routing configuration for a specific AC unit.
  *
  * @param[in,out] self    Adapter instance.

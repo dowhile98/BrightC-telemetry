@@ -1,4 +1,7 @@
 tests:
   unit.alarm:
-    tags: alarm domain unit
+    tags:
+      - alarm
+      - domain
+      - unit
     platform_allow: native_sim

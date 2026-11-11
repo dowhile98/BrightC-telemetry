@@ -27,6 +27,12 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Mode-Aware Slave Topology Registration:
+  - In `composition_root_init_modbus()`, synchronized Modbus slave registration with persisted operational mode (`self->hvac.config.operation_mode`) and `total_units`:
+    * When `HVAC_MODE_TELEMETRY_ONLY`, `MBSL32DI` and `WAVESHARE_RELAY_32CH` are omitted from registry and polling loops.
+    * When `HVAC_MODE_HYBRID_FULL` or `HVAC_CONTROL_ONLY`, `MBSL32DI` is registered, and `WAVESHARE_RELAY_32CH` is registered exclusively when `total_units > 4`.
+  - External relay port `self->modbus.relay_ext_port` remains safely unbound when Waveshare relay is omitted.
+  - Updated unit tests in `tests/unit/modbus/src/test_composition_root.c` verifying topology under Telemetry-Only, Hybrid (4 units), and Control-Only (8 units) configurations.
 - **2026-11-07**: Conditional Modbus Slave Submenus (`menuconfig` + `if`):
   - Structured Modbus slave options in `app/Kconfig` as conditional submenus using `menuconfig` and `if` blocks.
   - Configured only the JSY-MK-339 3-Phase AC energy meter enabled by default (`default y`), with PT100 concentrators, MBSL32DI, and Waveshare relay disabled by default (`default n`).

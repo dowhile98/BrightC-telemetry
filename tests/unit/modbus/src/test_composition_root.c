@@ -17,6 +17,9 @@
 #include "application/services/app_facade.h"
 #include "fake_config_storage.h"
 #include "application/zbus/digital_input_channels.h"
+#include "common/config_types.h"
+#include "common/config_envelope.h"
+#include "common/default_config_profiles.h"
 
 #define FAKE_BUS 0U
 
@@ -189,6 +192,15 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 {
     (void) composition_root_deinit(&s_app);
     (void) memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    /* Seed with 8-unit configuration so both MBSL32DI and Waveshare Relay are registered on Bus 2 */
+    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
+    size_t packed_len = 0U;
+    const config_hvac_t *ctrl_cfg = default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, ctrl_cfg, sizeof(*ctrl_cfg),
+                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
+    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
     zassert_true(s_app.is_initialized, "is_initialized must be true");
@@ -276,6 +288,15 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     (void) composition_root_deinit(&s_app);
     (void) memset(&s_app, 0, sizeof(s_app));
     (void) memset(&s_fake, 0, sizeof(s_fake));
+    fake_config_storage_reset();
+
+    /* Seed with 8-unit configuration so both MBSL32DI and Waveshare Relay are polled on Bus 2 */
+    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
+    size_t packed_len = 0U;
+    const config_hvac_t *ctrl_cfg = default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, ctrl_cfg, sizeof(*ctrl_cfg),
+                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
+    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
 
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
 
@@ -454,14 +475,9 @@ ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
     (void)memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();
 
-    /* 1. Verify declarative initialization from modbus_device_table.h */
+    /* 1. Verify declarative initialization with default Hybrid 4-unit configuration */
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
 
-    /* Waveshare 32CH Relay configured from table */
-    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare addr must be 5");
-    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 250, "Waveshare timeout must be 250");
-
-    /* Verify standard slaves are present in registry */
     modbus_slave_descriptor_t desc;
     zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_JSY_MK339, &desc), 0, "JSY meter must exist");
     zassert_equal(desc.slave_addr, MODBUS_ADDR_JSY_MK339, "JSY address");
@@ -469,11 +485,55 @@ ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
     zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_CWT_TM16PT, &desc), 0, "CWT concentrator must exist");
     zassert_equal(desc.slave_addr, MODBUS_ADDR_CWT_TM16PT_1, "CWT address");
 
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_MBSL32DI, &desc), 0, "MBSL32DI must exist");
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_MBSL32DI, &desc), 0, "MBSL32DI must exist in hybrid mode");
     zassert_equal(desc.slave_addr, MODBUS_ADDR_MBSL32DI, "MBSL32DI address");
 
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0, "Waveshare relay must exist");
+    /* In 4-unit hybrid mode, Waveshare 32CH relay is NOT registered (units 0..3 use internal relays) */
+    zassert_not_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0,
+                      "Waveshare relay must not be registered for <= 4 units");
+    zassert_false(i_relay_is_bound(&s_app.modbus.relay_ext_port), "External relay port must be unbound");
+
+    (void)composition_root_deinit(&s_app);
+
+    /* 2. Verify 8-unit Control-Only mode registers Waveshare 32CH relay */
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
+    size_t packed_len = 0U;
+    const config_hvac_t *ctrl_cfg = default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, ctrl_cfg, sizeof(*ctrl_cfg),
+                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
+    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init with 8 units failed");
+
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0,
+                  "Waveshare relay must exist for > 4 units");
     zassert_equal(desc.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare relay address");
+    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare addr must be 5");
+    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 250, "Waveshare timeout must be 250");
+    zassert_true(i_relay_is_bound(&s_app.modbus.relay_ext_port), "External relay port must be bound");
+
+    (void)composition_root_deinit(&s_app);
+
+    /* 3. Verify Telemetry-Only mode registers neither MBSL32DI nor Waveshare relay */
+    (void)memset(&s_app, 0, sizeof(s_app));
+    fake_config_storage_reset();
+
+    const config_hvac_t *telem_cfg = default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY);
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, telem_cfg, sizeof(*telem_cfg),
+                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
+    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
+
+    zassert_equal(composition_root_init(&s_app), 0, "Init with Telemetry-Only failed");
+
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_JSY_MK339, &desc), 0, "JSY meter must exist");
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_CWT_TM16PT, &desc), 0, "CWT concentrator must exist");
+    zassert_not_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_MBSL32DI, &desc), 0,
+                      "MBSL32DI must not be registered in Telemetry-Only");
+    zassert_not_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0,
+                      "Waveshare relay must not be registered in Telemetry-Only");
 
     (void)composition_root_deinit(&s_app);
 }

@@ -47,10 +47,18 @@ static const char *role_to_name(di_role_t role)
     case DI_ROLE_FAN_2_AUX: return "Fan 2 Run Aux";
     case DI_ROLE_FAN_3_AUX: return "Fan 3 Run Aux";
     case DI_ROLE_FAN_4_AUX: return "Fan 4 Run Aux";
+    case DI_ROLE_FAN_5_AUX: return "Fan 5 Run Aux";
+    case DI_ROLE_FAN_6_AUX: return "Fan 6 Run Aux";
+    case DI_ROLE_FAN_7_AUX: return "Fan 7 Run Aux";
+    case DI_ROLE_FAN_8_AUX: return "Fan 8 Run Aux";
     case DI_ROLE_COMPRESSOR_1_AUX: return "Comp 1 Run Aux";
     case DI_ROLE_COMPRESSOR_2_AUX: return "Comp 2 Run Aux";
     case DI_ROLE_COMPRESSOR_3_AUX: return "Comp 3 Run Aux";
     case DI_ROLE_COMPRESSOR_4_AUX: return "Comp 4 Run Aux";
+    case DI_ROLE_COMPRESSOR_5_AUX: return "Comp 5 Run Aux";
+    case DI_ROLE_COMPRESSOR_6_AUX: return "Comp 6 Run Aux";
+    case DI_ROLE_COMPRESSOR_7_AUX: return "Comp 7 Run Aux";
+    case DI_ROLE_COMPRESSOR_8_AUX: return "Comp 8 Run Aux";
     case DI_ROLE_HIGH_PRESSURE_1: return "High Pressure 1";
     case DI_ROLE_HIGH_PRESSURE_2: return "High Pressure 2";
     case DI_ROLE_LOW_PRESSURE_1: return "Low Pressure 1";

@@ -15,6 +15,7 @@
 #include "application/zbus/hvac_channels.h"
 #include "common/hvac_types.h"
 #include "common/default_config_profiles.h"
+#include "common/hardware_pin_map.h"
 #include "fake_hvac_unit.h"
 
 static ao_hvac_t s_ao;
@@ -413,7 +414,8 @@ ZTEST(ao_hvac_suite, test_default_hybrid_profile_verification)
 
     /* 2. Verify relay actuator endpoints (Internal relays on mcp23s17_2, device_id = 2) */
     for (uint8_t u = 0; u < 4U; u++) {
-        const hvac_unit_hw_config_t *u_cfg = &k_default_hvac_config_hybrid_4units.units[u];
+        const hvac_unit_hw_config_t *u_cfg = hardware_pin_map_get_unit_for_mode(HVAC_MODE_HYBRID_FULL, u);
+        zassert_not_null(u_cfg, "Unit %u hardware routing must exist", u);
         zassert_equal(u_cfg->relay_aa.backend, HVAC_IO_BACKEND_LOCAL_MCP23S17, "Relay backend");
         zassert_equal(u_cfg->relay_aa.device_id, HARDWARE_MCP23S17_IDX_HVAC_RELAYS, "Relay device_id 2");
 

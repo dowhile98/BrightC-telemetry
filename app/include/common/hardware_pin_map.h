@@ -53,11 +53,11 @@ extern "C" {
 /* ========================================================================= */
 
 /**
- * @brief Immutable channel configuration for the 24 local on-board digital inputs.
+ * @brief Immutable control-mode channel configuration for the 24 local on-board digital inputs.
  *
  * Mapped 1:1 with devicetree nodes alm_in_1..24 on &mcp23s17_0 and &mcp23s17_1.
  */
-static const di_channel_config_t k_brightc_local_di_table[HARDWARE_LOCAL_DI_COUNT] = {
+static const di_channel_config_t k_brightc_local_di_control_table[HARDWARE_LOCAL_DI_COUNT] = {
     /* --- Unit 1 Alarms (mcp23s17_0, pins 0..3) --- */
     {
         .role          = DI_ROLE_UNIT_0_ALARM_HP,
@@ -311,6 +311,281 @@ static const di_channel_config_t k_brightc_local_di_table[HARDWARE_LOCAL_DI_COUN
     },
 };
 
+/** Backward compatibility alias for local DI control table */
+#define k_brightc_local_di_table k_brightc_local_di_control_table
+
+/**
+ * @brief Immutable telemetry-mode channel configuration for the 24 local on-board digital inputs.
+ *
+ * Dedicated mapping for HVAC_MODE_TELEMETRY_ONLY:
+ * - Pins 0..15: Auxiliary contact feedback from Compressors 1..8 and Fans 1..8.
+ * - Pins 16..20: Facility & environmental safety alarms (Smoke/Fire, Door, Water, DPS, Phase).
+ * - Pins 21..23: Spare local digital inputs.
+ */
+static const di_channel_config_t k_brightc_local_di_telemetry_table[HARDWARE_LOCAL_DI_COUNT] = {
+    /* --- Pins 0..11 on MCP23S17_0 (ALM_IN_1..12) --- */
+    /* Unit 1 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_1_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 0U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_1_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 1U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Unit 2 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_2_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 2U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_2_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 3U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Unit 3 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_3_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 4U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_3_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 5U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Unit 4 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_4_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 6U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_4_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 7U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Unit 5 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_5_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 8U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_5_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 9U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Unit 6 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_6_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 10U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_6_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,
+        .pin_index     = 11U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* --- Pins 12..23 on MCP23S17_1 (ALM_IN_13..24) --- */
+    /* Unit 7 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_7_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 0U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_7_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 1U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Unit 8 Auxiliary Feedbacks */
+    {
+        .role          = DI_ROLE_COMPRESSOR_8_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 2U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_FAN_8_AUX,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 3U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_CONTACTOR_MS,
+        .enabled       = true,
+    },
+
+    /* Facility & Environmental Safety Alarms (mcp23s17_1, pins 4..8) */
+    {
+        .role          = DI_ROLE_SMOKE_FIRE,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 4U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_DOOR_OPEN,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 5U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_WATER_LEAK,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 6U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_SURGE_PROTECTOR,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 7U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_PHASE_MONITOR,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 8U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+
+    /* Spare Local Digital Inputs (mcp23s17_1, pins 9..11) */
+    {
+        .role          = DI_ROLE_USER_1,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 9U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = false,
+    },
+    {
+        .role          = DI_ROLE_USER_2,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 10U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = false,
+    },
+    {
+        .role          = DI_ROLE_USER_3,
+        .source_type   = DI_SOURCE_INTERNAL_SPI,
+        .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23,
+        .pin_index     = 11U,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = false,
+    },
+};
+
 /* ========================================================================= */
 /* Remote Modbus Digital Inputs Table (MBSL32DI, 32 Channels)                */
 /* ========================================================================= */
@@ -353,20 +628,20 @@ static const di_channel_config_t k_brightc_remote_di_table[HARDWARE_REMOTE_DI_CO
     { .role = DI_ROLE_FAN_2_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 17U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_FAN_3_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 18U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_FAN_4_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 19U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_4,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 20U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Fan 5 */
-    { .role = DI_ROLE_USER_5,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 21U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Fan 6 */
-    { .role = DI_ROLE_USER_6,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 22U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Fan 7 */
-    { .role = DI_ROLE_USER_7,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 23U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Fan 8 */
+    { .role = DI_ROLE_FAN_5_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 20U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_6_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 21U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_7_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 22U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_8_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 23U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
 
     /* --- Telemetry: Compressor 1..8 Auxiliary Run Feedbacks (Bits 24..31) --- */
     { .role = DI_ROLE_COMPRESSOR_1_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 24U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_COMPRESSOR_2_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 25U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_COMPRESSOR_3_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 26U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_COMPRESSOR_4_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 27U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_8,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 28U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Comp 5 */
-    { .role = DI_ROLE_USER_9,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 29U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Comp 6 */
-    { .role = DI_ROLE_THERMAL_OVERLOAD_FAN, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 30U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Comp 7 */
-    { .role = DI_ROLE_THERMAL_OVERLOAD_COMP,.source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 31U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true }, /* Comp 8 */
+    { .role = DI_ROLE_COMPRESSOR_5_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 28U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_6_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 29U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_7_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 30U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_8_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 31U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
 };
 
 /* ========================================================================= */
@@ -485,18 +760,125 @@ static const hvac_unit_hw_config_t k_brightc_hvac_hw_table[HARDWARE_TOTAL_HVAC_U
     },
 };
 
+/**
+ * @brief Dedicated HVAC hardware routing for HVAC_MODE_TELEMETRY_ONLY.
+ *
+ * In pure telemetry mode:
+ * - Relays are disabled (.backend = HVAC_IO_BACKEND_NONE).
+ * - Discrete alarms are disabled (.backend = HVAC_IO_BACKEND_NONE).
+ * - Compressor and fan run feedbacks map directly to local MCP23S17 optocouplers (ALM_IN_1..16).
+ */
+static const hvac_unit_hw_config_t k_brightc_hvac_hw_telemetry_table[HARDWARE_TOTAL_HVAC_UNITS_COUNT] = {
+    /* Unit 1 (idx 0): ALM_IN_1 (Comp 1 fb), ALM_IN_2 (Fan 1 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 0U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 1U },
+    },
+    /* Unit 2 (idx 1): ALM_IN_3 (Comp 2 fb), ALM_IN_4 (Fan 2 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 2U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 3U },
+    },
+    /* Unit 3 (idx 2): ALM_IN_5 (Comp 3 fb), ALM_IN_6 (Fan 3 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 4U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 5U },
+    },
+    /* Unit 4 (idx 3): ALM_IN_7 (Comp 4 fb), ALM_IN_8 (Fan 4 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 6U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 7U },
+    },
+    /* Unit 5 (idx 4): ALM_IN_9 (Comp 5 fb), ALM_IN_10 (Fan 5 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 8U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 9U },
+    },
+    /* Unit 6 (idx 5): ALM_IN_11 (Comp 6 fb), ALM_IN_12 (Fan 6 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 10U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .channel = 11U },
+    },
+    /* Unit 7 (idx 6): ALM_IN_13 (Comp 7 fb), ALM_IN_14 (Fan 7 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 0U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 1U },
+    },
+    /* Unit 8 (idx 7): ALM_IN_15 (Comp 8 fb), ALM_IN_16 (Fan 8 fb) */
+    {
+        .relay_aa      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_sm      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .relay_g       = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_hp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_lp      = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_flow    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .alarm_volt    = { .backend = (uint8_t)HVAC_IO_BACKEND_NONE, .device_id = 0U, .channel = 0U },
+        .fb_compressor = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 2U },
+        .fb_fan        = { .backend = (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, .device_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .channel = 3U },
+    },
+};
+
 /* ========================================================================= */
 /* Consolidated System Digital Inputs Table (58 Channels: Local + On-Chip + Remote) */
 /* ========================================================================= */
 
 /**
- * @brief Unified system-wide digital input channel mapping (58 channels <= DI_CHANNEL_MAX).
+ * @brief Unified system-wide digital input channel mapping for Control & Hybrid modes.
  *
  * - Channels 0..23: 24 Local optocoupled inputs via MCP23S17_0 and MCP23S17_1.
  * - Channels 24..25: 2 On-chip microcontroller inputs (User button and Physical bypass switch).
  * - Channels 26..57: 32 Remote RS-485 Modbus digital inputs via MBSL32DI.
  */
-static const di_channel_config_t k_brightc_system_di_table[HARDWARE_SYSTEM_DI_COUNT] = {
+static const di_channel_config_t k_brightc_system_di_control_table[HARDWARE_SYSTEM_DI_COUNT] = {
     /* --- Channels 0..23: 24 Local SPI MCP23S17 Inputs --- */
     /* Unit 0 Alarms (mcp23s17_0, pins 0..3) */
     { .role = DI_ROLE_UNIT_0_ALARM_HP,   .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 0U, .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = true },
@@ -586,20 +968,145 @@ static const di_channel_config_t k_brightc_system_di_table[HARDWARE_SYSTEM_DI_CO
     { .role = DI_ROLE_FAN_2_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 17U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_FAN_3_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 18U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_FAN_4_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 19U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_4,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 20U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_5,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 21U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_6,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 22U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_7,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 23U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_5_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 20U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_6_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 21U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_7_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 22U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_8_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 23U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
 
     /* Compressor 1..8 Auxiliary Run Feedbacks (Bits 24..31) */
     { .role = DI_ROLE_COMPRESSOR_1_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 24U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_COMPRESSOR_2_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 25U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_COMPRESSOR_3_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 26U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
     { .role = DI_ROLE_COMPRESSOR_4_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 27U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_8,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 28U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_USER_9,            .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 29U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_THERMAL_OVERLOAD_FAN, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 30U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
-    { .role = DI_ROLE_THERMAL_OVERLOAD_COMP,.source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 31U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_5_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 28U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_6_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 29U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_7_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 30U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_8_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 31U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+};
+
+/** Backward compatibility alias for system DI control table */
+#define k_brightc_system_di_table k_brightc_system_di_control_table
+
+/**
+ * @brief Unified system-wide digital input channel mapping for HVAC_MODE_TELEMETRY_ONLY.
+ *
+ * - Channels 0..23: 24 Local optocoupled inputs mapped to compressors 1..8 and fans 1..8 run feedback
+ *                   plus safety interlocks.
+ * - Channels 24..25: 2 On-chip microcontroller inputs (User button and Physical bypass switch).
+ * - Channels 26..57: 32 Remote RS-485 Modbus digital inputs via MBSL32DI.
+ */
+static const di_channel_config_t k_brightc_system_di_telemetry_table[HARDWARE_SYSTEM_DI_COUNT] = {
+    /* --- Channels 0..23: 24 Local SPI MCP23S17 Inputs (Telemetry Mapping) --- */
+    /* Unit 1 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_1_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 0U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_1_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 1U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 2 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_2_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 2U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_2_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 3U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 3 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_3_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 4U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_3_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 5U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 4 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_4_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 6U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_4_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 7U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 5 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_5_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 8U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_5_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 9U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 6 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_6_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 10U, .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_6_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_0_11,  .pin_index = 11U, .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 7 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_7_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 0U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_7_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 1U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Unit 8 Auxiliary Feedbacks */
+    { .role = DI_ROLE_COMPRESSOR_8_AUX,  .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 2U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+    { .role = DI_ROLE_FAN_8_AUX,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 3U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_CONTACTOR_MS, .enabled = true },
+
+    /* Facility & Environmental Safety Alarms (mcp23s17_1, pins 4..8) */
+    { .role = DI_ROLE_SMOKE_FIRE,        .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 4U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = true },
+    { .role = DI_ROLE_DOOR_OPEN,         .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 5U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = true },
+    { .role = DI_ROLE_WATER_LEAK,        .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 6U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = true },
+    { .role = DI_ROLE_SURGE_PROTECTOR,   .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 7U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = true },
+    { .role = DI_ROLE_PHASE_MONITOR,     .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 8U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = true },
+
+    /* Spare Local Digital Inputs (mcp23s17_1, pins 9..11) */
+    { .role = DI_ROLE_USER_1,            .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 9U,  .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = false },
+    { .role = DI_ROLE_USER_2,            .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 10U, .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = false },
+    { .role = DI_ROLE_USER_3,            .source_type = DI_SOURCE_INTERNAL_SPI, .source_dev_id = HARDWARE_MCP23S17_IDX_ALM_IN_12_23, .pin_index = 11U, .active_level = DI_ACTIVE_LOW, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = DI_DEBOUNCE_ALARM_MS, .enabled = false },
+
+    /* --- Channels 24..25: 2 On-Chip Microcontroller GPIOs --- */
+    {
+        .role          = DI_ROLE_USER_BUTTON,
+        .source_type   = DI_SOURCE_ONCHIP_GPIO,
+        .source_dev_id = 0U,
+        .pin_index     = (uint8_t)ONCHIP_DI_USER_BUTTON,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+    {
+        .role          = DI_ROLE_BYPASS_SWITCH,
+        .source_type   = DI_SOURCE_ONCHIP_GPIO,
+        .source_dev_id = 0U,
+        .pin_index     = (uint8_t)ONCHIP_DI_SW_BYPASS,
+        .active_level  = DI_ACTIVE_LOW,
+        .contact_type  = DI_CONTACT_NORMALLY_OPEN,
+        .debounce_ms   = DI_DEBOUNCE_ALARM_MS,
+        .enabled       = true,
+    },
+
+    /* --- Channels 26..57: 32 Remote Modbus DI Channels (MBSL32DI) --- */
+    /* Unit 4 Alarms (Bits 0..3) */
+    { .role = DI_ROLE_UNIT_4_ALARM_HP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 0U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_4_ALARM_LP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 1U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_4_ALARM_FLOW, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 2U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_4_ALARM_VOLT, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 3U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+
+    /* Unit 5 Alarms (Bits 4..7) */
+    { .role = DI_ROLE_UNIT_5_ALARM_HP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 4U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_5_ALARM_LP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 5U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_5_ALARM_FLOW, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 6U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_5_ALARM_VOLT, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 7U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+
+    /* Unit 6 Alarms (Bits 8..11) */
+    { .role = DI_ROLE_UNIT_6_ALARM_HP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 8U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_6_ALARM_LP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 9U,  .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_6_ALARM_FLOW, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 10U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_6_ALARM_VOLT, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 11U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+
+    /* Unit 7 Alarms (Bits 12..15) */
+    { .role = DI_ROLE_UNIT_7_ALARM_HP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 12U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_7_ALARM_LP,   .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 13U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_7_ALARM_FLOW, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 14U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_UNIT_7_ALARM_VOLT, .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 15U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+
+    /* Evaporator Fans 1..8 Auxiliary Run Feedbacks (Bits 16..23) */
+    { .role = DI_ROLE_FAN_1_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 16U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_2_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 17U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_3_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 18U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_4_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 19U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_5_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 20U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_6_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 21U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_7_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 22U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_FAN_8_AUX,         .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 23U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+
+    /* Compressor 1..8 Auxiliary Run Feedbacks (Bits 24..31) */
+    { .role = DI_ROLE_COMPRESSOR_1_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 24U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_2_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 25U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_3_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 26U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_4_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 27U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_5_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 28U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_6_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 29U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_7_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 30U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
+    { .role = DI_ROLE_COMPRESSOR_8_AUX,  .source_type = DI_SOURCE_EXTERNAL_MODBUS, .source_dev_id = MODBUS_ADDR_MBSL32DI, .pin_index = 31U, .active_level = DI_ACTIVE_HIGH, .contact_type = DI_CONTACT_NORMALLY_OPEN, .debounce_ms = 0U, .enabled = true },
 };
 
 /* ========================================================================= */
@@ -607,7 +1114,26 @@ static const di_channel_config_t k_brightc_system_di_table[HARDWARE_SYSTEM_DI_CO
 /* ========================================================================= */
 
 /**
- * @brief Retrieve local digital inputs configuration table.
+ * @brief Retrieve system digital inputs configuration table for the given HVAC operation mode.
+ *
+ * @param[in]  mode      HVAC operation mode (TELEMETRY_ONLY vs HYBRID_FULL / CONTROL_ONLY).
+ * @param[out] out_count Optional pointer receiving channel count (58).
+ * @return Pointer to immutable system digital inputs array.
+ */
+static inline const di_channel_config_t *hardware_pin_map_get_di_profile(hvac_operation_mode_t mode,
+                                                                         size_t *out_count)
+{
+    if (out_count != NULL) {
+        *out_count = HARDWARE_SYSTEM_DI_COUNT;
+    }
+    if (mode == HVAC_MODE_TELEMETRY_ONLY) {
+        return k_brightc_system_di_telemetry_table;
+    }
+    return k_brightc_system_di_control_table;
+}
+
+/**
+ * @brief Retrieve local digital inputs configuration table (control mode baseline).
  *
  * @param[out] out_count Optional pointer receiving channel count (24).
  * @return Pointer to immutable local digital inputs array.
@@ -617,11 +1143,11 @@ static inline const di_channel_config_t *hardware_pin_map_get_local_di(size_t *o
     if (out_count != NULL) {
         *out_count = HARDWARE_LOCAL_DI_COUNT;
     }
-    return k_brightc_local_di_table;
+    return k_brightc_local_di_control_table;
 }
 
 /**
- * @brief Retrieve complete consolidated system digital inputs configuration table.
+ * @brief Retrieve complete consolidated system digital inputs configuration table (control mode baseline).
  *
  * @param[out] out_count Optional pointer receiving channel count (58).
  * @return Pointer to immutable system digital inputs array.
@@ -631,7 +1157,7 @@ static inline const di_channel_config_t *hardware_pin_map_get_full_di(size_t *ou
     if (out_count != NULL) {
         *out_count = HARDWARE_SYSTEM_DI_COUNT;
     }
-    return k_brightc_system_di_table;
+    return k_brightc_system_di_control_table;
 }
 
 /**
@@ -674,17 +1200,33 @@ static inline const hvac_unit_hw_config_t *hardware_pin_map_get_hvac_units(size_
 }
 
 /**
- * @brief Retrieve hardware routing for a single HVAC unit (0..7).
+ * @brief Retrieve hardware routing for a single HVAC unit (0..7) for the given operation mode.
+ *
+ * @param[in] mode      HVAC operation mode.
+ * @param[in] unit_idx  Zero-based unit index (0..7).
+ * @return Pointer to unit routing structure, or NULL if unit_idx >= 8.
+ */
+static inline const hvac_unit_hw_config_t *hardware_pin_map_get_unit_for_mode(hvac_operation_mode_t mode,
+                                                                              uint8_t unit_idx)
+{
+    if (unit_idx >= HARDWARE_TOTAL_HVAC_UNITS_COUNT) {
+        return NULL;
+    }
+    if (mode == HVAC_MODE_TELEMETRY_ONLY) {
+        return &k_brightc_hvac_hw_telemetry_table[unit_idx];
+    }
+    return &k_brightc_hvac_hw_table[unit_idx];
+}
+
+/**
+ * @brief Retrieve hardware routing for a single HVAC unit (0..7) in default control mode.
  *
  * @param[in] unit_idx Zero-based unit index (0..7).
  * @return Pointer to unit routing structure, or NULL if unit_idx >= 8.
  */
 static inline const hvac_unit_hw_config_t *hardware_pin_map_get_unit(uint8_t unit_idx)
 {
-    if (unit_idx >= HARDWARE_TOTAL_HVAC_UNITS_COUNT) {
-        return NULL;
-    }
-    return &k_brightc_hvac_hw_table[unit_idx];
+    return hardware_pin_map_get_unit_for_mode(HVAC_MODE_HYBRID_FULL, unit_idx);
 }
 
 #ifdef __cplusplus

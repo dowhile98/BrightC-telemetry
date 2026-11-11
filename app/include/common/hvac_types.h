@@ -314,20 +314,24 @@ typedef enum {
 } hvac_alarm_contact_type_t;
 
 /**
- * @brief Root persistent HVAC storage configuration structure (~460-476 bytes).
+ * @brief Root persistent HVAC storage configuration structure (188 bytes).
+ *
+ * Persisted in EEPROM CONFIG_DOMAIN_HVAC slot (576 B). Unit hardware routing
+ * is sourced immutably from hardware_pin_map.h according to operation_mode.
  */
 typedef struct {
-    uint8_t               operation_mode;            /**< Operation profile (@see hvac_operation_mode_t) */
-    uint8_t               total_units;               /**< Total number of configured units (1..8) */
-    uint8_t               total_groups;              /**< Total number of configured groups (1..4) */
-    uint8_t               bypass_alarm_contact_type; /**< Alarm 1 contact polarity (@see hvac_alarm_contact_type_t) */
-    hvac_io_endpoint_t    fire_interlock;            /**< Emergency fire shutdown input endpoint */
-    hvac_io_endpoint_t    bypass_switch;             /**< Front-panel physical bypass switch endpoint */
-    config_hvac_group_t   groups[HVAC_MAX_GROUPS];     /**< Group configuration array */
-    hvac_unit_hw_config_t units[HVAC_MAX_UNITS_TOTAL]; /**< Hardware unit routing array */
-    uint8_t               alarm_buzzer_muted;        /**< 1 = Buzzer muted for alarms, 0 = audible alarms */
-    uint8_t               reserved[15];              /**< Future expansion padding */
+    uint8_t             operation_mode;            /**< Operation profile (@see hvac_operation_mode_t) */
+    uint8_t             total_units;               /**< Total number of configured units (1..8) */
+    uint8_t             total_groups;              /**< Total number of configured groups (1..4) */
+    uint8_t             bypass_alarm_contact_type; /**< Alarm 1 contact polarity (@see hvac_alarm_contact_type_t) */
+    hvac_io_endpoint_t  fire_interlock;            /**< Emergency fire shutdown input endpoint */
+    hvac_io_endpoint_t  bypass_switch;             /**< Front-panel physical bypass switch endpoint */
+    config_hvac_group_t groups[HVAC_MAX_GROUPS];   /**< Group configuration array (4 * 40 = 160 B) */
+    uint8_t             alarm_buzzer_muted;        /**< 1 = Buzzer muted for alarms, 0 = audible alarms */
+    uint8_t             reserved[15];              /**< Future expansion padding */
 } config_hvac_t;
+
+_Static_assert(sizeof(config_hvac_t) == 188U, "config_hvac_t size mismatch");
 
 /* ========================================================================= */
 /* Pure Validation Functions                                                 */
@@ -520,21 +524,6 @@ static inline bool config_hvac_is_valid(const config_hvac_t *cfg)
             }
         }
         if (cfg->groups[i].active_turn_count > assigned_units) {
-            return false;
-        }
-    }
-
-    for (uint8_t u = 0U; u < cfg->total_units; u++) {
-        const hvac_unit_hw_config_t *unit = &cfg->units[u];
-        if (!hvac_endpoint_is_valid(&unit->relay_aa) ||
-            !hvac_endpoint_is_valid(&unit->relay_sm) ||
-            !hvac_endpoint_is_valid(&unit->relay_g) ||
-            !hvac_endpoint_is_valid(&unit->alarm_hp) ||
-            !hvac_endpoint_is_valid(&unit->alarm_lp) ||
-            !hvac_endpoint_is_valid(&unit->alarm_flow) ||
-            !hvac_endpoint_is_valid(&unit->alarm_volt) ||
-            !hvac_endpoint_is_valid(&unit->fb_fan) ||
-            !hvac_endpoint_is_valid(&unit->fb_compressor)) {
             return false;
         }
     }

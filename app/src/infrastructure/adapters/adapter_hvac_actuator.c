@@ -9,6 +9,7 @@
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
 #include "infrastructure/adapters/adapter_relay_gpio.h"
 #include "common/default_config_profiles.h"
+#include "common/hardware_pin_map.h"
 
 #include <errno.h>
 #include <string.h>
@@ -172,6 +173,13 @@ int adapter_hvac_actuator_init(adapter_hvac_actuator_t *self,
     if (hw_config != NULL && count > 0U) {
         size_t n = (count < HVAC_MAX_UNITS_TOTAL) ? count : HVAC_MAX_UNITS_TOTAL;
         memcpy(self->hw_config, hw_config, n * sizeof(hvac_unit_hw_config_t));
+    } else {
+        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+            const hvac_unit_hw_config_t *u_cfg = hardware_pin_map_get_unit_for_mode(HVAC_MODE_HYBRID_FULL, u);
+            if (u_cfg != NULL) {
+                self->hw_config[u] = *u_cfg;
+            }
+        }
     }
 
     if (remote_relay != NULL) {
@@ -185,6 +193,41 @@ int adapter_hvac_actuator_init(adapter_hvac_actuator_t *self,
     for (size_t i = 0U; i < HVAC_MAX_UNITS_TOTAL; i++) {
         self->cached_tri_state[i] = HVAC_TRI_STATE_OFF;
         self->cache_valid[i] = false;
+    }
+
+    return 0;
+}
+
+int adapter_hvac_actuator_init_for_mode(adapter_hvac_actuator_t *self,
+                                        hvac_operation_mode_t mode,
+                                        const i_relay_t *remote_relay,
+                                        const i_relay_t *local_relay)
+{
+    if (self == NULL || !hvac_operation_mode_is_valid((uint8_t)mode)) {
+        return -EINVAL;
+    }
+
+    int err = adapter_hvac_actuator_init(self, NULL, 0U, remote_relay, local_relay);
+    if (err != 0) {
+        return err;
+    }
+
+    return adapter_hvac_actuator_apply_mode(self, mode);
+}
+
+int adapter_hvac_actuator_apply_mode(adapter_hvac_actuator_t *self, hvac_operation_mode_t mode)
+{
+    if (self == NULL || !hvac_operation_mode_is_valid((uint8_t)mode)) {
+        return -EINVAL;
+    }
+
+    for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++) {
+        const hvac_unit_hw_config_t *u_cfg = hardware_pin_map_get_unit_for_mode(mode, u);
+        if (u_cfg != NULL) {
+            self->hw_config[u] = *u_cfg;
+        }
+        self->cached_tri_state[u] = HVAC_TRI_STATE_OFF;
+        self->cache_valid[u] = false;
     }
 
     return 0;

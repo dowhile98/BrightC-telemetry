@@ -236,8 +236,31 @@ int composition_root_init_modbus(app_container_t *self)
 
     size_t slave_count = 0U;
     const modbus_slave_descriptor_t *default_slaves = modbus_device_table_get_slaves(&slave_count);
+    hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
+    uint8_t total_units = self->hvac.config.total_units;
+
     for (size_t i = 0U; i < slave_count; i++)
     {
+        uint8_t dev_type = default_slaves[i].dev_type;
+
+        /* Filter slaves based on persistent operational mode and unit count */
+        if (op_mode == HVAC_MODE_TELEMETRY_ONLY)
+        {
+            if (dev_type == (uint8_t)MODBUS_DEV_TYPE_MBSL32DI ||
+                dev_type == (uint8_t)MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH)
+            {
+                continue;
+            }
+        }
+        else
+        {
+            /* Hybrid full or control-only: Waveshare relay only needed if total_units > 4 */
+            if (dev_type == (uint8_t)MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH && total_units <= 4U)
+            {
+                continue;
+            }
+        }
+
         err = modbus_registry_register(&self->modbus.registry_impl, &default_slaves[i]);
         if (err != 0)
         {
@@ -261,40 +284,38 @@ int composition_root_init_modbus(app_container_t *self)
         }
     }
 
-    uint8_t waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
-    uint8_t waveshare_addr = MODBUS_ADDR_WAVESHARE_RELAY;
-    uint16_t waveshare_timeout_ms = DEFAULT_MODBUS_WAVESHARE_TIMEOUT_MS;
-
     modbus_slave_descriptor_t ws_desc;
     if (modbus_registry_find_by_type(&self->modbus.registry_impl,
                                      MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
                                      &ws_desc) == 0)
     {
-        waveshare_bus = ws_desc.bus_id;
-        waveshare_addr = ws_desc.slave_addr;
-        waveshare_timeout_ms = ws_desc.timeout_ms;
-    }
+        uint8_t waveshare_bus = ws_desc.bus_id;
+        if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
+        {
+            waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
+        }
 
-    if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
-    {
-        waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
-    }
+        err = adapter_relay_modbus_init(&self->modbus.waveshare_relay,
+                                        &self->modbus.ao[waveshare_bus],
+                                        ws_desc.slave_addr,
+                                        (int32_t)ws_desc.timeout_ms);
+        if (err != 0)
+        {
+            LOG_ERR("relay adapter init failed (%d)", err);
+            return err;
+        }
 
-    err = adapter_relay_modbus_init(&self->modbus.waveshare_relay,
-                                    &self->modbus.ao[waveshare_bus],
-                                    waveshare_addr,
-                                    (int32_t)waveshare_timeout_ms);
-    if (err != 0)
-    {
-        LOG_ERR("relay adapter init failed (%d)", err);
-        return err;
+        err = adapter_relay_modbus_port(&self->modbus.waveshare_relay, &self->modbus.relay_ext_port);
+        if (err != 0)
+        {
+            LOG_ERR("relay port binding failed (%d)", err);
+            return err;
+        }
     }
-
-    err = adapter_relay_modbus_port(&self->modbus.waveshare_relay, &self->modbus.relay_ext_port);
-    if (err != 0)
+    else
     {
-        LOG_ERR("relay port binding failed (%d)", err);
-        return err;
+        self->modbus.relay_ext_port.api = NULL;
+        self->modbus.relay_ext_port.impl = NULL;
     }
 
     self->modbus.initialized = true;
@@ -361,6 +382,7 @@ int composition_root_init_storage(app_container_t *self)
     /* Initialize RAM defaults for persistent configuration domains */
     self->device_cfg = *default_config_get_device_cfg();
     self->calibration_cfg = *default_config_get_calibration_cfg();
+    self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
@@ -396,7 +418,40 @@ int composition_root_init_storage(app_container_t *self)
             LOG_INF("Loaded CALIBRATION config from storage");
         }
 
-
+        /* 3. HVAC */
+        uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
+        size_t hvac_size = 0U;
+        config_hvac_t hvac_cfg;
+        memset(&hvac_cfg, 0, sizeof(hvac_cfg));
+        size_t hvac_unpacked = 0U;
+        if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                  hvac_buf, sizeof(hvac_buf), &hvac_size) == 0 &&
+            config_envelope_unpack(CONFIG_DOMAIN_HVAC, hvac_buf, hvac_size,
+                                   &hvac_cfg, sizeof(hvac_cfg), &hvac_unpacked) == 0 &&
+            hvac_unpacked == sizeof(config_hvac_t) &&
+            config_hvac_is_valid(&hvac_cfg))
+        {
+            self->hvac.config = hvac_cfg;
+            LOG_INF("Loaded HVAC config from storage (mode=%u, units=%u)",
+                    (unsigned int)self->hvac.config.operation_mode,
+                    (unsigned int)self->hvac.config.total_units);
+        }
+        else
+        {
+            LOG_INF("No valid HVAC config in storage, applying defaults");
+            size_t pack_len = 0U;
+            if (config_envelope_pack(CONFIG_DOMAIN_HVAC, &self->hvac.config,
+                                     sizeof(self->hvac.config), hvac_buf,
+                                     sizeof(hvac_buf), &pack_len) == 0)
+            {
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                                    hvac_buf, pack_len);
+                if (save_rc != 0)
+                {
+                    LOG_ERR("Failed to persist default HVAC config: %d", save_rc);
+                }
+            }
+        }
     }
 
     self->storage.initialized = true;
@@ -643,8 +698,18 @@ int composition_root_init_digital_inputs(app_container_t *self)
         return 0;
     }
 
+    if (!self->storage.initialized)
+    {
+        LOG_ERR("storage not initialized; boot sequence requires storage before di");
+        return -EAGAIN;
+    }
+
     k_msgq_init(&self->di.queue, self->di.queue_buf,
                 sizeof(ao_di_event_t), AO_DI_QUEUE_DEPTH);
+
+    hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
+    size_t di_count = 0U;
+    const di_channel_config_t *di_cfg = hardware_pin_map_get_di_profile(op_mode, &di_count);
 
 #if !defined(CONFIG_ZTEST)
     const struct device *mcp_dev0 = NULL;
@@ -663,9 +728,6 @@ int composition_root_init_digital_inputs(app_container_t *self)
         LOG_WRN("adapter_di_gpio_init failed (%d)", adp_err);
     }
 
-    size_t di_count = 0U;
-    const di_channel_config_t *di_cfg = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
-
     int err = di_aggregator_init(&self->di.aggregator, di_cfg,
                                  di_count,
                                  adapter_di_gpio_read, &self->di.di_adapter);
@@ -675,9 +737,6 @@ int composition_root_init_digital_inputs(app_container_t *self)
         return err;
     }
 #else
-    size_t di_count = 0U;
-    const di_channel_config_t *di_cfg = default_config_get_di_profile(HVAC_MODE_HYBRID_FULL, &di_count);
-
     int err = di_aggregator_init(&self->di.aggregator, di_cfg,
                                  di_count,
                                  NULL, NULL);
@@ -720,50 +779,18 @@ int composition_root_init_hvac(app_container_t *self)
         return -EAGAIN;
     }
 
-    /* 1. Synchronous boot read from storage for HVAC configuration */
-    config_hvac_t loaded_hvac_cfg;
-    const config_hvac_t *hvac_cfg_ptr = default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
-    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-    size_t loaded_hvac_size = 0;
-    int hvac_load_res = -1;
-
-    if (i_config_storage_is_bound(&self->storage.port))
+    /* 1. Ensure HVAC configuration in RAM is valid (loaded during storage init) */
+    if (!config_hvac_is_valid(&self->hvac.config))
     {
-        hvac_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                              hvac_buf, sizeof(hvac_buf),
-                                              &loaded_hvac_size);
-        if (hvac_load_res == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_HVAC, hvac_buf, loaded_hvac_size,
-                                   &loaded_hvac_cfg, sizeof(loaded_hvac_cfg), NULL) == 0 &&
-            config_hvac_is_valid(&loaded_hvac_cfg))
-        {
-            LOG_INF("Loaded HVAC config from storage");
-            hvac_cfg_ptr = &loaded_hvac_cfg;
-        }
-        else
-        {
-            LOG_INF("No valid HVAC config in storage (%d), applying defaults", hvac_load_res);
-            size_t pack_len = 0;
-            if (config_envelope_pack(CONFIG_DOMAIN_HVAC, hvac_cfg_ptr, sizeof(*hvac_cfg_ptr),
-                                     hvac_buf, sizeof(hvac_buf), &pack_len) == 0)
-            {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                                    hvac_buf, pack_len);
-                if (save_rc != 0)
-                {
-                    LOG_ERR("Failed to persist default HVAC config: %d", save_rc);
-                }
-            }
-        }
+        self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
     }
-    (void)memcpy(&self->hvac.config, hvac_cfg_ptr, sizeof(config_hvac_t));
+    hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
 
-    /* 2. Bind remote relay port to waveshare relay */
-    i_relay_t remote_relay;
-    int err = adapter_relay_modbus_port(&self->modbus.waveshare_relay, &remote_relay);
-    if (err != 0)
+    /* 2. Bind remote relay port to waveshare relay if available */
+    i_relay_t remote_relay = {0};
+    if (i_relay_is_bound(&self->modbus.relay_ext_port))
     {
-        LOG_WRN("hvac: failed to obtain waveshare relay port: %d", err);
+        remote_relay = self->modbus.relay_ext_port;
     }
 
     /* 3. Initialize local GPIO relay adapter (BrightC internal relays) */
@@ -798,17 +825,35 @@ int composition_root_init_hvac(app_container_t *self)
     }
     self->modbus.relay_int_port = self->hvac.local_relay_port;
 
-    /* 4. Initialize actuator adapter */
-    err = adapter_hvac_actuator_init(&self->hvac.actuator_adapter,
-                                     self->hvac.config.units,
-                                     HVAC_MAX_UNITS_TOTAL,
-                                     &remote_relay,
-                                     &self->hvac.local_relay_port);
+    /* 4. Build unit hardware routing for current operational mode */
+    hvac_unit_hw_config_t hw_units[HVAC_MAX_UNITS_TOTAL];
+    for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++)
+    {
+        const hvac_unit_hw_config_t *u_cfg = hardware_pin_map_get_unit_for_mode(op_mode, u);
+        if (u_cfg != NULL)
+        {
+            hw_units[u] = *u_cfg;
+        }
+        else
+        {
+            (void)memset(&hw_units[u], 0, sizeof(hw_units[u]));
+        }
+    }
+
+    /* 5. Initialize actuator adapter */
+    int err = adapter_hvac_actuator_init(&self->hvac.actuator_adapter,
+                                         hw_units,
+                                         HVAC_MAX_UNITS_TOTAL,
+                                         i_relay_is_bound(&remote_relay) ? &remote_relay : NULL,
+                                         i_relay_is_bound(&self->hvac.local_relay_port) ? &self->hvac.local_relay_port : NULL);
     if (err != 0)
     {
         LOG_ERR("adapter_hvac_actuator_init failed (%d)", err);
         return err;
     }
+    (void)adapter_hvac_actuator_apply_mode(
+        &self->hvac.actuator_adapter,
+        op_mode);
     (void)adapter_hvac_actuator_set_bypass_alarm_contact_type(
         &self->hvac.actuator_adapter,
         (hvac_alarm_contact_type_t)self->hvac.config.bypass_alarm_contact_type);
@@ -2016,13 +2061,11 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
 
     if (self->hvac.initialized)
     {
-        for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
+        int act_rc = adapter_hvac_actuator_apply_mode(&self->hvac.actuator_adapter,
+                                                      (hvac_operation_mode_t)cfg->operation_mode);
+        if (act_rc != 0)
         {
-            int act_rc = adapter_hvac_actuator_set_hw_config(&self->hvac.actuator_adapter, u, &cfg->units[u]);
-            if (act_rc != 0)
-            {
-                LOG_WRN("failed to set hw config for unit %u: %d", u, act_rc);
-            }
+            LOG_WRN("failed to apply mode %u to actuator: %d", (unsigned int)cfg->operation_mode, act_rc);
         }
 
         int err = ao_hvac_apply_config(&self->hvac.ao, cfg);

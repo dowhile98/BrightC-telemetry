@@ -15,7 +15,7 @@
 | **Zbus Channels** | `app/src/application/zbus/digital_input_channels.c` | 100% | `chan_digital_input_state` (transition events) & `chan_digital_input_snapshot` (consolidated 64-channel state, masks, durations) |
 | **HVAC Safety Wiring** | `app/src/infrastructure/di/composition_root.c` | 100% | `lis_hvac_di_feed` synchronous listener driving fire shutdown (`ao_hvac_set_fire`) and unit mechanical alarm lockouts (`ao_hvac_set_unit_alarms`) |
 | **Application Facade** | `app/src/application/services/app_facade.c` | 100% | Decoupled atomic queries (`app_facade_di_get_status`, `app_facade_di_get_raw`, `app_facade_di_get_snapshot`) via Zbus |
-| **Unit Tests** | `tests/unit/digital_input/` | 100% | 16 tests passing on `native_sim` (100%) |
+| **Unit Tests** | `tests/unit/digital_input/` | 100% | 18 tests passing on `native_sim` (100%) |
 
 ---
 
@@ -25,6 +25,13 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Implemented Phase A & Phase B Hardware Pin Map and Digital Input Semantic Roles refactoring:
+  - Extended `di_role_t` in `digital_input_types.h` with dedicated feedback roles `DI_ROLE_FAN_5_AUX`..`DI_ROLE_FAN_8_AUX` and `DI_ROLE_COMPRESSOR_5_AUX`..`DI_ROLE_COMPRESSOR_8_AUX`.
+  - Added role string representations in `role_to_name()` in `app_facade.c`.
+  - Created profile-specific digital input tables in `hardware_pin_map.h`: `k_brightc_local_di_control_table`, `k_brightc_local_di_telemetry_table` (dedicated mapping for `HVAC_MODE_TELEMETRY_ONLY` with pins 0..15 mapped to compressors 1..8 & fans 1..8 with `DI_DEBOUNCE_CONTACTOR_MS` 500ms), `k_brightc_system_di_control_table`, and `k_brightc_system_di_telemetry_table`.
+  - Updated remote Modbus DI table `k_brightc_remote_di_table` to map channels 16..23 to `DI_ROLE_FAN_1_AUX`..`DI_ROLE_FAN_8_AUX` and channels 24..31 to `DI_ROLE_COMPRESSOR_1_AUX`..`DI_ROLE_COMPRESSOR_8_AUX`.
+  - Implemented mode-aware accessors: `hardware_pin_map_get_di_profile(mode, &count)`, `hardware_pin_map_get_unit_for_mode(mode, unit_idx)` (with `HVAC_IO_BACKEND_NONE` for relays in telemetry mode and local MCP23S17 feedback routing), and updated `default_config_get_di_profile()`.
+  - Added unit test `test_di_profile_modes_and_unit_mappings` in `test_digital_input.c`. 18/18 tests passing (100% PASS).
 - **2026-11-09**: Fixed Double Polarity Inversion on On-Chip GPIO `sw_bypass` (`H-01` in `doc/issues/2026-11-09-hvac-control-delay-sequence-pinout-review.md`):
   - Changed `gpio_pin_get_dt(spec)` to raw `gpio_pin_get(spec->port, spec->pin)` for `DI_SOURCE_ONCHIP_GPIO` in `adapter_di_gpio.c` so `GPIO_ACTIVE_LOW` pins are not inverted twice before `di_normalize_raw_level()` (`DI_CONTACT_NORMALLY_CLOSED`).
 - **2026-11-07**: Implemented Phase 0 — Security (R-02 Physical Bypass Switch & R-14 Remote Units 4..7 Alarms):

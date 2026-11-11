@@ -25,6 +25,11 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-11**: Executed Phase C HVAC Storage Optimization:
+  - Removed `hvac_unit_hw_config_t units[8]` (288 B) from `config_hvac_t` (`app/include/common/hvac_types.h`).
+  - `config_hvac_t` size reduced to exactly 188 bytes, verified via `_Static_assert(sizeof(config_hvac_t) == 188U, ...)`.
+  - Together with 16-byte `config_envelope_header_t`, total envelope size is 204 B, comfortably fitting within the 576-byte ping-pong slot (`CONFIG_DOMAIN_HVAC`).
+  - Unit hardware actuation endpoints are now sourced exclusively and immutably from `hardware_pin_map.h`.
 - **2026-11-10**: Documented HVAC Configuration Optimization in Storage Architecture:
   - Pruned redundant hardware mapping array `units[8]` (288 B) from `config_hvac_t` (`CONFIG_DOMAIN_HVAC`), reducing payload footprint from ~476 B to ~188 B and freeing 288 B in EEPROM slot.
   - Formally established `hardware_pin_map.h` as the single authoritative source of truth for physical terminal blocks and expander routing.

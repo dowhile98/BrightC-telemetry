@@ -200,3 +200,78 @@ ZTEST(adapter_hvac_actuator_suite, test_bypass_alarm_contact_type_nc_and_no)
                   RELAY_STATE_OPEN,
                   "NO mode: Smart mode must write RELAY_STATE_OPEN (0)");
 }
+
+ZTEST(adapter_hvac_actuator_suite, test_init_with_null_hw_config_populates_defaults)
+{
+    int ret = adapter_hvac_actuator_init(&s_adapter, NULL, 0U, &s_remote_relay, &s_local_relay);
+    zassert_equal(ret, 0, "Init with NULL hw_config should succeed");
+
+    /* Verify units are populated with hardware_pin_map table */
+    for (uint8_t u = 0; u < 4U; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17,
+                      "Unit %u relay_aa must be local MCP23S17", u);
+        zassert_equal(s_adapter.hw_config[u].relay_sm.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17,
+                      "Unit %u relay_sm must be local MCP23S17", u);
+    }
+}
+
+ZTEST(adapter_hvac_actuator_suite, test_apply_mode_updates_routing)
+{
+    int ret = adapter_hvac_actuator_init(&s_adapter, NULL, 0U, &s_remote_relay, &s_local_relay);
+    zassert_equal(ret, 0, "Init failed");
+
+    /* Switch to HVAC_MODE_TELEMETRY_ONLY: all relays must be disabled (HVAC_IO_BACKEND_NONE) */
+    ret = adapter_hvac_actuator_apply_mode(&s_adapter, HVAC_MODE_TELEMETRY_ONLY);
+    zassert_equal(ret, 0, "apply_mode(TELEMETRY) should succeed");
+
+    for (uint8_t u = 0; u < HVAC_MAX_UNITS_TOTAL; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_NONE,
+                      "Unit %u relay_aa must be NONE in telemetry mode", u);
+        zassert_equal(s_adapter.hw_config[u].relay_sm.backend, (uint8_t)HVAC_IO_BACKEND_NONE,
+                      "Unit %u relay_sm must be NONE in telemetry mode", u);
+        zassert_false(s_adapter.cache_valid[u], "Cache should be invalidated on mode change");
+    }
+
+    /* Switch to HVAC_MODE_HYBRID_FULL: units 0..3 have local relays, units 4..7 have remote relays */
+    ret = adapter_hvac_actuator_apply_mode(&s_adapter, HVAC_MODE_HYBRID_FULL);
+    zassert_equal(ret, 0, "apply_mode(HYBRID_FULL) should succeed");
+
+    for (uint8_t u = 0; u < 4U; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17,
+                      "Unit %u relay_aa must be local MCP23S17 in hybrid mode", u);
+    }
+    for (uint8_t u = 4; u < 8U; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS,
+                      "Unit %u relay_aa must be remote Modbus in hybrid mode", u);
+    }
+}
+
+ZTEST(adapter_hvac_actuator_suite, test_init_for_mode_populates_mode_specific_routing)
+{
+    /* 1. Invalid mode returns -EINVAL */
+    zassert_equal(adapter_hvac_actuator_init_for_mode(&s_adapter, (hvac_operation_mode_t)99, &s_remote_relay, &s_local_relay), -EINVAL);
+
+    /* 2. Init directly for HVAC_MODE_TELEMETRY_ONLY */
+    int ret = adapter_hvac_actuator_init_for_mode(&s_adapter, HVAC_MODE_TELEMETRY_ONLY, &s_remote_relay, &s_local_relay);
+    zassert_equal(ret, 0, "init_for_mode(TELEMETRY) should succeed");
+
+    for (uint8_t u = 0; u < HVAC_MAX_UNITS_TOTAL; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_NONE,
+                      "Unit %u relay_aa must be NONE in telemetry mode", u);
+        zassert_equal(s_adapter.hw_config[u].relay_sm.backend, (uint8_t)HVAC_IO_BACKEND_NONE,
+                      "Unit %u relay_sm must be NONE in telemetry mode", u);
+    }
+
+    /* 3. Init directly for HVAC_MODE_HYBRID_FULL */
+    ret = adapter_hvac_actuator_init_for_mode(&s_adapter, HVAC_MODE_HYBRID_FULL, &s_remote_relay, &s_local_relay);
+    zassert_equal(ret, 0, "init_for_mode(HYBRID_FULL) should succeed");
+
+    for (uint8_t u = 0; u < 4U; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17,
+                      "Unit %u relay_aa must be local MCP23S17 in hybrid mode", u);
+    }
+    for (uint8_t u = 4; u < 8U; u++) {
+        zassert_equal(s_adapter.hw_config[u].relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS,
+                      "Unit %u relay_aa must be remote Modbus in hybrid mode", u);
+    }
+}

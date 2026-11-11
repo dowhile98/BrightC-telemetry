@@ -168,7 +168,7 @@ static const modbus_slave_descriptor_t k_brightc_modbus_slave_table[MODBUS_STAND
     /* RS485-2: Critical HVAC Actuation & Remote I/O */
     {
         .device_id         = MODBUS_ADDR_MBSL32DI,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_1,
+        .bus_id            = (uint8_t)MODBUS_BUS_RS485_2,
         .slave_addr        = MODBUS_ADDR_MBSL32DI,
         .dev_type          = (uint8_t)MODBUS_DEV_TYPE_MBSL32DI,
         .poll_interval_ms  = 200U,  /* Rapid sampling for contactors & interlocks */
@@ -177,7 +177,7 @@ static const modbus_slave_descriptor_t k_brightc_modbus_slave_table[MODBUS_STAND
     },
     {
         .device_id         = MODBUS_ADDR_WAVESHARE_RELAY,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_1,
+        .bus_id            = (uint8_t)MODBUS_BUS_RS485_2,
         .slave_addr        = MODBUS_ADDR_WAVESHARE_RELAY,
         .dev_type          = (uint8_t)MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
         .poll_interval_ms  = 1000U,

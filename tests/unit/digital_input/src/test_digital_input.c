@@ -197,7 +197,11 @@ ZTEST(digital_input_suite, test_pure_type_validators)
 {
     /* di_role_is_valid */
     zassert_true(di_role_is_valid(DI_ROLE_FAN_1_AUX), "Fan 1 aux must be valid");
+    zassert_true(di_role_is_valid(DI_ROLE_FAN_5_AUX), "Fan 5 aux must be valid");
+    zassert_true(di_role_is_valid(DI_ROLE_FAN_8_AUX), "Fan 8 aux must be valid");
     zassert_true(di_role_is_valid(DI_ROLE_COMPRESSOR_1_AUX), "Compressor 1 aux must be valid");
+    zassert_true(di_role_is_valid(DI_ROLE_COMPRESSOR_5_AUX), "Compressor 5 aux must be valid");
+    zassert_true(di_role_is_valid(DI_ROLE_COMPRESSOR_8_AUX), "Compressor 8 aux must be valid");
     zassert_true(di_role_is_valid(DI_ROLE_HIGH_PRESSURE_1), "High pressure 1 must be valid");
     zassert_true(di_role_is_valid(DI_ROLE_USER_4), "User 4 must be valid");
     zassert_true(di_role_is_valid(DI_ROLE_USER_BUTTON), "User button must be valid");
@@ -889,4 +893,88 @@ ZTEST(digital_input_suite, test_system_di_profile_58_channels)
     bool u4_hp_active = false;
     zassert_ok(di_aggregator_get_state(&agg, DI_ROLE_UNIT_4_ALARM_HP, &u4_hp_active));
     zassert_true(u4_hp_active, "Unit 4 HP must be active");
+}
+
+ZTEST(digital_input_suite, test_di_profile_modes_and_unit_mappings)
+{
+    size_t count = 0U;
+
+    /* 1. Test Telemetry-Only Profile */
+    const di_channel_config_t *telem_prof = hardware_pin_map_get_di_profile(HVAC_MODE_TELEMETRY_ONLY, &count);
+    zassert_not_null(telem_prof, "Telemetry DI profile must not be NULL");
+    zassert_equal(count, HARDWARE_SYSTEM_DI_COUNT, "Channel count must be 58");
+
+    /* Local channels 0..15 must map units 1..8 compressor and fan feedback */
+    di_role_t expected_roles[16] = {
+        DI_ROLE_COMPRESSOR_1_AUX, DI_ROLE_FAN_1_AUX,
+        DI_ROLE_COMPRESSOR_2_AUX, DI_ROLE_FAN_2_AUX,
+        DI_ROLE_COMPRESSOR_3_AUX, DI_ROLE_FAN_3_AUX,
+        DI_ROLE_COMPRESSOR_4_AUX, DI_ROLE_FAN_4_AUX,
+        DI_ROLE_COMPRESSOR_5_AUX, DI_ROLE_FAN_5_AUX,
+        DI_ROLE_COMPRESSOR_6_AUX, DI_ROLE_FAN_6_AUX,
+        DI_ROLE_COMPRESSOR_7_AUX, DI_ROLE_FAN_7_AUX,
+        DI_ROLE_COMPRESSOR_8_AUX, DI_ROLE_FAN_8_AUX,
+    };
+
+    for (uint8_t i = 0; i < 16U; i++) {
+        zassert_equal(telem_prof[i].role, expected_roles[i], "Telemetry CH%u role mismatch", i);
+        zassert_equal(telem_prof[i].source_type, DI_SOURCE_INTERNAL_SPI, "CH%u must be SPI", i);
+        zassert_true(telem_prof[i].enabled, "CH%u must be enabled", i);
+        zassert_equal(telem_prof[i].debounce_ms, DI_DEBOUNCE_CONTACTOR_MS, "Contactor debounce 500ms");
+    }
+
+    /* Facility alarms on pins 16..20 */
+    zassert_equal(telem_prof[16].role, DI_ROLE_SMOKE_FIRE, "CH16 Smoke/Fire");
+    zassert_equal(telem_prof[17].role, DI_ROLE_DOOR_OPEN, "CH17 Door Open");
+    zassert_equal(telem_prof[18].role, DI_ROLE_WATER_LEAK, "CH18 Water Leak");
+    zassert_equal(telem_prof[19].role, DI_ROLE_SURGE_PROTECTOR, "CH19 Surge");
+    zassert_equal(telem_prof[20].role, DI_ROLE_PHASE_MONITOR, "CH20 Phase");
+
+    /* Spares on pins 21..23 disabled */
+    zassert_false(telem_prof[21].enabled, "CH21 disabled");
+    zassert_false(telem_prof[22].enabled, "CH22 disabled");
+    zassert_false(telem_prof[23].enabled, "CH23 disabled");
+
+    /* 2. Test Control / Hybrid Profile */
+    const di_channel_config_t *ctrl_prof = hardware_pin_map_get_di_profile(HVAC_MODE_HYBRID_FULL, &count);
+    zassert_not_null(ctrl_prof, "Control DI profile must not be NULL");
+    zassert_equal(count, HARDWARE_SYSTEM_DI_COUNT, "Channel count must be 58");
+    zassert_equal(ctrl_prof[0].role, DI_ROLE_UNIT_0_ALARM_HP, "CH0 Unit 0 HP");
+    zassert_equal(ctrl_prof[1].role, DI_ROLE_UNIT_0_ALARM_LP, "CH1 Unit 0 LP");
+
+    /* 3. Test default_config_get_di_profile delegation */
+    size_t def_count = 0;
+    const di_channel_config_t *def_prof = default_config_get_di_profile(HVAC_MODE_TELEMETRY_ONLY, &def_count);
+    zassert_equal_ptr(def_prof, telem_prof, "default_config_get_di_profile must delegate to hardware_pin_map");
+    zassert_equal(def_count, HARDWARE_SYSTEM_DI_COUNT, "Count matches");
+
+    /* 4. Test Remote Table Fans 1..8 and Compressors 1..8 Run Feedback */
+    size_t remote_cnt = 0;
+    const di_channel_config_t *remote = hardware_pin_map_get_remote_di(&remote_cnt);
+    zassert_equal(remote_cnt, HARDWARE_REMOTE_DI_COUNT, "Remote count must be 32");
+    for (uint8_t f = 0; f < 8U; f++) {
+        zassert_equal(remote[16U + f].role, (di_role_t)(DI_ROLE_FAN_1_AUX + f), "Remote fan %u role", f + 1);
+        zassert_equal(remote[24U + f].role, (di_role_t)(DI_ROLE_COMPRESSOR_1_AUX + f), "Remote comp %u role", f + 1);
+    }
+
+    /* 5. Test Unit Hardware Mapping for Modes */
+    for (uint8_t u = 0; u < 8U; u++) {
+        const hvac_unit_hw_config_t *u_telemetry = hardware_pin_map_get_unit_for_mode(HVAC_MODE_TELEMETRY_ONLY, u);
+        zassert_not_null(u_telemetry, "Unit %u telemetry mapping exists", u);
+        zassert_equal(u_telemetry->relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_NONE, "Telemetry mode has no AA relay");
+        zassert_equal(u_telemetry->relay_sm.backend, (uint8_t)HVAC_IO_BACKEND_NONE, "Telemetry mode has no SM relay");
+        zassert_equal(u_telemetry->relay_g.backend, (uint8_t)HVAC_IO_BACKEND_NONE, "Telemetry mode has no G relay");
+        zassert_equal(u_telemetry->fb_compressor.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, "Local fb comp");
+        zassert_equal(u_telemetry->fb_fan.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, "Local fb fan");
+
+        const hvac_unit_hw_config_t *u_control = hardware_pin_map_get_unit_for_mode(HVAC_MODE_HYBRID_FULL, u);
+        zassert_not_null(u_control, "Unit %u control mapping exists", u);
+        if (u < 4U) {
+            zassert_equal(u_control->relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_LOCAL_MCP23S17, "Local relay AA");
+            zassert_equal(u_control->fb_compressor.backend, (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, "Remote fb comp");
+        } else {
+            zassert_equal(u_control->relay_aa.backend, (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, "Remote relay AA");
+            zassert_equal(u_control->fb_compressor.backend, (uint8_t)HVAC_IO_BACKEND_REMOTE_MODBUS, "Remote fb comp");
+        }
+    }
 }
