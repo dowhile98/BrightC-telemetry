@@ -34,6 +34,7 @@ typedef enum {
     RTC_TIME_SOURCE_HMI_DWIN        = 4, /**< Configured via local DWIN touch panel */
     RTC_TIME_SOURCE_CLOUD_MQTT      = 5, /**< Synchronized from MQTT broker telemetry ack */
     RTC_TIME_SOURCE_SNTP            = 6, /**< Network NTP Stratum clock (highest authority) */
+    RTC_TIME_SOURCE_MODBUS_TCP      = 7, /**< Synchronized via SCADA Modbus TCP write */
 } rtc_time_source_t;
 
 /**

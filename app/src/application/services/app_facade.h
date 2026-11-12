@@ -24,6 +24,7 @@
 #include "common/indicator_types.h"
 #include "common/alarm_types.h"
 #include "common/modbus_types.h"
+#include "common/modbus_tcp_types.h"
 #include "common/sensor_types.h"
 #include "common/thermal_energy_types.h"
 #include "common/rtc_types.h"
@@ -293,6 +294,18 @@ int app_facade_hvac_set_group_mode(uint8_t group_id, hvac_mode_t mode);
 int app_facade_hvac_set_setpoint(uint8_t group_id, int16_t cool_target_x10, int16_t heat_target_x10);
 
 /**
+ * @brief Configure all four thermal threshold boundaries for an HVAC group.
+ *
+ * @param[in] group_id Group index (0 .. HVAC_MAX_GROUPS - 1).
+ * @param[in] t_min    Low threshold (°C).
+ * @param[in] t_max    Cooling setpoint (°C).
+ * @param[in] t_alarm  High temperature warning threshold (°C).
+ * @param[in] t_bypass Critical emergency bypass threshold (°C).
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_hvac_set_group_thermal_bounds(uint8_t group_id, float t_min, float t_max, float t_alarm, float t_bypass);
+
+/**
  * @brief Force immediate unit duty rotation turn for an HVAC group.
  *
  * @param[in] group_id Zero-indexed group ID.
@@ -511,6 +524,14 @@ const char *app_facade_di_role_name(di_role_t role);
 int app_facade_modbus_get_status(app_facade_modbus_view_t *out_view);
 
 /**
+ * @brief Retrieve diagnostic metrics from the Modbus TCP Server.
+ *
+ * @param[out] out_stats Destination buffer for server metrics.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_modbus_tcp_get_stats(modbus_tcp_server_stats_t *out_stats);
+
+/**
  * @brief Register or update a remote Modbus slave device descriptor.
  *
  * Updates RAM registry and marks storage dirty for persistence to EEPROM.
@@ -640,6 +661,14 @@ int app_facade_alarm_get_snapshot(uint16_t alarm_id, alarm_snapshot_entry_t *out
  * @return 0 on success, negative errno on error.
  */
 int app_facade_alarm_ack(uint16_t alarm_id);
+
+/**
+ * @brief Reset a latched alarm condition by ID (0 to reset all latched alarms).
+ *
+ * @param[in] alarm_id Target alarm identifier (0 for all).
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_alarm_reset_latch(uint16_t alarm_id);
 
 /**
  * @brief Set or clear persistent alarm buzzer mute status.

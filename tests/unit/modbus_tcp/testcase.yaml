@@ -1,0 +1,7 @@
+tests:
+  unit.modbus_tcp:
+    tags:
+      - modbus_tcp
+      - mapping
+      - unit
+    platform_allow: native_sim

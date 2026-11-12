@@ -990,9 +990,37 @@ static int cmd_modbus_slave(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_modbus_tcp_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    modbus_tcp_server_stats_t stats;
+    int err = app_facade_modbus_tcp_get_stats(&stats);
+    if (err != 0) {
+        shell_error(sh, "Failed to get Modbus TCP status (%d)", err);
+        return err;
+    }
+
+    shell_print(sh, "=== Modbus TCP Server Status ===");
+    shell_print(sh, "Frames Received:      %u", stats.rx_frames);
+    shell_print(sh, "Frames Transmitted:   %u", stats.tx_frames);
+    shell_print(sh, "Exceptions:           %u", stats.exceptions);
+    shell_print(sh, "CRC Errors:           %u", stats.crc_errors);
+    shell_print(sh, "Timeouts:             %u", stats.timeouts);
+
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_modbus_tcp,
+    SHELL_CMD(status, NULL, "Display Modbus TCP server sessions and statistics", cmd_modbus_tcp_status),
+    SHELL_SUBCMD_SET_END
+);
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_modbus,
     SHELL_CMD(status, NULL, "Display status of active RS485 buses, polling stats, slave list", cmd_modbus_status),
     SHELL_CMD_ARG(slave, NULL, "Configure Modbus slave device address and parameters", cmd_modbus_slave, 3, 4),
+    SHELL_CMD(tcp, &sub_modbus_tcp, "Modbus TCP server commands", NULL),
     SHELL_SUBCMD_SET_END
 );
 

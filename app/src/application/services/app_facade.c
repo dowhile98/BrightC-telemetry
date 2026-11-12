@@ -24,6 +24,7 @@
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
+#include "interfaces/i_modbus_tcp_server.h"
 #include "transducer_rtd.h"
 
 LOG_MODULE_REGISTER(app_facade, LOG_LEVEL_INF);
@@ -286,6 +287,32 @@ int app_facade_hvac_set_setpoint(uint8_t group_id, int16_t cool_target_x10, int1
 
     group_cfg.temp_alarm = cool_target + delta_alarm;
     group_cfg.temp_bypass = cool_target + delta_bypass;
+
+    return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
+}
+
+int app_facade_hvac_set_group_thermal_bounds(uint8_t group_id, float t_min, float t_max, float t_alarm, float t_bypass)
+{
+    if (s_app == NULL || group_id >= HVAC_MAX_GROUPS) {
+        return -EINVAL;
+    }
+    if (!s_app->hvac.initialized) {
+        return -EAGAIN;
+    }
+
+    config_hvac_group_t group_cfg = s_app->hvac.config.groups[group_id];
+    if (t_min > -20.0f && t_min < 80.0f) {
+        group_cfg.temp_min = t_min;
+    }
+    if (t_max > -20.0f && t_max < 80.0f) {
+        group_cfg.temp_max = t_max;
+    }
+    if (t_alarm > -20.0f && t_alarm < 80.0f) {
+        group_cfg.temp_alarm = t_alarm;
+    }
+    if (t_bypass > -20.0f && t_bypass < 80.0f) {
+        group_cfg.temp_bypass = t_bypass;
+    }
 
     return app_container_set_hvac_group_config(s_app, group_id, &group_cfg);
 }
@@ -736,6 +763,20 @@ int app_facade_modbus_get_status(app_facade_modbus_view_t *out_view)
     }
 
     return 0;
+}
+
+int app_facade_modbus_tcp_get_stats(modbus_tcp_server_stats_t *out_stats)
+{
+    if (s_app == NULL || out_stats == NULL) {
+        return -EINVAL;
+    }
+
+    const i_modbus_tcp_server_t *server = app_container_get_modbus_tcp_server(s_app);
+    if (server == NULL || !i_modbus_tcp_server_is_bound(server)) {
+        return -ENODEV;
+    }
+
+    return i_modbus_tcp_server_get_stats(server, out_stats);
 }
 
 int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave)
@@ -1242,6 +1283,20 @@ int app_facade_alarm_ack(uint16_t alarm_id)
     }
 
     return ao_alarm_manager_post_ack(ao, alarm_id);
+}
+
+int app_facade_alarm_reset_latch(uint16_t alarm_id)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    ao_alarm_manager_t *ao = app_container_get_alarm_manager_ao(s_app);
+    if (ao == NULL) {
+        return -ENODEV;
+    }
+
+    return ao_alarm_manager_post_reset_latch(ao, alarm_id);
 }
 
 int app_facade_alarm_set_buzzer_mute(bool muted)

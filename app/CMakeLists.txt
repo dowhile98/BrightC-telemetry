@@ -67,6 +67,8 @@ target_sources(app PRIVATE
     src/application/zbus/storage_channels.c
     src/application/active_objects/ao_storage_sd.c
     src/infrastructure/adapters/adapter_storage_sd_zephyr.c
+    src/infrastructure/adapters/adapter_modbus_tcp_server.c
+    src/application/active_objects/ao_modbus_tcp.c
 )
 
 if(CONFIG_SHELL)

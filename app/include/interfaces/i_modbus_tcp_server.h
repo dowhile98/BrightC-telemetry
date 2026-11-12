@@ -71,6 +71,14 @@ typedef struct {
     int (*get_stats)(void *impl, modbus_tcp_server_stats_t *out_stats);
 
     /**
+     * @brief Query whether the server is actively running and listening.
+     *
+     * @param[in] impl  Implementation context.
+     * @return true if running/listening, false otherwise.
+     */
+    bool (*is_running)(void *impl);
+
+    /**
      * @brief Query current operational lifecycle state.
      *
      * @param[in]  impl       Implementation context.
@@ -126,6 +134,7 @@ static inline bool i_modbus_tcp_server_is_bound(const i_modbus_tcp_server_t *por
             port->api->start != NULL &&
             port->api->stop != NULL &&
             port->api->get_stats != NULL &&
+            port->api->is_running != NULL &&
             port->api->get_state != NULL &&
             port->api->get_session_info != NULL &&
             port->api->disconnect_client != NULL);
@@ -193,6 +202,20 @@ static inline int i_modbus_tcp_server_get_stats(const i_modbus_tcp_server_t *por
         return -EINVAL;
     }
     return port->api->get_stats(port->impl, out_stats);
+}
+
+/**
+ * @brief Query whether the server is actively running.
+ *
+ * @param[in] port Port handle.
+ * @return true if running, false otherwise.
+ */
+static inline bool i_modbus_tcp_server_is_running(const i_modbus_tcp_server_t *port)
+{
+    if (!i_modbus_tcp_server_is_bound(port)) {
+        return false;
+    }
+    return port->api->is_running(port->impl);
 }
 
 /**

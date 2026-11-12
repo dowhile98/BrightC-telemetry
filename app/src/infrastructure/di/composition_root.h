@@ -47,13 +47,16 @@
 #include "interfaces/i_rtc.h"
 #include "common/rtc_types.h"
 #include "interfaces/i_storage_fs.h"
+#include "interfaces/i_modbus_tcp_server.h"
 #include "application/active_objects/ao_storage_sd.h"
+#include "application/active_objects/ao_modbus_tcp.h"
 #include "application/active_objects/ao_alarm_manager.h"
 #include "application/active_objects/ao_thermal_energy.h"
 #include "infrastructure/adapters/adapter_alarm_detector_di.h"
 #include "infrastructure/adapters/adapter_alarm_detector_temp.h"
 #include "infrastructure/adapters/adapter_alarm_detector_volt.h"
 #include "infrastructure/adapters/adapter_alarm_detector_hvac.h"
+#include "infrastructure/adapters/adapter_modbus_tcp_server.h"
 
 #ifdef CONFIG_NANOMODBUS
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
@@ -234,6 +237,15 @@ struct app_container {
         uint8_t queue_buf[AO_STORAGE_SD_QUEUE_DEPTH * sizeof(ao_storage_sd_event_t)];
         bool initialized;
     } sd_storage;
+
+    /* Subsystem 13: Modbus TCP Server Subsystem */
+    struct {
+        i_modbus_tcp_server_t port;                    /**< Modbus TCP server port handle */
+        adapter_modbus_tcp_server_t adapter;           /**< nanoMODBUS server callback adapter */
+        ao_modbus_tcp_t ao;                            /**< Modbus TCP Active Object */
+        modbus_tcp_server_config_t config;             /**< Server configuration */
+        bool initialized;                              /**< Subsystem initialization status */
+    } modbus_tcp;
 
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
@@ -612,6 +624,32 @@ const i_storage_fs_t *app_container_get_sd_storage(const app_container_t *self);
  * @return Pointer to ao_storage_sd_t, or NULL if uninitialized.
  */
 ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self);
+
+/**
+ * @brief Initialize the Modbus TCP Server Subsystem.
+ *
+ * Configures the nanoMODBUS callback adapter, server config, and starts the Active Object.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_modbus_tcp(app_container_t *self);
+
+/**
+ * @brief Get the abstract Modbus TCP Server port handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to Modbus TCP server port, or NULL if uninitialized / invalid.
+ */
+const i_modbus_tcp_server_t *app_container_get_modbus_tcp_server(const app_container_t *self);
+
+/**
+ * @brief Get the Modbus TCP Active Object handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_modbus_tcp_t, or NULL if uninitialized.
+ */
+ao_modbus_tcp_t *app_container_get_modbus_tcp_ao(app_container_t *self);
 
 
 /* =========================================================================

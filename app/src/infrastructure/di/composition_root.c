@@ -1715,6 +1715,45 @@ int composition_root_init_sd_storage(app_container_t *self)
     return 0;
 }
 
+int composition_root_init_modbus_tcp(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->modbus_tcp.initialized)
+    {
+        return 0;
+    }
+
+    self->modbus_tcp.config.port = MODBUS_TCP_DEFAULT_PORT;
+    self->modbus_tcp.config.max_clients = MODBUS_TCP_MAX_CLIENTS;
+    self->modbus_tcp.config.inactivity_timeout_ms = MODBUS_TCP_INACTIVITY_TIMEOUT_MS;
+
+    int err = adapter_modbus_tcp_server_init(&self->modbus_tcp.adapter, &self->modbus_tcp.config);
+    if (err != 0)
+    {
+        LOG_ERR("Failed to initialize Modbus TCP server adapter: %d", err);
+        return err;
+    }
+
+    const nmbs_callbacks *cbs = adapter_modbus_tcp_server_get_callbacks(&self->modbus_tcp.adapter);
+
+    err = ao_modbus_tcp_init(&self->modbus_tcp.ao,
+                             &self->modbus_tcp.config,
+                             cbs);
+    if (err != 0)
+    {
+        LOG_ERR("Failed to initialize ao_modbus_tcp: %d", err);
+        return err;
+    }
+
+    self->modbus_tcp.port = ao_modbus_tcp_get_port(&self->modbus_tcp.ao);
+    self->modbus_tcp.initialized = true;
+    return 0;
+}
+
 int composition_root_wire_thermal_energy(app_container_t *self)
 {
     if (self == NULL || !self->thermal_energy.initialized)
@@ -1823,6 +1862,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_sd_storage(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_modbus_tcp(self);
     if (err != 0)
     {
         return err;
@@ -1957,6 +2002,16 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+    if (self->modbus_tcp.initialized)
+    {
+        int err = ao_modbus_tcp_start(&self->modbus_tcp.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("Modbus TCP active object start failed (%d)", err);
+            return err;
+        }
+    }
+
     self->is_running = true;
     return 0;
 }
@@ -1969,6 +2024,16 @@ int composition_root_stop(app_container_t *self)
     }
 
     int rc = 0;
+
+    /* 0. Stop Modbus TCP server */
+    if (self->modbus_tcp.initialized)
+    {
+        rc = ao_modbus_tcp_stop(&self->modbus_tcp.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_modbus_tcp_stop returned %d", rc);
+        }
+    }
 
     /* 1. Stop network coordinator (wait up to 2000 ms) */
     if (self->network.initialized)
@@ -2530,6 +2595,24 @@ ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self)
         return NULL;
     }
     return &self->sd_storage.ao;
+}
+
+const i_modbus_tcp_server_t *app_container_get_modbus_tcp_server(const app_container_t *self)
+{
+    if (self == NULL || !self->modbus_tcp.initialized)
+    {
+        return NULL;
+    }
+    return &self->modbus_tcp.port;
+}
+
+ao_modbus_tcp_t *app_container_get_modbus_tcp_ao(app_container_t *self)
+{
+    if (self == NULL || !self->modbus_tcp.initialized)
+    {
+        return NULL;
+    }
+    return &self->modbus_tcp.ao;
 }
 
 int app_container_set_alarm_buzzer_mute(app_container_t *self, bool mute)

@@ -159,194 +159,230 @@ The server mitigates this via two layers of defense:
 
 ## 3. Comprehensive Modbus Register Map (Master Specification)
 
-The register map follows standard Modbus terminology. Addressing is specified in two formats:
-- **Modbus Reference Notation (1-based)**: Format used by SCADA packages (Ignition, Kepware, Schneider Wonderware).
+The register map follows standard Modbus conventions. Addressing is specified in two formats:
+- **Modbus Reference Notation (1-based)**: Format standard in SCADA/BMS packages (Ignition, Kepware, Schneider Wonderware, Siemens).
 - **PDU Offset (0-based Hexadecimal)**: Exact address encoded on the network wire in the Modbus PDU.
 
 ### 3.1 Discrete Inputs (Function Code 0x02, Read-Only, 1-bit)
-*Modbus Reference 10001..10058 (PDU Offsets 0x0000..0x0038)*
+
+#### Section 1: Digital Inputs (Modbus Ref 10001..10056, PDU Offsets 0x0000..0x0037)
+Normalized logical active state of physical digital inputs and contactors:
 
 | Modbus Ref | PDU Offset | Signal / Identifier | Severity | Category | Description |
 |:---|:---|:---|:---:|:---:|:---|
-| **10001** | `0x0000` | `ALARM_ID_GROUP1_TEMP_HIGH` | Warning | Sala 1 | Group 1 (Sala 1) High Temperature Threshold Exceeded |
-| **10002** | `0x0001` | `ALARM_ID_HVAC_G1_BYPASS_ACTIVE` | Critical | Sala 1 | Group 1 Critical Thermal Bypass Triggered (Emergency Run) |
-| **10003** | `0x0002` | `ALARM_ID_GROUP1_TEMP_LOW` | Warning | Sala 1 | Group 1 Low Temperature Warning Threshold Exceeded |
-| **10004** | `0x0003` | `ALARM_ID_SENSOR_GROUP1_FAULT` | Critical | Sala 1 | Group 1 Temperature Probes Disconnected / Open Loop |
-| **10005** | `0x0004` | `ALARM_ID_GROUP2_TEMP_HIGH` | Warning | Sala 2 | Group 2 (Sala 2) High Temperature Threshold Exceeded |
-| **10006** | `0x0005` | `ALARM_ID_HVAC_G2_BYPASS_ACTIVE` | Critical | Sala 2 | Group 2 Critical Thermal Bypass Triggered |
-| **10007** | `0x0006` | `ALARM_ID_GROUP2_TEMP_LOW` | Warning | Sala 2 | Group 2 Low Temperature Warning Threshold Exceeded |
-| **10008** | `0x0007` | `ALARM_ID_SENSOR_GROUP2_FAULT` | Critical | Sala 2 | Group 2 Temperature Probes Disconnected / Open Loop |
-| **10009** | `0x0008` | `ALARM_ID_GROUP3_TEMP_HIGH` | Warning | Sala 3 | Group 3 (Sala 3) High Temperature Threshold Exceeded |
-| **10010** | `0x0009` | `ALARM_ID_HVAC_G3_BYPASS_ACTIVE` | Critical | Sala 3 | Group 3 Critical Thermal Bypass Triggered |
-| **10011** | `0x000A` | `ALARM_ID_GROUP3_TEMP_LOW` | Warning | Sala 3 | Group 3 Low Temperature Warning Threshold Exceeded |
-| **10012** | `0x000B` | `ALARM_ID_SENSOR_GROUP3_FAULT` | Critical | Sala 3 | Group 3 Temperature Probes Disconnected / Open Loop |
-| **10013** | `0x000C` | `ALARM_ID_GROUP4_TEMP_HIGH` | Warning | Sala 4 | Group 4 (Sala 4) High Temperature Threshold Exceeded |
-| **10014** | `0x000D` | `ALARM_ID_HVAC_G4_BYPASS_ACTIVE` | Critical | Sala 4 | Group 4 Critical Thermal Bypass Triggered |
-| **10015** | `0x000E` | `ALARM_ID_GROUP4_TEMP_LOW` | Warning | Sala 4 | Group 4 Low Temperature Warning Threshold Exceeded |
-| **10016** | `0x000F` | `ALARM_ID_SENSOR_GROUP4_FAULT` | Critical | Sala 4 | Group 4 Temperature Probes Disconnected / Open Loop |
-| *10017..10019* | `0x0010..0x0012` | *Reserved* | - | - | Reserved for future thermal zones |
-| **10020** | `0x0013` | `ALARM_ID_AC1_SUMMARY_FAULT` | Critical | Equipment | AC Unit 1 Consolidated Fault (HP, LP, Overload) |
-| **10021** | `0x0014` | `ALARM_ID_AC2_SUMMARY_FAULT` | Critical | Equipment | AC Unit 2 Consolidated Fault (HP, LP, Overload) |
-| **10022** | `0x0015` | `ALARM_ID_AC3_SUMMARY_FAULT` | Critical | Equipment | AC Unit 3 Consolidated Fault (HP, LP, Overload) |
-| **10023** | `0x0016` | `ALARM_ID_AC4_SUMMARY_FAULT` | Critical | Equipment | AC Unit 4 Consolidated Fault (HP, LP, Overload) |
-| **10024** | `0x0017` | `ALARM_ID_AC5_SUMMARY_FAULT` | Critical | Equipment | AC Unit 5 Consolidated Fault (HP, LP, Overload) |
-| **10025** | `0x0018` | `ALARM_ID_AC6_SUMMARY_FAULT` | Critical | Equipment | AC Unit 6 Consolidated Fault (HP, LP, Overload) |
-| **10026** | `0x0019` | `ALARM_ID_AC7_SUMMARY_FAULT` | Critical | Equipment | AC Unit 7 Consolidated Fault (HP, LP, Overload) |
-| **10027** | `0x001A` | `ALARM_ID_AC8_SUMMARY_FAULT` | Critical | Equipment | AC Unit 8 Consolidated Fault (HP, LP, Overload) |
-| *10028..10029* | `0x001B..0x001C` | *Reserved* | - | - | Reserved for unit expansion |
-| **10030** | `0x001D` | `ALARM_ID_FACILITY_FIRE` | Fatal | Facility | Smoke / Fire Detection Contact Tripped |
-| **10031** | `0x001E` | `ALARM_ID_FACILITY_WATER_LEAK` | Critical | Facility | Water Leakage / Flood Transducer Tripped |
-| **10032** | `0x001F` | `ALARM_ID_FACILITY_PHASE_MON` | Critical | Electrical | AC Main Supply Phase Monitor Loss / Phase Reversal |
-| **10033** | `0x0020` | `ALARM_ID_FACILITY_DOOR_OPEN` | Info | Security | Facility Access Door Opened |
-| **10034** | `0x0021` | `ALARM_ID_FACILITY_SURGE_PROT` | Warning | Electrical | Surge Protective Device (SPD) Blown / Fault |
-| **10035** | `0x0022` | `ALARM_ID_EMERGENCY_STOP` | Fatal | Safety | Facility Emergency Stop Button Engaged |
-| **10036** | `0x0023` | `ALARM_ID_INFRA_SD_CARD_FAULT` | Warning | Storage | MicroSD Card Storage Unmounted or Write Error |
-| **10037** | `0x0024` | `ALARM_ID_INFRA_MODBUS_BUS1` | Warning | Modbus | RS485-1 Field Bus Master Communication Failure |
-| **10038** | `0x0025` | `ALARM_ID_INFRA_MODBUS_BUS2` | Warning | Modbus | RS485-2 Field Bus Master Communication Failure |
-| **10039** | `0x0026` | `ALARM_ID_ENERGY_METER_COMM` | Warning | Metering | JSY-MK-339 3-Phase Energy Meter Disconnected |
-| **10040** | `0x0027` | `ALARM_ID_INFRA_ETHERNET_DOWN` | Info | Network | Ethernet Physical Link Down (Cable Unplugged) |
-| **10041** | `0x0028` | `ALARM_ID_INFRA_WIFI_DOWN` | Info | Network | Wi-Fi Station Association Lost |
-| **10042** | `0x0029` | `ALARM_ID_RTC_BATTERY_LOW` | Warning | System | DS3231 RTC Coin-Cell Backup Battery Low |
-| **10043** | `0x002A` | `ALARM_ID_FLASH_NVS_FAULT` | Warning | Storage | Internal Flash NVS Configuration CRC Error |
-| *10044..10049* | `0x002B..0x0030` | *Reserved* | - | - | Reserved for physical expansion |
-| **10050** | `0x0031` | `DI_AC1_RUN_FEEDBACK` | Status | Equipment | AC Unit 1 Compressor Run Contactor Feedback (1 = Active) |
-| **10051** | `0x0032` | `DI_AC2_RUN_FEEDBACK` | Status | Equipment | AC Unit 2 Compressor Run Contactor Feedback (1 = Active) |
-| **10052** | `0x0033` | `DI_AC3_RUN_FEEDBACK` | Status | Equipment | AC Unit 3 Compressor Run Contactor Feedback (1 = Active) |
-| **10053** | `0x0034` | `DI_AC4_RUN_FEEDBACK` | Status | Equipment | AC Unit 4 Compressor Run Contactor Feedback (1 = Active) |
-| **10054** | `0x0035` | `DI_AC5_RUN_FEEDBACK` | Status | Equipment | AC Unit 5 Compressor Run Contactor Feedback (1 = Active) |
-| **10055** | `0x0036` | `DI_AC6_RUN_FEEDBACK` | Status | Equipment | AC Unit 6 Compressor Run Contactor Feedback (1 = Active) |
-| **10056** | `0x0037` | `DI_AC7_RUN_FEEDBACK` | Status | Equipment | AC Unit 7 Compressor Run Contactor Feedback (1 = Active) |
-| **10057** | `0x0038` | `DI_AC8_RUN_FEEDBACK` | Status | Equipment | AC Unit 8 Compressor Run Contactor Feedback (1 = Active) |
+| **10001..10008** | `0x0000..0x0007` | `DI_FAN_1_AUX` .. `DI_FAN_8_AUX` | Status | Equipment | Evaporator Fan 1..8 Run Auxiliary Feedback (1 = Active) |
+| **10009..10016** | `0x0008..0x000F` | `DI_COMP_1_AUX` .. `DI_COMP_8_AUX` | Status | Equipment | Compressor 1..8 Run Auxiliary Contact (1 = Active) |
+| **10017..10020** | `0x0010..0x0013` | `DI_HP_1..2`, `DI_LP_1..2` | Critical | Safety | High / Low Refrigerant Pressure Cutout Contacts |
+| **10021..10022** | `0x0014..0x0015` | `DI_TH_FAN`, `DI_TH_COMP` | Critical | Safety | Thermal Overload Trips (Evaporator Fan, Compressor) |
+| **10023** | `0x0016` | `DI_WATER_LEAK` | Critical | Facility | Raised Floor Water Leak Sensor Contact (1 = Active) |
+| **10024** | `0x0017` | `DI_SMOKE_FIRE` | Fatal | Facility | Smoke / Fire Detection Interlock (1 = Active) |
+| **10025** | `0x0018` | `DI_PHASE_MONITOR` | Critical | Electrical | 3-Phase Power Sequence / Loss Monitor Relay |
+| **10026** | `0x0019` | `DI_SURGE_PROT` | Warning | Electrical | Surge Protective Device (DPS) Trip Contact |
+| **10027** | `0x001A` | `DI_DOOR_OPEN` | Info | Security | Containment Aisle Door Access Contact |
+| **10028..10037** | `0x001B..0x0024` | `DI_USER_1` .. `DI_USER_10` | Status | Expansion | Generic User Expansion Digital Inputs |
+| **10038..10039** | `0x0025..0x0026` | `DI_BUTTON`, `DI_BYPASS_SW` | Status | Control | Manual Pushbutton and Master Bypass Switch |
+| **10040..10056** | `0x0027..0x0037` | `DI_UNIT_ALARMS` | Critical | Equipment | HVAC Units 0..3 Individual Alarms (HP, LP, Flow, Volt) |
+
+#### Section 2: Active Alarm States (Modbus Ref 10101..10180, PDU Offsets 0x0064..0x00B3)
+Active assertion status for each of the 79 catalog alarms (`g_default_catalog[0..78]`):
+
+| Modbus Ref | PDU Offset | Alarm Identifier | Severity | Category | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **10101..10132** | `0x0064..0x0083` | `ALARM_ID_AC1..8_CONTACTS` | Critical/Warn | Equipment | AC Units 1..8 High/Low Pressure, Airflow, Voltage |
+| **10133..10137** | `0x0084..0x0088` | `ALARM_ID_FACILITY_*` | Critical/Fatal | Facility | Fire, Door Open, Water Leak, SPD Trip, Phase Loss |
+| **10138..10145** | `0x0089..0x0090` | `ALARM_ID_AC1..8_SUMMARY` | Critical | Equipment | AC Units 1..8 Consolidated Fault State |
+| **10146..10157** | `0x0091..0x009C` | `ALARM_ID_GROUP1..4_TEMP` | Warning/Crit | Sala 1..4 | Environmental Temperature Warnings, Critical & Boost |
+| **10158..10160** | `0x009D..0x009F` | `ALARM_ID_ELECTRICAL_*` | Warning/Crit | Electrical | Under-Voltage, Over-Voltage, Meter Comm Fault |
+| **10161..10164** | `0x00A0..0x00A3` | `ALARM_ID_HVAC_G1..4_BYPASS`| Critical | Control | Groups 1..4 Emergency Thermal Bypass Active |
+| **10165..10172** | `0x00A4..0x00AB` | `ALARM_ID_HVAC_UNIT1..8_LOCK`| Critical | Control | AC Units 1..8 Safety Lockout State |
+| **10173..10176** | `0x00AC..0x00AF` | `ALARM_ID_SENSOR_GROUP1..4` | Warning | Sensors | Sensor Probe Disconnect / Open Loop Fault |
+| **10177..10179** | `0x00B0..0x00B2` | `ALARM_ID_INFRA_*` | Info/Warn | System | RMII Ethernet Down, SD Card Fault, Modbus Bus Fault |
+| **10180** | `0x00B3` | *Sentinel / Reserved* | - | - | Catalog boundary padding |
+
+#### Section 3: HVAC Units Tri-State Flags (Modbus Ref 10201..10224, PDU Offsets 0x00C8..0x00DF)
+Physical actuator tri-state status flags for AC Units 0..7 (3 discrete flags per unit):
+
+| Modbus Ref | PDU Offset | Unit & Relay | Description |
+|:---|:---|:---|:---|
+| **10201 + u\*3 + 0** | `0x00C8 + u*3 + 0` | AC Unit $u$ Relay AA | Compressor Contactor (1 = Energized / Smart Run) |
+| **10201 + u\*3 + 1** | `0x00C8 + u*3 + 1` | AC Unit $u$ Relay SM | Mode Selector (1 = Smart Mode, 0 = Hardwired Bypass) |
+| **10201 + u\*3 + 2** | `0x00C8 + u*3 + 2` | AC Unit $u$ Relay G | Ventilation Fan Relay (1 = Forced Purge Active) |
+*(For $u \in [0..7]$: 8 units $\times$ 3 relays = 24 discrete inputs).*
 
 ---
 
 ### 3.2 Coils (Function Codes 0x01, 0x05, 0x0F, Read/Write, 1-bit)
-*Modbus Reference 00001..00018 (PDU Offsets 0x0000..0x0011)*
 
-Writing `1` (`0xFF00` in standard Modbus FC05) triggers the corresponding supervisory command. Momentary command coils automatically reset to `0` once executed.
+#### Section 1: HVAC Units Relays AA/SM/G Manual Overrides (Modbus Ref 00001..00024, PDU Offsets 0x0000..0x0017)
+Direct actuator control overrides for AC Units 0..7:
 
-| Modbus Ref | PDU Offset | Command Coil | Operation | Type | Description |
-|:---|:---|:---|:---:|:---:|:---|
-| **00001** | `0x0000` | `CMD_ALARM_ACK_ALL` | Write 1 | Momentary | Acknowledge all active system alarms (Transitions `ACTIVE` -> `ACKNOWLEDGED`) |
-| **00002** | `0x0001` | `CMD_BUZZER_MUTE` | Read/Write | Toggle | Mute acoustic buzzer for active alarms (1 = Muted, 0 = Audible) |
-| **00003** | `0x0002` | `CMD_ALARM_RESET_LATCH` | Write 1 | Momentary | Clear all latched alarm indicators whose physical triggers have cleared |
-| **00004** | `0x0003` | `CMD_FORCE_DUTY_ROTATION` | Write 1 | Momentary | Force immediate N+M HVAC unit duty cycle rotation without waiting for timer |
-| **00005** | `0x0004` | `CMD_TRIGGER_TELEMETRY_LOG` | Write 1 | Momentary | Force immediate telemetry and energy sample flush to MicroSD historical CSV |
-| **00006** | `0x0005` | `CMD_REBOOT_CONTROLLER` | Write 1 | Momentary | Supervised warm controller restart with 2-second safe relay shutdown |
-| *00007..00009* | `0x0006..0x0008` | *Reserved* | - | - | Reserved supervisory controls |
-| **00010** | `0x0009` | `CMD_AC1_FORCE_RUN` | Read/Write | Latched | AC Unit 1 Manual Run Command (Active only when Manual Override enabled) |
-| **00011** | `0x000A` | `CMD_AC2_FORCE_RUN` | Read/Write | Latched | AC Unit 2 Manual Run Command (Active only when Manual Override enabled) |
-| **00012** | `0x000B` | `CMD_AC3_FORCE_RUN` | Read/Write | Latched | AC Unit 3 Manual Run Command (Active only when Manual Override enabled) |
-| **00013** | `0x000C` | `CMD_AC4_FORCE_RUN` | Read/Write | Latched | AC Unit 4 Manual Run Command (Active only when Manual Override enabled) |
-| **00014** | `0x000D` | `CMD_AC5_FORCE_RUN` | Read/Write | Latched | AC Unit 5 Manual Run Command (Active only when Manual Override enabled) |
-| **00015** | `0x000E` | `CMD_AC6_FORCE_RUN` | Read/Write | Latched | AC Unit 6 Manual Run Command (Active only when Manual Override enabled) |
-| **00016** | `0x000F` | `CMD_AC7_FORCE_RUN` | Read/Write | Latched | AC Unit 7 Manual Run Command (Active only when Manual Override enabled) |
-| **00017** | `0x0010` | `CMD_AC8_FORCE_RUN` | Read/Write | Latched | AC Unit 8 Manual Run Command (Active only when Manual Override enabled) |
+| Modbus Ref | PDU Offset | Target Control | Description |
+|:---|:---|:---|:---|
+| **00001 + u\*3 + 0** | `0x0000 + u*3 + 0` | AC Unit $u$ Relay AA Override | Manual compressor contactor control (1 = ON, 0 = OFF) |
+| **00001 + u\*3 + 1** | `0x0000 + u*3 + 1` | AC Unit $u$ Relay SM Override | Manual mode selector control (1 = Smart, 0 = Bypass) |
+| **00001 + u\*3 + 2** | `0x0000 + u*3 + 2` | AC Unit $u$ Relay G Override | Manual ventilation fan control (1 = ON, 0 = OFF) |
+*(For $u \in [0..7]$: 8 units $\times$ 3 relays = 24 coils).*
+
+#### Section 2: Supervisory & System Command Coils
+| Modbus Ref | PDU Offset | Identifier | Operation | Description |
+|:---|:---|:---|:---:|:---|
+| **00050** | `0x0031` | `CMD_BUZZER_MUTE` | Read/Write | Alarm buzzer acoustic mute toggle (1 = Muted, 0 = Audible) |
+| **00060..00063** | `0x003B..0x003E` | `CMD_FORCE_ROTATION_G0..3` | Write 1 | Group 0..3 force immediate duty cycle rotation pulse |
+| **00070** | `0x0045` | `CMD_STORAGE_SAVE_ALL` | Write 1 | Storage save-all trigger: forces flush of dirty domains to EEPROM |
 
 ---
 
 ### 3.3 Input Registers (Function Code 0x04, Read-Only, 16-bit)
-*Modbus Reference 30001..30170 (PDU Offsets 0x0000..0x00A9)*
 
-#### Section 1: System State & HVAC Groups (PDU 0x0000 .. 0x001F)
-| Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Range / Bitmask |
-|:---|:---|:---|:---:|:---:|:---|
-| **30001** | `0x0000` | `SYS_UPTIME_SEC_HI` | uint16 | 1 s (High Word) | 32-bit cumulative system uptime |
-| **30002** | `0x0001` | `SYS_UPTIME_SEC_LO` | uint16 | 1 s (Low Word) | 0 .. 4,294,967,295 s |
-| **30003** | `0x0002` | `HVAC_COMPOSITE_STATE` | uint16 | Enum | Bits 0..3: G1, Bits 4..7: G2, Bits 8..11: G3, Bits 12..15: G4 |
-| **30004** | `0x0003` | `ACTIVE_UNITS_MASK` | uint16 | Bitmask | Bit $i$: AC Unit $i+1$ compressor energized (1 = Running) |
-| **30005** | `0x0004` | `FAULT_UNITS_MASK` | uint16 | Bitmask | Bit $i$: AC Unit $i+1$ in fault lockout / trip |
-| **30006** | `0x0005` | `T_CTRL_G1_AVG` | int16 | 0.1 °C | Group 1 average control temperature (-20.0 .. +80.0 °C) |
-| **30007** | `0x0006` | `T_CTRL_G1_MAX` | int16 | 0.1 °C | Group 1 hottest room probe temperature |
-| **30008** | `0x0007` | `T_CTRL_G1_MIN` | int16 | 0.1 °C | Group 1 coldest room probe temperature |
-| **30009** | `0x0008` | `T_CTRL_G2_AVG` | int16 | 0.1 °C | Group 2 average control temperature |
-| **30010** | `0x0009` | `T_CTRL_G3_AVG` | int16 | 0.1 °C | Group 3 average control temperature |
-| **30011** | `0x000A` | `T_CTRL_G4_AVG` | int16 | 0.1 °C | Group 4 average control temperature |
-| **30012** | `0x000B` | `T_OUTDOOR_AVG` | int16 | 0.1 °C | Outdoor ambient condenser reference temperature |
-| **30013** | `0x000C` | `DUTY_ROTATION_REMAIN` | uint16 | 1 Hour | Hours remaining until next automated unit rotation |
-| **30014** | `0x000D` | `SYSTEM_STATUS_FLAGS` | uint16 | Bitmask | Bit 0: Storage degraded, Bit 1: SD mounted, Bit 2: Net ready |
-
-#### Section 2: Alarm Summary Bitmasks & Severity (PDU 0x0020 .. 0x003F)
-Allows SCADA to poll the entire facility alarm state in a single contiguous block:
+#### Section 1: Sensor Matrix Temperatures (Modbus Ref 30001..30064, PDU Offsets 0x0000..0x003F)
+Normalized channel readings from on-board RTDs and multi-concentrator Modbus banks:
 
 | Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
 |:---|:---|:---|:---:|:---:|:---|
-| **30033** | `0x0020` | `ALARM_ACTIVE_MASK_0` | uint16 | Bitmask | Active Alarms 1..16 (Bit $k$: Alarm $k+1$ is Active) |
-| **30034** | `0x0021` | `ALARM_ACTIVE_MASK_1` | uint16 | Bitmask | Active Alarms 17..32 (Bit $k$: Alarm $17+k$ is Active) |
-| **30035** | `0x0022` | `ALARM_ACTIVE_MASK_2` | uint16 | Bitmask | Active Alarms 33..48 (Bit $k$: Alarm $33+k$ is Active) |
-| **30036** | `0x0023` | `ALARM_ACTIVE_MASK_3` | uint16 | Bitmask | Active Alarms 49..64 (Bit $k$: Alarm $49+k$ is Active) |
-| **30037** | `0x0024` | `ALARM_UNACK_MASK_0` | uint16 | Bitmask | Unacknowledged Alarms 1..16 (Bit $k$: Needs Operator Ack) |
-| **30038** | `0x0025` | `ALARM_UNACK_MASK_1` | uint16 | Bitmask | Unacknowledged Alarms 17..32 |
-| **30039** | `0x0026` | `ALARM_UNACK_MASK_2` | uint16 | Bitmask | Unacknowledged Alarms 33..48 |
-| **30040** | `0x0027` | `ALARM_UNACK_MASK_3` | uint16 | Bitmask | Unacknowledged Alarms 49..64 |
-| **30041** | `0x0028` | `ALARM_BUZZER_STATE` | uint16 | Enum | `0` = Off / Silent, `1` = Active Beeping, `2` = Muted |
-| **30042** | `0x0029` | `ALARM_MAX_SEVERITY` | uint16 | Enum | `0` = Info, `1` = Warning, `2` = Critical, `3` = Fatal |
-| **30043** | `0x002A` | `ALARM_TOTAL_ACTIVE` | uint16 | Count | Total count of currently active alarms |
+| **30001..30005** | `0x0000..0x0004` | `TEMP_INTERNAL_RTD_1..5` | int16 | 0.1 °C | Internal Precision RTD Channels 1..5 (`0x7FFF` if invalid) |
+| **30006..30009** | `0x0005..0x0008` | `TEMP_RESERVED_1..4` | int16 | 0.1 °C | Reserved / Padding |
+| **30010..30025** | `0x0009..0x0018` | `TEMP_MODBUS_CWT1_CH1..16`| int16 | 0.1 °C | Modbus Concentrator 1 PT100 Channels 1..16 |
+| **30026..30029** | `0x0019..0x001C` | `TEMP_RESERVED_5..8` | int16 | 0.1 °C | Reserved / Padding |
+| **30030..30045** | `0x001D..0x002C` | `TEMP_MODBUS_CWT2_CH1..16`| int16 | 0.1 °C | Modbus Concentrator 2 PT100 Channels 1..16 |
+| **30046..30049** | `0x002D..0x0030` | `TEMP_RESERVED_9..12` | int16 | 0.1 °C | Reserved / Padding |
+| **30050..30059** | `0x0031..0x003A` | `TEMP_ANALOG_J9_CH1..10` | int16 | 0.1 °C | Analog Current Loop Transducers J9 Channels 1..10 |
+| **30060..30064** | `0x003B..0x003F` | `TEMP_MATRIX_PAD_60..64` | int16 | 0.1 °C | Matrix boundary padding |
 
-#### Section 3: 3-Phase Electrical Energy Meter (JSY-MK-339) (PDU 0x0040 .. 0x006F)
+#### Section 2: Psychrometrics (Modbus Ref 30070..30071, PDU Offsets 0x0045..0x0046)
 | Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
 |:---|:---|:---|:---:|:---:|:---|
-| **30065** | `0x0040` | `ENERGY_VOLTAGE_A` | uint16 | 0.1 V | Phase A AC RMS Voltage (e.g., 2200 = 220.0 V) |
-| **30066** | `0x0041` | `ENERGY_VOLTAGE_B` | uint16 | 0.1 V | Phase B AC RMS Voltage |
-| **30067** | `0x0042` | `ENERGY_VOLTAGE_C` | uint16 | 0.1 V | Phase C AC RMS Voltage |
-| **30068** | `0x0043` | `ENERGY_CURRENT_A` | uint16 | 0.01 A | Phase A AC RMS Current (e.g., 1540 = 15.40 A) |
-| **30069** | `0x0044` | `ENERGY_CURRENT_B` | uint16 | 0.01 A | Phase B AC RMS Current |
-| **30070** | `0x0045` | `ENERGY_CURRENT_C` | uint16 | 0.01 A | Phase C AC RMS Current |
-| **30071** | `0x0046` | `ENERGY_P_ACTIVE_TOT` | uint16 | 0.1 kW | 3-Phase Total Active Power ($P_{\text{elec,tot}}$) |
-| **30072** | `0x0047` | `ENERGY_P_REACTIVE_TOT` | int16 | 0.1 kVar | 3-Phase Total Reactive Power |
-| **30073** | `0x0048` | `ENERGY_POWER_FACTOR` | int16 | 0.01 | Total System Power Factor (e.g., 95 = 0.95) |
-| **30074** | `0x0049` | `ENERGY_FREQUENCY` | uint16 | 0.1 Hz | Main Grid Frequency (e.g., 600 = 60.0 Hz) |
-| **30075** | `0x004A` | `ENERGY_KWH_TOTAL_HI` | uint16 | 0.1 kWh | Total Forward Active Energy (High Word) |
-| **30076** | `0x004B` | `ENERGY_KWH_TOTAL_LO` | uint16 | 0.1 kWh | Total Forward Active Energy (Low Word) |
+| **30070** | `0x0045` | `PSYCHRO_RETURN_RH` | uint16 | 0.1 % | Warm return air relative humidity (0.0..100.0 %) |
+| **30071** | `0x0046` | `PSYCHRO_RH_VALID` | uint16 | Flag | 1 = Reading healthy and verified; 0 = Sensor fault |
 
-#### Section 4: RTD Temperature Bank (CWT-TM-16PT) (PDU 0x0070 .. 0x009F)
-Direct raw engineering values from the 16-channel PT100/PT1000 field concentrator:
+#### Section 3: 3-Phase Electrical Energy Meter (Modbus Ref 30101..30130, PDU Offsets 0x0064..0x0081)
+Parameters measured by JSY-MK-339 3-Phase Energy Meter:
 
 | Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
 |:---|:---|:---|:---:|:---:|:---|
-| **30113..30128** | `0x0070..0x007F` | `RTD_CH1_TEMP` .. `RTD_CH16_TEMP` | int16 | 0.1 °C | Channels 1..16 Temperature (-50.0 .. +200.0 °C). Fault value: `0x7FFF` |
+| **30101** | `0x0064` | `ENERGY_VOLTAGE_A` | uint16 | 0.1 V | Phase A AC RMS Voltage (e.g., 2200 = 220.0 V) |
+| **30102** | `0x0065` | `ENERGY_VOLTAGE_B` | uint16 | 0.1 V | Phase B AC RMS Voltage |
+| **30103** | `0x0066` | `ENERGY_VOLTAGE_C` | uint16 | 0.1 V | Phase C AC RMS Voltage |
+| **30104** | `0x0067` | `ENERGY_CURRENT_A` | uint16 | 0.01 A | Phase A AC RMS Current (e.g., 1540 = 15.40 A) |
+| **30105** | `0x0068` | `ENERGY_CURRENT_B` | uint16 | 0.01 A | Phase B AC RMS Current |
+| **30106** | `0x0069` | `ENERGY_CURRENT_C` | uint16 | 0.01 A | Phase C AC RMS Current |
+| **30107** | `0x006A` | `ENERGY_P_ACTIVE_TOT`| uint16 | 0.1 kW | 3-Phase Total Active Power ($P_{\text{elec,tot}}$) |
+| **30108** | `0x006B` | `ENERGY_POWER_FACTOR` | int16 | 0.001 | Total System Power Factor (e.g., 950 = 0.950) |
+| **30109** | `0x006C` | `ENERGY_FREQUENCY` | uint16 | 0.1 Hz | Grid AC Frequency (e.g., 600 = 60.0 Hz) |
+| **30110** | `0x006D` | `ENERGY_KWH_TOTAL_HI` | uint16 | 0.1 kWh | Total Forward Active Energy (High 16-bit word) |
+| **30111** | `0x006E` | `ENERGY_KWH_TOTAL_LO` | uint16 | 0.1 kWh | Total Forward Active Energy (Low 16-bit word) |
+| **30112..30130** | `0x006F..0x0081` | `ENERGY_RESERVED` | uint16 | - | Reserved for per-phase harmonic & reactive metrics |
 
-#### Section 5: Revision F Thermodynamic Model (PDU 0x00A0 .. 0x00CF)
-Real-time psychrometric and efficiency telemetry computed by `ao_thermal_energy`:
+#### Section 4: Thermodynamic Metrics (Modbus Ref 30201..30230, PDU Offsets 0x00C8..0x00E5)
+Thermodynamic calculations computed by Revision F engine:
 
 | Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
 |:---|:---|:---|:---:|:---:|:---|
-| **30161** | `0x00A0` | `THERMAL_Q_SENS_KW` | uint16 | 0.1 kW | Realized Sensible Cooling Rate ($Q_{\text{sens}}$) |
-| **30162** | `0x00A1` | `THERMAL_Q_LAT_KW` | uint16 | 0.1 kW | Realized Latent Dehumidification Rate ($Q_{\text{lat}}$) |
-| **30163** | `0x00A2` | `THERMAL_Q_TOT_KW` | uint16 | 0.1 kW | Total Thermal Cooling Output ($Q_{\text{total}}$) |
-| **30164** | `0x00A3` | `THERMAL_COP_REAL` | uint16 | 0.01 | Total Coefficient of Performance ($\text{COP} = \frac{Q_{\text{total}}}{P_{\text{elec}}}$) |
-| **30165** | `0x00A4` | `THERMAL_COP_SENS` | uint16 | 0.01 | Sensible Coefficient of Performance ($\text{COP}_{\text{sens}} = \frac{Q_{\text{sens}}}{P_{\text{elec}}}$) |
-| **30166** | `0x00A5` | `THERMAL_AIRFLOW_M3H` | uint16 | 1.0 m³/h | Instantaneous Total Air Volume Flow Rate |
-| **30167** | `0x00A6` | `THERMAL_DEW_POINT` | int16 | 0.1 °C | Calculated Indoor Dew Point Temperature |
-| **30168** | `0x00A7` | `THERMAL_RETURN_RH` | uint16 | 0.1 % | Return Air Relative Humidity (0.0 .. 100.0 %) |
-| **30169** | `0x00A8` | `THERMAL_DELTAT_AVG` | int16 | 0.1 °C | Average Air Temperature Drop ($\Delta T = T_{\text{return}} - T_{\text{supply}}$) |
+| **30201** | `0x00C8` | `THERMAL_COP_REAL` | uint16 | 0.01 | Realized Total COP ($Q_{\text{total}} / P_{\text{elec}}$) |
+| **30202** | `0x00C9` | `THERMAL_COP_SENS` | uint16 | 0.01 | Sensible COP ($Q_{\text{sens}} / P_{\text{elec}}$) |
+| **30203** | `0x00CA` | `THERMAL_COP_CARNOT` | uint16 | 0.01 | Theoretical Carnot Efficiency Ceiling |
+| **30204** | `0x00CB` | `THERMAL_Q_SENS_KW` | uint16 | 0.1 kW | Total Realized Sensible Cooling Rate |
+| **30205** | `0x00CC` | `THERMAL_Q_LAT_KW` | uint16 | 0.1 kW | Total Realized Latent Dehumidification Rate |
+| **30206** | `0x00CD` | `THERMAL_Q_TOT_KW` | uint16 | 0.1 kW | Total Combined Thermal Cooling Capacity |
+| **30207** | `0x00CE` | `THERMAL_ETA_II_PCT` | uint16 | 0.1 % | Second Law Exergetic Efficiency Ceiling ($\eta_{II}$) |
+| **30208** | `0x00CF` | `THERMAL_M_DOT_AIR` | uint16 | 0.01 kg/s | Total Dry Air Mass Flow Rate |
+| **30209** | `0x00D0` | `THERMAL_AIRFLOW_M3H`| uint16 | 1.0 m³/h | Volumetric Air Flow Rate |
+| **30210** | `0x00D1` | `THERMAL_T_INJ_MEAN` | int16 | 0.1 °C | Airflow-weighted Mean Supply Air Temperature |
+| **30211** | `0x00D2` | `THERMAL_T_RET_MEAN` | int16 | 0.1 °C | Airflow-weighted Mean Return Air Temperature |
+| **30212** | `0x00D3` | `THERMAL_DELTAT_LIFT`| int16 | 0.1 °C | Global Thermal Lift ($T_{\text{ret}} - T_{\text{inj}}$) |
+| **30213** | `0x00D4` | `THERMAL_T_SALA_MEAN`| int16 | 0.1 °C | Mean Server Room Ambient Temperature |
+| **30214** | `0x00D5` | `THERMAL_T_SALA_MAX` | int16 | 0.1 °C | Maximum Room Hotspot Temperature |
+| **30215** | `0x00D6` | `THERMAL_T_SALA_MIN` | int16 | 0.1 °C | Minimum Room Coldspot Temperature |
+| **30216** | `0x00D7` | `THERMAL_DELTAT_BYP` | int16 | 0.1 °C | Bypass Gradient ($T_{\text{sala,mean}} - T_{\text{ret,mean}}$) |
+| **30217** | `0x00D8` | `THERMAL_SHF` | uint16 | 0.001 | Sensible Heat Factor (SHF 0.000..1.000) |
+| **30218** | `0x00D9` | `THERMAL_CONDENSATE` | uint16 | 0.1 L/h | Condensate Drainage Production Rate |
+| **30219..30230** | `0x00DA..0x00E5` | `THERMAL_RESERVED` | uint16 | - | Reserved for predictive analytics & wear metrics |
+
+#### Section 5: System Telemetry & Network Diagnostics (Modbus Ref 30301..30320, PDU Offsets 0x012C..0x013F)
+| Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **30301** | `0x012C` | `SYS_UPTIME_SEC_HI` | uint16 | 1 s | Cumulative System Uptime High Word |
+| **30302** | `0x012D` | `SYS_UPTIME_SEC_LO` | uint16 | 1 s | Cumulative System Uptime Low Word |
+| **30303** | `0x012E` | `SYS_ETH_IP_OCTET_1_2`| uint16 | Octets | Ethernet IPv4 High Octets (Octet1 << 8 \| Octet2) |
+| **30304** | `0x012F` | `SYS_ETH_IP_OCTET_3_4`| uint16 | Octets | Ethernet IPv4 Low Octets (Octet3 << 8 \| Octet4) |
+| **30305** | `0x0130` | `SYS_WIFI_IP_OCTET_1_2`| uint16 | Octets | Wi-Fi IPv4 High Octets (Octet1 << 8 \| Octet2) |
+| **30306** | `0x0131` | `SYS_WIFI_IP_OCTET_3_4`| uint16 | Octets | Wi-Fi IPv4 Low Octets (Octet3 << 8 \| Octet4) |
+| **30307** | `0x0132` | `SYS_SD_TOTAL_MB_HI` | uint16 | 1 MB | MicroSD Total Capacity High Word (MB) |
+| **30308** | `0x0133` | `SYS_SD_TOTAL_MB_LO` | uint16 | 1 MB | MicroSD Total Capacity Low Word (MB) |
+| **30309** | `0x0134` | `SYS_SD_FREE_MB_HI` | uint16 | 1 MB | MicroSD Free Available Space High Word (MB) |
+| **30310** | `0x0135` | `SYS_SD_FREE_MB_LO` | uint16 | 1 MB | MicroSD Free Available Space Low Word (MB) |
+| **30311** | `0x0136` | `SYS_SD_STATUS_FLAGS`| uint16 | Bitmask | Bit 0: Card inserted, Bit 1: Mounted, Bit 2: Writable |
+| **30312..30320** | `0x0137..0x013F` | `SYS_DIAG_RESERVED` | uint16 | - | Reserved system diagnostic registers |
+
+#### Section 6: Active Alarm Diagnostics (Modbus Ref 30401..30410, PDU Offsets 0x0190..0x0199)
+Facility alarm summary bitmasks and diagnostic severity counters:
+
+| Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **30401** | `0x0190` | `ALARM_COUNT_ACTIVE` | uint16 | Count | Total count of currently active alarms |
+| **30402** | `0x0191` | `ALARM_COUNT_UNACK` | uint16 | Count | Total count of unacknowledged active alarms |
+| **30403** | `0x0192` | `ALARM_MAX_SEVERITY` | uint16 | Enum | Highest active severity: 0=None, 1=Info, 2=Warning, 3=Critical, 4=Fatal |
+| **30404** | `0x0193` | `ALARM_BUZZER_STATE` | uint16 | Enum | Buzzer state: 0=Muted, 1=Audible/Active, 2=Quiescent |
+| **30405** | `0x0194` | `ALARM_ACTIVE_MASK_0`| uint16 | Bitmask | Active Alarms 1..16 (Bit $k$: Alarm $k+1$ is active) |
+| **30406** | `0x0195` | `ALARM_ACTIVE_MASK_1`| uint16 | Bitmask | Active Alarms 17..32 |
+| **30407** | `0x0196` | `ALARM_ACTIVE_MASK_2`| uint16 | Bitmask | Active Alarms 33..48 |
+| **30408** | `0x0197` | `ALARM_ACTIVE_MASK_3`| uint16 | Bitmask | Active Alarms 49..64 |
+| **30409** | `0x0198` | `ALARM_ACTIVE_MASK_4`| uint16 | Bitmask | Active Alarms 65..79 |
+| **30410** | `0x0199` | `ALARM_DIAG_RESERVED`| uint16 | - | Reserved alarm diagnostic summary |
 
 ---
 
 ### 3.4 Holding Registers (Function Codes 0x03, 0x06, 0x10, Read/Write, 16-bit)
-*Modbus Reference 40001..40040 (PDU Offsets 0x0000..0x0027)*
 
-Holding registers configure operational setpoints and site parameters. Any write request outside the defined range returns Modbus Exception `0x03` (`ILLEGAL_DATA_VALUE`).
+#### Section 1: HVAC Groups 0..3 Setpoints (Modbus Ref 40001..40040, PDU Offsets 0x0000..0x0027)
+Configures thermal parameters for HVAC Groups $g \in [0..3]$ (10 registers per group):
 
-#### Section 1: HVAC Control Configuration (PDU 0x0000 .. 0x001F)
-| Modbus Ref | PDU Offset | Parameter Name | Units / Scale | Default | Valid Range | Description |
-|:---|:---|:---|:---:|:---:|:---:|:---|
-| **40001** | `0x0000` | `CFG_HVAC_MODE` | Enum | 2 | 0..2 | `0`: Telemetry Only, `1`: Control Only, `2`: Hybrid Full |
-| **40002** | `0x0001` | `CFG_T_TARGET` | 0.1 °C | 220 (22.0°C) | 150 .. 300 | Thermal Comfort Setpoint ($T_{\text{target}}$) |
-| **40003** | `0x0002` | `CFG_T_HYST` | 0.1 °C | 15 (1.5°C) | 5 .. 50 | Compressor Deadband Hysteresis ($\Delta T_{\text{hyst}}$) |
-| **40004** | `0x0003` | `CFG_T_ALARM_HI` | 0.1 °C | 280 (28.0°C) | 240 .. 450 | High Temperature Warning Threshold |
-| **40005** | `0x0004` | `CFG_T_BYPASS` | 0.1 °C | 320 (32.0°C) | 260 .. 500 | Critical Bypass Setpoint (All standby ACs force start) |
-| **40006** | `0x0005` | `CFG_T_TEMP_LO` | 0.1 °C | 120 (12.0°C) | 50 .. 180 | Low Temperature Warning Threshold |
-| **40007** | `0x0006` | `CFG_ROTATION_HOURS` | 1 Hour | 168 (7 days) | 1 .. 720 | Lead/Lag N+M Duty Rotation Interval |
-| **40008** | `0x0007` | `CFG_DATALOG_INTERVAL`| 1 Minute | 5 min | 1 .. 60 | MicroSD Historical CSV Telemetry Sample Rate |
-| **40009** | `0x0008` | `CFG_MANUAL_OVERRIDE` | Bitmask | 0 | 0x0000..0x00FF | Bit $i$: Enable manual control for AC Unit $i+1$ |
+| Modbus Ref | PDU Offset | Parameter Name | Units / Scale | Valid Range | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **40001 + g\*10 + 0** | `0x0000 + g*10 + 0` | Group $g$ $T_{\min}$ | int16 (0.1 °C) | 10.0..30.0 °C | Low heating target / stage disable setpoint |
+| **40001 + g\*10 + 1** | `0x0000 + g*10 + 1` | Group $g$ $T_{\max}$ | int16 (0.1 °C) | 15.0..35.0 °C | Cooling trigger target setpoint |
+| **40001 + g\*10 + 2** | `0x0000 + g*10 + 2` | Group $g$ $T_{\text{alarm}}$ | int16 (0.1 °C) | 20.0..45.0 °C | High temperature warning threshold |
+| **40001 + g\*10 + 3** | `0x0000 + g*10 + 3` | Group $g$ $T_{\text{bypass}}$ | int16 (0.1 °C) | 25.0..50.0 °C | Critical emergency thermal bypass threshold |
+| **40001 + g\*10 + 4..9** | `0x0000 + g*10 + 4..9` | Group $g$ Reserved | uint16 | - | Reserved setpoints |
 
-#### Section 2: Thermal Site Parameters (PDU 0x0020 .. 0x003F)
-| Modbus Ref | PDU Offset | Parameter Name | Units / Scale | Default | Valid Range | Description |
-|:---|:---|:---|:---:|:---:|:---:|:---|
-| **40033** | `0x0020` | `CFG_SITE_ALTITUDE` | 1 Meter | 100 m | 0 .. 5000 m | Site Altitude (Used for Barometric Pressure $P_{\text{baro}}$) |
-| **40034** | `0x0021` | `CFG_SITE_FLOOR_AREA`| 0.1 m² | 450 (45.0m²) | 100 .. 50000 | Server Room Floor Surface Area ($A_{\text{floor}}$) |
-| **40035** | `0x0022` | `CFG_NOMINAL_AIRFLOW`| 1.0 m³/h | 4800 m³/h | 500 .. 65000 | Nominal Total Fan Airflow Rating |
+#### Section 2: HVAC Groups 0..3 Configuration & Operation (Modbus Ref 40041..40060, PDU Offsets 0x0028..0x003B)
+Configures operational coordination parameters for HVAC Groups $g \in [0..3]$ (5 registers per group):
+
+| Modbus Ref | PDU Offset | Parameter Name | Units / Scale | Valid Range | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **40041 + g\*5 + 0** | `0x0028 + g*5 + 0` | Group $g$ Mode | Enum | 0..5 | 0: Off, 1: Cool, 2: Heat, 3: Auto, 4: Fan Only, 5: Emergency |
+| **40041 + g\*5 + 1** | `0x0028 + g*5 + 1` | Group $g$ Turn Count | uint16 | 1..8 | Active simultaneous running turn count |
+| **40041 + g\*5 + 2** | `0x0028 + g*5 + 2` | Group $g$ Unit Mask | Bitmask | 0x01..0xFF | Assigned AC units bitmask for group |
+| **40041 + g\*5 + 3** | `0x0028 + g*5 + 3` | Group $g$ Rotation Days | uint16 (Days) | 1..365 | Automated lead/lag duty rotation interval |
+| **40041 + g\*5 + 4** | `0x0028 + g*5 + 4` | Group $g$ Fan Control | Bitfield | 0..65535 | Bit 15: Fan delay enable; Bits 0..14: Delay in seconds |
+
+#### Section 3: Real-Time Clock & System Time (Modbus Ref 40101..40110, PDU Offsets 0x0064..0x006D)
+Read and write real-time calendar and UTC Unix epoch:
+
+| Modbus Ref | PDU Offset | Register Name | Data Type | Units / Scale | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **40101** | `0x0064` | `RTC_YEAR` | uint16 | Year | Gregorian Calendar Year (2000..2099) |
+| **40102** | `0x0065` | `RTC_MONTH` | uint16 | Month | Month of Year (1..12) |
+| **40103** | `0x0066` | `RTC_DAY` | uint16 | Day | Day of Month (1..31) |
+| **40104** | `0x0067` | `RTC_HOUR` | uint16 | Hour | Hour of Day (0..23) |
+| **40105** | `0x0068` | `RTC_MINUTE` | uint16 | Minute | Minute of Hour (0..59) |
+| **40106** | `0x0069` | `RTC_SECOND` | uint16 | Second | Second of Minute (0..59) |
+| **40107** | `0x006A` | `RTC_EPOCH_HI` | uint16 | 1 s | 32-bit UTC Unix Epoch High Word |
+| **40108** | `0x006B` | `RTC_EPOCH_LO` | uint16 | 1 s | 32-bit UTC Unix Epoch Low Word |
+| **40109** | `0x006C` | `RTC_SUBSECOND_MS`| uint16 | 1 ms | Subsecond Milliseconds (0..999) |
+| **40110** | `0x006D` | `RTC_SYNC_STATUS` | uint16 | Enum | Time authority source & sync state |
+
+#### Section 4: Supervisory Command Execution (Modbus Ref 40201..40205, PDU Offsets 0x00C8..0x00CC)
+Command gateway for SCADA operator supervisory actions:
+
+| Modbus Ref | PDU Offset | Register Name | Data Type | Units / Range | Description |
+|:---|:---|:---|:---:|:---:|:---|
+| **40201** | `0x00C8` | `SUPERVISORY_CMD_OPCODE` | uint16 | Opcode | 1: Ack Alarm, 2: Ack All, 3: Reset Latch, 4: Reboot, 5: Save Storage, 6: Recalibrate Baseline |
+| **40202** | `0x00C9` | `SUPERVISORY_CMD_ARG` | uint16 | Argument | Target Alarm ID or command argument |
+| **40203** | `0x00CA` | `SUPERVISORY_CMD_STATUS` | uint16 | Enum | Execution outcome: 0=Ready/Idle, 1=Executing, 2=Error |
+| **40204** | `0x00CB` | `SUPERVISORY_LAST_OPCODE`| uint16 | Opcode | Last successfully dispatched opcode |
+| **40205** | `0x00CC` | `SUPERVISORY_LAST_ERRNO` | uint16 | Errno | Execution return code (0 = Success) |
+
+---
 
 ---
 

@@ -1,9 +1,9 @@
 # Industrial Modbus Subsystem Progress
 
-- **Status**: **IN_PROGRESS (92%)**
+- **Status**: **COMPLETED (100%)**
 - **Architecture References**: 
   - [`doc/architecture/modbus_subsystem.md`](../architecture/modbus_subsystem.md) (Modbus RTU Master & Dual RS-485 Buses)
-  - [`doc/architecture/modbus_tcp_server_subsystem.md`](../architecture/modbus_tcp_server_subsystem.md) (Modbus TCP Server Port 502 & nanoMODBUS Multi-Session)
+  - [`doc/architecture/modbus_tcp_server_subsystem.md`](../architecture/modbus_tcp_server_subsystem.md) (Modbus TCP Server Port 502 & nanoMODBUS Integration Layer)
 
 ---
 
@@ -19,18 +19,29 @@
 | **Diagnostics** | `app/src/application/diagnostics/modbus_bus_probe.c` | 100% | Bus communication probing and error classification |
 | **Active Object (RTU)** | `app/src/application/active_objects/ao_modbus.c` | 100% | Dedicated thread, message queue, periodic polling loop, event publishing |
 | **Unit Tests (RTU)** | `tests/unit/modbus/` | 100% | 10 test suites, 99 tests passing on `native_sim` |
-| **Modbus TCP Types** | `app/include/common/modbus_tcp_types.h` | 100% | Pure C99/C11 register address definitions, session states, metrics, and DTOs |
+| **Modbus TCP Types** | `app/include/common/modbus_tcp_types.h` | 100% | Pure C99/C11 register address definitions, diagnostics counters, and DTOs |
 | **Modbus TCP Port** | `app/include/interfaces/i_modbus_tcp_server.h` | 100% | Abstract port contract (§4.1.D fat-pointer handle, v-table, inline wrappers) |
-| **Modbus TCP Spec** | `doc/architecture/modbus_tcp_server_subsystem.md` | 100% | Full multi-session TCP architecture, master register map, zero-malloc bridge |
+| **Modbus TCP Adapter** | `app/src/infrastructure/adapters/adapter_modbus_tcp_server.c/.h` | 100% | Complete register mapping delegating exclusively via `app_facade` APIs |
+| **Modbus TCP AO** | `app/src/application/active_objects/ao_modbus_tcp.c/.h` | 100% | Native Zephyr `<zephyr/nanomodbus/nanomodbus_z_tcp.h>` wrapper (`nmbs_z_server_tcp_t`) |
+| **Unit Tests (TCP)** | `tests/unit/modbus_tcp/` | 100% | 7 test suites passing 100% on `native_sim` |
+| **Shell Command** | `app/src/presentation/shell/shell_brightc.c` | 100% | `modbus tcp status` CLI reporting frame metrics, CRC errors, exceptions, timeouts |
 
 ---
 
 ## 2. Pending Work
-- [ ] Implement `ao_modbus_tcp.c/.h` Active Object multiplexer with `zsock_poll()` session pool.
-- [ ] Implement `adapter_modbus_tcp_server.c/.h` nanoMODBUS TCP server adapter with zero-copy socket bridge.
-- [ ] Author unit test suites for Modbus TCP register map and session pooling in `tests/unit/modbus_tcp/`.
 - [ ] Automatic runtime slave auto-discovery and scanning tool.
 - [ ] Automated bus failover supervisor (consecutive failure threshold triggering automatic switch from RS485-1 to RS485-2).
+
+---
+
+## 3. Changelog & Refactoring History
+- **2026-11-12**: Native Zephyr nanoMODBUS TCP Integration Refactoring:
+  - Refactored `ao_modbus_tcp` to wrap native Zephyr `<zephyr/nanomodbus/nanomodbus_z_tcp.h>` engine (`nmbs_z_server_tcp_t`), eliminating ad-hoc socket loops and leveraging Zephyr's built-in TCP server thread and diagnostics.
+  - Enabled native Kconfigs: `CONFIG_NANOMODBUS_SERVER=y`, `CONFIG_NANOMODBUS_TRANSPORT_TCP=y`, `CONFIG_NANOMODBUS_SERVER_TCP=y`, `CONFIG_NANOMODBUS_DIAGNOSTICS=y`.
+  - Mapped cumulative diagnostics (`rx_frames`, `tx_frames`, `crc_errors`, `exceptions`, `timeouts`) cleanly between `nmbs_z_stats` and `modbus_tcp_server_stats_t`.
+  - Updated `cmd_modbus_tcp_status` in `shell_brightc.c` to present native metrics.
+  - Validated 100% passing unit tests (7/7) on `native_sim` in `tests/unit/modbus_tcp/`.
+  - Verified 0 warnings, 0 errors on target builds (`brightc-controllerv3/stm32h743xx`) in both `app/build/primary` and `build/primary`.
 
 ---
 
