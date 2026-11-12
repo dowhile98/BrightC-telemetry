@@ -13,7 +13,7 @@
 | :--- | :--- | :---: | :--- | :---: |
 | **Core Architecture & Framework** | [`core_architecture_progress.md`](core_architecture_progress.md) | **100%** | Active Objects (5/5), DI Container, Hexagonal Ports & Adapters | 2026-11-07 |
 | **System Indicators** | [`system_indicators_progress.md`](system_indicators_progress.md) | **100%** | `ao_system_indicator`, LED GPIO & Buzzer PWM adapters, Zbus | 2026-11-05 |
-| **Industrial Modbus** | [`modbus_progress.md`](modbus_progress.md) | **90%** | Dual RS-485, 4 codecs, scheduler, registry, relay adapter, `ao_modbus`, mode-aware slave topology | 2026-11-11 |
+| **Industrial Modbus & Modbus TCP** | [`modbus_progress.md`](modbus_progress.md) | **92%** | Dual RS-485 Master, 4 codecs, scheduler, registry, relay adapter, `ao_modbus`, mode-aware topology; Modbus TCP Server spec (`doc/architecture/modbus_tcp_server_subsystem.md`), pure C99 types, `i_modbus_tcp_server.h` | 2026-11-12 |
 | **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **95%** | `ao_digital_input`, Zbus snapshot & transitions, HVAC safety interlock listener, 2x MCP23S17 SPI + Modbus MBSL32DI, profile-specific pin tables (control/telemetry), acquisition staleness contract | 2026-11-11 |
 | **Network & Wi-Fi** | [`network_progress.md`](network_progress.md) | **75%** | `ao_network`, STM32 RMII Ethernet, ESP-Hosted SPI Wi-Fi, ISP ports | 2026-11-06 |
 | **Storage & Persistence** | [`storage_progress.md`](storage_progress.md) | **100%** | `ao_storage`, Microconf I2C2 EEPROM adapter, 7 domains (incl. thermal site & baseline), degraded mode | 2026-11-11 |
@@ -24,6 +24,7 @@
 | **OTA & MCUboot** | [`ota_mcuboot_progress.md`](ota_mcuboot_progress.md) | **0%** | Spec approved. Pending Sysbuild MCUboot, QSPI W25Q16, MCUmgr | 2026-11-05 |
 | **Industrial HVAC Control** | [`hvac_control_progress.md`](hvac_control_progress.md) | **100%** | Full domain FSMs, Multi-Room Range Engine, Facade & Shell, ao_hvac, 65 unit tests, profile-driven mode sync & dynamic actuator init, stale-DI fail-safe & IO-fault bypass | 2026-11-11 |
 | **Alarm Management** | [`alarm_management_progress.md`](alarm_management_progress.md) | **100%** | Centralized AO, discrete & multi-source aggregate FSMs, 4 thermal groups / salas, 8 HVAC units, hysteresis evaluators, 4 detector adapters, Zbus channels, DIP query port, Shell CLI presentation, persistent buzzer mute, 17 unit tests | 2026-11-10 |
+| **Embedded Web Server & REST API** | [`web_server_progress.md`](web_server_progress.md) | **20%** | Architecture specification, pure C99 types & DTOs, `i_web_server.h`, zero-malloc `i_json_serializer.h`. Implementation pending Phase 2-5 TDD | 2026-11-12 |
 
 ---
 

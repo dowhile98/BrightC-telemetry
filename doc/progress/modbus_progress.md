@@ -1,7 +1,9 @@
 # Industrial Modbus Subsystem Progress
 
-- **Status**: **IN_PROGRESS (90%)**
-- **Architecture Reference**: [`doc/architecture/modbus_subsystem.md`](../architecture/modbus_subsystem.md)
+- **Status**: **IN_PROGRESS (92%)**
+- **Architecture References**: 
+  - [`doc/architecture/modbus_subsystem.md`](../architecture/modbus_subsystem.md) (Modbus RTU Master & Dual RS-485 Buses)
+  - [`doc/architecture/modbus_tcp_server_subsystem.md`](../architecture/modbus_tcp_server_subsystem.md) (Modbus TCP Server Port 502 & nanoMODBUS Multi-Session)
 
 ---
 
@@ -15,18 +17,30 @@
 | **Client Adapter** | `app/src/infrastructure/adapters/adapter_modbus_nmbs.c` | 100% | nanoMODBUS client over Zephyr UART (USART2, USART6) with DE hardware control |
 | **Relay Adapter** | `app/src/infrastructure/adapters/adapter_relay_modbus.c` | 100% | Implements `i_relay.h` (FC05 coil writes, cycle count & timing tracking) |
 | **Diagnostics** | `app/src/application/diagnostics/modbus_bus_probe.c` | 100% | Bus communication probing and error classification |
-| **Active Object** | `app/src/application/active_objects/ao_modbus.c` | 100% | Dedicated thread, message queue, periodic polling loop, event publishing |
-| **Unit Tests** | `tests/unit/modbus/` | 100% | 10 test suites, 99 tests passing on `native_sim` |
+| **Active Object (RTU)** | `app/src/application/active_objects/ao_modbus.c` | 100% | Dedicated thread, message queue, periodic polling loop, event publishing |
+| **Unit Tests (RTU)** | `tests/unit/modbus/` | 100% | 10 test suites, 99 tests passing on `native_sim` |
+| **Modbus TCP Types** | `app/include/common/modbus_tcp_types.h` | 100% | Pure C99/C11 register address definitions, session states, metrics, and DTOs |
+| **Modbus TCP Port** | `app/include/interfaces/i_modbus_tcp_server.h` | 100% | Abstract port contract (§4.1.D fat-pointer handle, v-table, inline wrappers) |
+| **Modbus TCP Spec** | `doc/architecture/modbus_tcp_server_subsystem.md` | 100% | Full multi-session TCP architecture, master register map, zero-malloc bridge |
 
 ---
 
 ## 2. Pending Work
+- [ ] Implement `ao_modbus_tcp.c/.h` Active Object multiplexer with `zsock_poll()` session pool.
+- [ ] Implement `adapter_modbus_tcp_server.c/.h` nanoMODBUS TCP server adapter with zero-copy socket bridge.
+- [ ] Author unit test suites for Modbus TCP register map and session pooling in `tests/unit/modbus_tcp/`.
 - [ ] Automatic runtime slave auto-discovery and scanning tool.
 - [ ] Automated bus failover supervisor (consecutive failure threshold triggering automatic switch from RS485-1 to RS485-2).
 
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-12**: Modbus TCP Server Subsystem Specification & Port Contracts:
+  - Formulated full architectural specification in [`doc/architecture/modbus_tcp_server_subsystem.md`](../architecture/modbus_tcp_server_subsystem.md).
+  - Designed pure ISO C99/C11 data contracts and register address constants in `app/include/common/modbus_tcp_types.h`.
+  - Created abstract port interface `app/include/interfaces/i_modbus_tcp_server.h` strictly adhering to Rule §4.1.D.
+  - Specified comprehensive Modbus register map: Discrete Inputs (10001..10057) for individual system alarms, Coils (00001..00017) for supervisory control & buzzer mute, Input Registers (30001..30169) for atomic metrics & alarm bitmasks, and Holding Registers (40001..40035) for setpoint parameters.
+  - Defined multi-session socket multiplexing architecture using `zsock_poll()` (default 4 clients, `CONFIG_MODBUS_TCP_MAX_CLIENTS=4`), zero-malloc transport bridge, and 30s inactivity watchdog.
 - **2026-11-11**: Mode-Aware Slave Topology Registration:
   - In `composition_root_init_modbus()`, synchronized Modbus slave registration with persisted operational mode (`self->hvac.config.operation_mode`) and `total_units`:
     * When `HVAC_MODE_TELEMETRY_ONLY`, `MBSL32DI` and `WAVESHARE_RELAY_32CH` are omitted from registry and polling loops.

@@ -27,6 +27,7 @@ All architectural guidelines and subsystem specifications are maintained in `doc
 | [`doc/architecture/dependency_injection_container_architecture.md`](doc/architecture/dependency_injection_container_architecture.md) | **Composition Root & DI Container**: Subsystem vertical grouping, 2-phase lifecycle (`init` & `wire`), DIP getters. |
 | [`doc/architecture/ports_and_adapters_architecture.md`](doc/architecture/ports_and_adapters_architecture.md) | **Hexagonal Architecture (Ports & Adapters)**: Fat-pointer handles, ISP segregation, connectivity FSM, hardware injection rules. |
 | [`doc/architecture/modbus_subsystem.md`](doc/architecture/modbus_subsystem.md) | Dual RS485 half-duplex buses, slave registries, nanoMODBUS adapters, failover orchestration. |
+| [`doc/architecture/modbus_tcp_server_subsystem.md`](doc/architecture/modbus_tcp_server_subsystem.md) | **Modbus TCP Server**: Port 502, nanoMODBUS multi-session pool (4 clients), full system alarm register map, zero-malloc transport bridge. |
 | [`doc/architecture/network_subsystem.md`](doc/architecture/network_subsystem.md) | STM32 RMII Ethernet, ESP-Hosted SPI Wi-Fi, DHCP/Static IP, Wi-Fi control plane, Zbus publishers. |
 | [`doc/architecture/storage_subsystem.md`](doc/architecture/storage_subsystem.md) | Microconf EEPROM adapter, NVS flash partitions, configuration serialization and atomic commits. |
 | [`doc/architecture/digital_input_subsystem.md`](doc/architecture/digital_input_subsystem.md) | MCP23S17 SPI expanders, on-chip GPIOs, debouncing filter, input state aggregator. |
@@ -36,6 +37,7 @@ All architectural guidelines and subsystem specifications are maintained in `doc
 | [`doc/architecture/selftest_subsystem.md`](doc/architecture/selftest_subsystem.md) | Power-on self-test (POST), runtime peripheral sanity checks. |
 | [`doc/architecture/mcuboot_external_flash_ota_architecture.md`](doc/architecture/mcuboot_external_flash_ota_architecture.md) | MCUboot dual-slot bootloader, external QSPI flash staging, dual-bank rollback. |
 | [`doc/architecture/hvac_control_subsystem.md`](doc/architecture/hvac_control_subsystem.md) | **HVAC Control Subsystem**: N+M duty rotation, tri-state relays, multi-tier bypass, 3 operation profiles. |
+| [`doc/architecture/web_server_rest_api_subsystem.md`](doc/architecture/web_server_rest_api_subsystem.md) | **Embedded Web Server & REST API**: Native Zephyr HTTP server, static SPA (`/SD:/www`), zero-malloc JSON codecs, 2 KB chunked streaming, degraded mode fallback. |
 
 ---
 
@@ -57,6 +59,7 @@ To ensure rigorous project tracking and auditability, **all developers and AI ag
    - [`doc/progress/selftest_progress.md`](doc/progress/selftest_progress.md): Post-boot self-test and diagnostics.
    - [`doc/progress/ota_mcuboot_progress.md`](doc/progress/ota_mcuboot_progress.md): Firmware OTA and MCUboot.
    - [`doc/progress/hvac_control_progress.md`](doc/progress/hvac_control_progress.md): Industrial HVAC control subsystem.
+   - [`doc/progress/web_server_progress.md`](doc/progress/web_server_progress.md): Embedded Web Server & REST API subsystem.
 3. **Mandatory Update Rule**:
    - Whenever any component is added, modified, or refactored—**even if the subsystem is already at 100%**—the developer or AI agent **MUST update the corresponding file in `doc/progress/`**.
    - Record the changes concisely under the subsystem's `Changelog & Refactoring History` section with date, modified files, and summary.

@@ -23,6 +23,8 @@ The BrightC Controller V3 Modbus subsystem is designed for field telemetry acqui
    - The logic that decides which slave is ready for polling and its health classification is **100% pure C code** (`slave_scheduler.c`), fully decoupled from Zephyr and testable on host PC (`native_sim`).
 4. **Protection Against Disconnected Slaves**:
    - After 3 consecutive failures, the slave enters slow idle state (*probe ping* every 10 s), preventing repetitive timeouts from saturating the medium and delaying healthy devices.
+5. **Modbus TCP Server Complementarity**:
+   - While this document specifies field bus telemetry acquisition (RS-485 Modbus RTU Master), supervisory SCADA and BMS integration over Ethernet and Wi-Fi is provided by the Modbus TCP Server subsystem. See [`doc/architecture/modbus_tcp_server_subsystem.md`](modbus_tcp_server_subsystem.md) for multi-session socket multiplexing on port 502, zero-malloc transport bridge, and comprehensive system alarm register maps.
 
 ---
 
