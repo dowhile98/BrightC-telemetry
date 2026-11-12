@@ -2367,6 +2367,24 @@ const i_wifi_control_t *app_container_get_wifi_control(const app_container_t *se
     return &self->network.wifi_ctrl_port;
 }
 
+ao_network_t *app_container_get_network_ao(app_container_t *self)
+{
+    if (self == NULL || !self->network.initialized)
+    {
+        return NULL;
+    }
+    return &self->network.ao;
+}
+
+ao_storage_t *app_container_get_storage_ao(app_container_t *self)
+{
+    if (self == NULL || !self->storage.initialized)
+    {
+        return NULL;
+    }
+    return &self->storage.ao;
+}
+
 const i_config_storage_t *app_container_get_storage(const app_container_t *self)
 {
     if (self == NULL || !self->storage.initialized)

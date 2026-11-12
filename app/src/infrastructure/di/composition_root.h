@@ -409,6 +409,22 @@ const i_network_t *app_container_get_network_wifi(const app_container_t *self);
 const i_wifi_control_t *app_container_get_wifi_control(const app_container_t *self);
 
 /**
+ * @brief Get the network Active Object instance.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_network_t, or NULL if uninitialized / invalid.
+ */
+ao_network_t *app_container_get_network_ao(app_container_t *self);
+
+/**
+ * @brief Get the storage Active Object instance.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_storage_t, or NULL if uninitialized / invalid.
+ */
+ao_storage_t *app_container_get_storage_ao(app_container_t *self);
+
+/**
  * @brief Get the abstract persistent config storage port.
  *
  * @param[in] self Container instance.
