@@ -239,6 +239,24 @@ int composition_root_init_modbus(app_container_t *self)
             continue;
         }
 
+        const char *bus_name = (bus == MODBUS_BUS_RS485_1) ? "RS485-1" : "RS485-2";
+        const char *parity_name = "none";
+        if (self->modbus.bus_cfg[bus].parity == MODBUS_PARITY_EVEN)
+        {
+            parity_name = "even";
+        }
+        else if (self->modbus.bus_cfg[bus].parity == MODBUS_PARITY_ODD)
+        {
+            parity_name = "odd";
+        }
+
+        LOG_INF("Modbus %s initialized: %u baud, %u data bits, parity %s, %u stop bit(s)",
+                bus_name,
+                (unsigned int)self->modbus.bus_cfg[bus].baudrate,
+                (unsigned int)self->modbus.bus_cfg[bus].data_bits,
+                parity_name,
+                (unsigned int)self->modbus.bus_cfg[bus].stop_bits);
+
         bound_buses++;
     }
 

@@ -35,6 +35,7 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-12**: Added a startup log in `composition_root_init_modbus()` reporting each initialized RS-485 bus's effective UART baud rate, data bits, parity, and stop bits from the transport configuration.
 - **2026-11-12**: Documented the implemented Modbus TCP register map in [`doc/modbus/modbus_tcp_register_map.md`](../modbus/modbus_tcp_register_map.md), including function codes, PDU/reference addresses, scales, writable commands, reserved ranges, and implementation limitations. The document follows the current callback code where it differs from the architectural specification.
 - **2026-11-12**: Native Zephyr nanoMODBUS TCP Integration Refactoring:
   - Refactored `ao_modbus_tcp` to wrap native Zephyr `<zephyr/nanomodbus/nanomodbus_z_tcp.h>` engine (`nmbs_z_server_tcp_t`), eliminating ad-hoc socket loops and leveraging Zephyr's built-in TCP server thread and diagnostics.
