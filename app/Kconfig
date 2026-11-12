@@ -151,7 +151,7 @@ menu "BrightC Alarm Management Subsystem"
 
 config ALARM_MANAGER_MAX_ALARMS
 	int "Maximum tracked alarms in catalog"
-	default 128
+	default 80
 	range 32 256
 	help
 	  Maximum number of discrete and aggregated alarm descriptors and live
