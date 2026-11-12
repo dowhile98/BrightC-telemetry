@@ -1,7 +1,7 @@
 # MicroSD Storage & Filesystem Subsystem Progress
 
 - **Status**: **COMPLETE (100%)**
-- **Architecture Reference**: [`doc/architecture/sd_card_filesystem_subsystem.md`](../architecture/sd_card_filesystem_subsystem.md)
+- **Architecture Reference**: [`doc/architecture/sd_card_filesystem_subsystem.md`](../architecture/sd_card_filesystem_subsystem.md), [`doc/architecture/historical_datalogger_storage_subsystem.md`](../architecture/historical_datalogger_storage_subsystem.md)
 
 ---
 
@@ -20,11 +20,12 @@
 | **Composition Root** | `app/src/infrastructure/di/composition_root.h`, `composition_root.c` | 100% | Subsystem 12 wiring, container getters, graceful start/stop lifecycle |
 | **Shell Commands** | `app/src/presentation/shell/shell_brightc.c` | 100% | `sd status`, `sd mount`, `sd eject`, `sd ls [path]` |
 | **Unit Test Suite** | `tests/unit/storage_sd/` | 100% | 12 tests across `fake_storage_fs_suite` and `sd_lifecycle_sm_suite` running on `native_sim` |
+| **Datalogger Architecture** | `doc/architecture/historical_datalogger_storage_subsystem.md` | 100% | 3 daily CSV streams (`control`, `energy`, `thermal`), 2 daily logs (`system`, `alarms`), zero-copy HTTP streaming, 5s anti-chatter debounce |
 
 ---
 
 ## 2. Pending Work
-- None. Subsystem is complete and verified against target hardware devicetree and native simulation.
+- Telemetry & Event Datalogger implementation (`ao_datalogger`, domain formatters, zero-copy HTTP streamer) per [`historical_datalogger_storage_subsystem.md`](../architecture/historical_datalogger_storage_subsystem.md).
 
 ---
 
@@ -40,3 +41,8 @@
   - Implemented Active Object coordinator `ao_storage_sd.h/.c` and Zbus channel `chan_storage_sd_status`.
   - Integrated with `app_facade`, `composition_root`, and registered shell commands `sd status`, `sd mount`, `sd eject`, `sd ls`.
   - Target firmware build verified for `brightc-controllerv3/stm32h743xx` (0 warnings, 0 errors).
+- **2026-11-12**: Authored authoritative specification for Historical Telemetry & Event-Driven Datalogger (`doc/architecture/historical_datalogger_storage_subsystem.md`):
+  - Defined 3 segregated daily CSV streams (`_control.csv`, `_energy.csv`, `_thermal.csv`) and 2 daily log streams (`_system.log`, `_alarms.log`).
+  - Aligned MicroSD standard directory layout under `/SD:/history/YYYY/MM/` and `/SD:/logs/YYYY/MM/`.
+  - Defined 5s anti-chatter debounce filter, 512-byte sector-aligned RAM staging buffers, and midnight UTC rollover protocol.
+  - Specified STM32H743 Zero-Copy HTTP Streaming engine for embedded web server (2 KB chunk DMA direct to socket).

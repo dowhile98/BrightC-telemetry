@@ -13,9 +13,9 @@
 
 ### 1.1 Purpose of the MicroSD Subsystem
 The BrightC Controller V3 incorporates an external MicroSD slot to satisfy three critical operational needs:
-1. **Embedded Web Server Static Assets**: Serving static HTML5, CSS3, JavaScript bundles (Vue/React/Vanilla), WebAssembly modules, and SVG/PNG image assets from `/sd/www/`.
-2. **Historical Telemetry Logging**: Persistent long-term logging of energy meters, analog sensor banks, Modbus device registers, and environmental metrics formatted as daily CSV or binary time-series files (`/sd/history/YYYY/MM/DD_telemetry.csv`).
-3. **System Audit Logs & Crash Diagnostics**: Retaining system event logs (`/sd/logs/system.log`), diagnostic traces, and non-volatile core dumps generated during kernel panics or HardFault exceptions (`/sd/logs/crash/`).
+1. **Embedded Web Server Static Assets**: Serving static HTML5, CSS3, JavaScript bundles (Vue/React/Vanilla), WebAssembly modules, and SVG/PNG image assets from `/SD:/www/`.
+2. **Historical Telemetry Logging**: Persistent long-term logging of HVAC group control, 3-phase electrical energy, and Rev F thermodynamic models formatted as 3 distinct daily CSV files (`/SD:/history/YYYY/MM/YYYY-MM-DD_{control,energy,thermal}.csv`) per the authoritative datalogger specification ([`doc/architecture/historical_datalogger_storage_subsystem.md`](historical_datalogger_storage_subsystem.md)).
+3. **System Audit Logs & Crash Diagnostics**: Retaining calendar daily rotating operational event and forensic alarm logs (`/SD:/logs/YYYY/MM/YYYY-MM-DD_{system,alarms}.log`), diagnostic traces, and non-volatile core dumps generated during kernel panics or HardFault exceptions (`/SD:/logs/crash/`).
 
 ### 1.2 The Hot-Plug Challenge & Zephyr Architectural Boundary
 Unlike internal flash memory or soldered I2C EEPROMs, MicroSD cards are **removable physical media**:
@@ -483,32 +483,39 @@ When `cd-gpios` is defined, `zephyr/drivers/disk/sdmmc_stm32.c` automatically co
 
 ## 8. Standard Directory Layout on MicroSD
 
-When a newly formatted card is inserted, `ao_storage_sd` validates and initializes the directory structure:
+When a newly formatted card is inserted, `ao_storage_sd` validates and initializes the directory structure under mount point `/SD:` (refer to [`doc/architecture/historical_datalogger_storage_subsystem.md`](historical_datalogger_storage_subsystem.md) for full telemetry and log stream specifications):
 
 ```text
-/sd/
+/SD:/
 ├── brightc.id                   # Plaintext file containing Controller Model & Hardware UUID
 ├── www/                         # Embedded Web Server Root
 │   ├── index.html               # Main Single Page App (SPA) dashboard
 │   ├── css/
 │   │   └── app.min.css          # Compressed stylesheets
 │   ├── js/
-│   │   └── app.min.js           # Frontend logic
+│   │   ├── app.min.js           # Frontend logic
+│   │   └── uPlot.iife.min.js    # Ultra-fast micro-charting engine for client-side CSV parsing
 │   └── assets/
 │       └── logo.svg             # Graphic assets
-├── history/                     # Telemetry & Time-Series Data
-│   └── 2026/
-│       └── 11/
-│           ├── 2026-11-02_energy.csv     # Daily cumulative kWh, power factor, voltages
-│           └── 2026-11-02_sensors.csv    # 1-second sampled temperatures, 4-20mA loops
-├── logs/                        # Operational & Diagnostic Traces
-│   ├── system.log               # Circular event log
-│   ├── system.log.1             # Rotated backup log
-│   └── crash/                   # Exception & Crash Dumps
-│       └── crash_20261102_142301.dump
+├── history/                     # Granular Telemetry Time-Series Data (Separation of Concerns)
+│   └── YYYY/
+│       └── MM/
+│           ├── YYYY-MM-DD_control.csv    # HVAC Group Control & Units (~85 B/line, 10m + event triggers)
+│           ├── YYYY-MM-DD_energy.csv     # Electrical Energy Meter JSY-MK-339 (~75 B/line, 10m periodic)
+│           └── YYYY-MM-DD_thermal.csv    # Thermodynamic Model Rev F (~90 B/line, 10m + anomaly triggers)
+├── logs/                        # Calendar Daily Rotating Operational & Forensic Logs
+│   └── YYYY/
+│       └── MM/
+│           ├── YYYY-MM-DD_system.log     # System events, network status, FSM state changes
+│           ├── YYYY-MM-DD_alarms.log     # Alarm transitions, trips, clears, and ACKs
+│           └── crash/                    # Non-volatile crash and HardFault exception dumps
+│               └── crash_YYYYMMDD_HHMMSS.dump
 └── config/                      # Offline Backups & Parameter Snapshots
     └── backup_eeprom.bin        # Manual or scheduled mirror of EEPROM microconf tables
 ```
+
+> [!TIP]
+> Segregating telemetry into 3 distinct daily CSV files and 2 daily log streams minimizes file transfer sizes (<25 KB each), eliminates concurrency bottlenecks between fast discrete events and slow thermodynamic models, and allows zero-copy HTTP streaming from MicroSD to web browsers with zero CPU parsing overhead on the STM32H743.
 
 ---
 
