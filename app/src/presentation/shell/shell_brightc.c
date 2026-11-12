@@ -1027,6 +1027,153 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_modbus,
 SHELL_CMD_REGISTER(modbus, &sub_modbus, "Modbus master subsystem commands", NULL);
 
 /* =========================================================================
+ * Network Shell Commands
+ * ========================================================================= */
+
+static void ipv4_to_str(uint32_t ip, char *out, size_t out_len)
+{
+    uint8_t b[4];
+    b[0] = (uint8_t)(ip >> 24);
+    b[1] = (uint8_t)(ip >> 16);
+    b[2] = (uint8_t)(ip >> 8);
+    b[3] = (uint8_t)ip;
+    snprintf(out, out_len, "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
+}
+
+static int cmd_network_status(const struct shell *sh, size_t argc, char **argv)
+{
+    network_interface_t iface = NETWORK_INTERFACE_ETHERNET;
+
+    if (argc > 1) {
+        if (strcmp(argv[1], "eth") == 0) {
+            iface = NETWORK_INTERFACE_ETHERNET;
+        } else if (strcmp(argv[1], "wifi") == 0) {
+            iface = NETWORK_INTERFACE_WIFI;
+        } else {
+            shell_error(sh, "Usage: network status [eth|wifi]");
+            return -EINVAL;
+        }
+    }
+
+    net_status_t status;
+    int rc = app_facade_network_get_status(iface, &status);
+    if (rc != 0) {
+        shell_error(sh, "Failed to read status: %d", rc);
+        return rc;
+    }
+
+    const char *name = (iface == NETWORK_INTERFACE_ETHERNET) ? "Ethernet" : "WiFi";
+    char ip_str[16];
+    char mask_str[16];
+    char gw_str[16];
+    ipv4_to_str(status.ip_addr, ip_str, sizeof(ip_str));
+    ipv4_to_str(status.subnet_mask, mask_str, sizeof(mask_str));
+    ipv4_to_str(status.gateway, gw_str, sizeof(gw_str));
+
+    shell_print(sh, "%s status:", name);
+    shell_print(sh, "  state: %d", (int)status.state);
+    shell_print(sh, "  ip:    %s", ip_str);
+    shell_print(sh, "  mask:  %s", mask_str);
+    shell_print(sh, "  gw:    %s", gw_str);
+    if (iface == NETWORK_INTERFACE_WIFI) {
+        shell_print(sh, "  rssi:  %d dBm", (int)status.rssi);
+    }
+
+    return 0;
+}
+
+static int cmd_network_wifi_scan(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    shell_print(sh, "WiFi scan requested (see native 'wifi scan' output).");
+    int rc = app_facade_network_wifi_scan();
+    if (rc != 0) {
+        shell_error(sh, "Scan failed: %d", rc);
+    }
+    return rc;
+}
+
+static int cmd_network_wifi_connect(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2 || argc > 3) {
+        shell_error(sh, "Usage: network wifi connect <ssid> [psk]");
+        return -EINVAL;
+    }
+
+    const char *ssid = argv[1];
+    const char *psk = (argc == 3) ? argv[2] : NULL;
+    net_wifi_security_t sec = (psk != NULL) ? NET_WIFI_SEC_WPA2_PSK : NET_WIFI_SEC_OPEN;
+
+    size_t ssid_len = strlen(ssid);
+    if (ssid_len == 0U || ssid_len > NET_SSID_MAX_LEN) {
+        shell_error(sh, "SSID length must be 1..%u", NET_SSID_MAX_LEN);
+        return -EINVAL;
+    }
+    if (psk != NULL) {
+        size_t psk_len = strlen(psk);
+        if (psk_len < 8U || psk_len > NET_PSK_MAX_LEN) {
+            shell_error(sh, "PSK length must be 8..%u", NET_PSK_MAX_LEN);
+            return -EINVAL;
+        }
+    }
+
+    shell_print(sh, "Connecting to '%s'...", ssid);
+    int rc = app_facade_network_wifi_connect(ssid, psk, sec);
+    if (rc != 0) {
+        shell_error(sh, "Connect failed: %d", rc);
+        return rc;
+    }
+    shell_print(sh, "WiFi config updated and persisted (DHCP). Use 'network status wifi' to check IP.");
+    return 0;
+}
+
+static int cmd_network_wifi_disconnect(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int rc = app_facade_network_wifi_disconnect();
+    if (rc != 0) {
+        shell_error(sh, "Disconnect failed: %d", rc);
+    } else {
+        shell_print(sh, "WiFi disconnected.");
+    }
+    return rc;
+}
+
+static int cmd_network_wifi_save(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int rc = app_facade_network_wifi_config_save();
+    if (rc != 0) {
+        shell_error(sh, "Save failed: %d", rc);
+    } else {
+        shell_print(sh, "WiFi config saved to EEPROM.");
+    }
+    return rc;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_network_wifi,
+    SHELL_CMD(scan, NULL, "Scan for WiFi access points", cmd_network_wifi_scan),
+    SHELL_CMD_ARG(connect, NULL, "Connect to WPA2 AP: network wifi connect <ssid> [psk]", cmd_network_wifi_connect, 2, 1),
+    SHELL_CMD(disconnect, NULL, "Disconnect WiFi station", cmd_network_wifi_disconnect),
+    SHELL_CMD(save, NULL, "Force EEPROM write of WiFi config", cmd_network_wifi_save),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_network,
+    SHELL_CMD(status, NULL, "Show interface status: network status [eth|wifi]", cmd_network_status),
+    SHELL_CMD(wifi, &sub_network_wifi, "WiFi configuration commands", NULL),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_CMD_REGISTER(network, &sub_network, "Network interface commands", NULL);
+
+/* =========================================================================
  * Storage Shell Commands
  * ========================================================================= */
 
