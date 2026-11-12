@@ -27,6 +27,8 @@
 #include "common/sensor_types.h"
 #include "common/thermal_energy_types.h"
 #include "common/rtc_types.h"
+#include "common/storage_fs_types.h"
+#include "interfaces/i_storage_fs.h"
 #include "application/zbus/sensor_channels.h"
 
 #ifdef __cplusplus
@@ -778,6 +780,40 @@ int app_facade_time_get_status(rtc_sync_status_t *out_status);
  * @return Packed 32-bit DOS timestamp.
  */
 uint32_t app_facade_time_get_fattime(void);
+
+/* =========================================================================
+ * MicroSD Storage & Filesystem Service APIs
+ * ========================================================================= */
+
+/**
+ * @brief Retrieve MicroSD card presence, mount state, and volume capacity.
+ *
+ * @param[out] out_status Destination status pointer (may be NULL).
+ * @param[out] out_vol    Destination volume info pointer (may be NULL).
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_sd_get_status(storage_fs_card_status_t *out_status, storage_fs_volume_info_t *out_vol);
+
+/**
+ * @brief Request manual mount of the MicroSD card.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_sd_mount(void);
+
+/**
+ * @brief Request clean unmount / safe ejection of the MicroSD card.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_sd_eject(void);
+
+/**
+ * @brief Get the abstract MicroSD storage filesystem port handle.
+ *
+ * @return Pointer to storage fs port, or NULL if uninitialized.
+ */
+const i_storage_fs_t *app_facade_get_sd_storage(void);
 
 #ifdef __cplusplus
 }

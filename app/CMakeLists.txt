@@ -63,6 +63,10 @@ target_sources(app PRIVATE
     src/application/active_objects/ao_thermal_energy.c
     src/domain/time/rtc_time_calc.c
     src/infrastructure/adapters/adapter_rtc_zephyr.c
+    src/domain/storage/sd_lifecycle_sm.c
+    src/application/zbus/storage_channels.c
+    src/application/active_objects/ao_storage_sd.c
+    src/infrastructure/adapters/adapter_storage_sd_zephyr.c
 )
 
 if(CONFIG_SHELL)

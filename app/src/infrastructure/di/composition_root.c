@@ -76,6 +76,8 @@ static K_THREAD_STACK_DEFINE(s_ao_hvac_stack, AO_HVAC_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_sensor_stack, AO_SENSOR_MATRIX_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_alarm_stack, CONFIG_AO_ALARM_MANAGER_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_thermal_energy_stack, AO_THERMAL_ENERGY_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_storage_sd_stack, AO_STORAGE_SD_STACK_SIZE);
+
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
@@ -185,6 +187,7 @@ static int storage_provider_thermal_baseline(void *ctx, config_domain_t domain,
 #include "fake_buzzer.h"
 #include "fake_sensor_matrix.h"
 #include "fake_rtc.h"
+#include "fake_storage_fs.h"
 #endif
 
 /* =========================================================================
@@ -1664,6 +1667,54 @@ int composition_root_init_rtc(app_container_t *self)
     return 0;
 }
 
+int composition_root_init_sd_storage(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->sd_storage.initialized)
+    {
+        return 0;
+    }
+
+#if defined(CONFIG_ZTEST)
+    if (!i_storage_fs_is_bound(&self->sd_storage.port))
+    {
+        self->sd_storage.port = fake_storage_fs_get_port();
+    }
+#else
+    int err = adapter_storage_sd_zephyr_init(&self->sd_storage.zephyr_adapter, "SD", "/SD:");
+    if (err != 0)
+    {
+        LOG_ERR("Failed to initialize Zephyr MicroSD adapter: %d", err);
+        return err;
+    }
+    self->sd_storage.port = adapter_storage_sd_zephyr_bind(&self->sd_storage.zephyr_adapter);
+#endif
+
+    k_msgq_init(&self->sd_storage.queue,
+                (char *)self->sd_storage.queue_buf,
+                sizeof(ao_storage_sd_event_t),
+                AO_STORAGE_SD_QUEUE_DEPTH);
+
+    int rc = ao_storage_sd_init(&self->sd_storage.ao,
+                                &self->sd_storage.port,
+                                &self->sd_storage.queue,
+                                s_ao_storage_sd_stack,
+                                K_THREAD_STACK_SIZEOF(s_ao_storage_sd_stack),
+                                AO_STORAGE_SD_PRIORITY);
+    if (rc != 0)
+    {
+        LOG_ERR("Failed to initialize ao_storage_sd: %d", rc);
+        return rc;
+    }
+
+    self->sd_storage.initialized = true;
+    return 0;
+}
+
 int composition_root_wire_thermal_energy(app_container_t *self)
 {
     if (self == NULL || !self->thermal_energy.initialized)
@@ -1766,6 +1817,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_rtc(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_sd_storage(self);
     if (err != 0)
     {
         return err;
@@ -1886,6 +1943,16 @@ int composition_root_start(app_container_t *self)
         if (err != 0 && err != -EALREADY)
         {
             LOG_ERR("thermal energy active object start failed (%d)", err);
+            return err;
+        }
+    }
+
+    if (self->sd_storage.initialized)
+    {
+        int err = ao_storage_sd_start(&self->sd_storage.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("MicroSD active object start failed (%d)", err);
             return err;
         }
     }
@@ -2038,6 +2105,16 @@ int composition_root_stop(app_container_t *self)
         if (rc != 0)
         {
             LOG_WRN("ao_storage_wait_stopped returned %d", rc);
+        }
+    }
+
+    /* 8. Stop MicroSD storage coordinator */
+    if (self->sd_storage.initialized)
+    {
+        rc = ao_storage_sd_stop(&self->sd_storage.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_storage_sd_stop returned %d", rc);
         }
     }
 
@@ -2435,6 +2512,24 @@ const i_rtc_t *app_container_get_rtc(const app_container_t *self)
         return NULL;
     }
     return &self->rtc.port;
+}
+
+const i_storage_fs_t *app_container_get_sd_storage(const app_container_t *self)
+{
+    if (self == NULL || !self->sd_storage.initialized)
+    {
+        return NULL;
+    }
+    return &self->sd_storage.port;
+}
+
+ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self)
+{
+    if (self == NULL || !self->sd_storage.initialized)
+    {
+        return NULL;
+    }
+    return &self->sd_storage.ao;
 }
 
 int app_container_set_alarm_buzzer_mute(app_container_t *self, bool mute)

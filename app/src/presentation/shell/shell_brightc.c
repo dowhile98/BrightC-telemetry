@@ -1909,3 +1909,133 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_rtc,
 
 SHELL_CMD_REGISTER(rtc, &sub_rtc, "RTC and System Time subsystem commands", NULL);
 
+/* =========================================================================
+ * MicroSD Storage Shell Commands
+ * ========================================================================= */
+
+static int cmd_sd_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    storage_fs_card_status_t status = STORAGE_FS_CARD_UNKNOWN;
+    storage_fs_volume_info_t vol = {0};
+
+    int err = app_facade_sd_get_status(&status, &vol);
+    if (err != 0) {
+        shell_error(sh, "Failed to retrieve SD card status: %d", err);
+        return err;
+    }
+
+    const char *status_str = "UNKNOWN";
+    switch (status) {
+    case STORAGE_FS_CARD_NOT_INSERTED:
+        status_str = "NOT_INSERTED (Card absent, PG5 HIGH)";
+        break;
+    case STORAGE_FS_CARD_INSERTED_UNMOUNTED:
+        status_str = "INSERTED_UNMOUNTED (Card present, PG5 LOW, unmounted)";
+        break;
+    case STORAGE_FS_CARD_MOUNTED:
+        status_str = "MOUNTED (Operational, ready for I/O)";
+        break;
+    case STORAGE_FS_CARD_EJECT_REQUESTED:
+        status_str = "EJECT_REQUESTED (Draining operations / unmounting)";
+        break;
+    case STORAGE_FS_CARD_ERROR:
+        status_str = "ERROR (Mount or hardware fault)";
+        break;
+    default:
+        break;
+    }
+
+    shell_print(sh, "=== MicroSD Storage & Filesystem Status ===");
+    shell_print(sh, "  Card Detect (PG5):   %s",
+                (status != STORAGE_FS_CARD_NOT_INSERTED && status != STORAGE_FS_CARD_UNKNOWN) ? "DETECTED (LOW)" : "ABSENT (HIGH)");
+    shell_print(sh, "  Lifecycle Status:    %s", status_str);
+    shell_print(sh, "  Mount Point:         /SD:");
+
+    if (status == STORAGE_FS_CARD_MOUNTED) {
+        shell_print(sh, "  Filesystem Format:   %s", vol.fs_type[0] ? vol.fs_type : "FATFS");
+        shell_print(sh, "  Volume Label:        %s", vol.volume_label[0] ? vol.volume_label : "N/A");
+        shell_print(sh, "  Total Capacity:      %llu MiB", (unsigned long long)(vol.total_bytes / (1024ULL * 1024ULL)));
+        shell_print(sh, "  Available Free Space:%llu MiB", (unsigned long long)(vol.free_bytes / (1024ULL * 1024ULL)));
+        shell_print(sh, "  Sector / Cluster:    %u B / %u B", vol.sector_size_bytes, vol.cluster_size_bytes);
+    }
+    return 0;
+}
+
+static int cmd_sd_mount(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int err = app_facade_sd_mount();
+    if (err != 0) {
+        shell_error(sh, "Failed to request SD mount: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "MicroSD mount request submitted.");
+    return 0;
+}
+
+static int cmd_sd_eject(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int err = app_facade_sd_eject();
+    if (err != 0) {
+        shell_error(sh, "Failed to request SD eject: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "MicroSD eject request submitted. Safe to remove when unmounted.");
+    return 0;
+}
+
+static int cmd_sd_ls(const struct shell *sh, size_t argc, char **argv)
+{
+    const char *path = (argc > 1) ? argv[1] : "/SD:";
+
+    const i_storage_fs_t *fs = app_facade_get_sd_storage();
+    if (fs == NULL || !i_storage_fs_is_bound(fs)) {
+        shell_error(sh, "MicroSD filesystem port unavailable or uninitialized");
+        return -ENODEV;
+    }
+
+    void *dir = NULL;
+    int err = i_storage_fs_opendir(fs, &dir, path);
+    if (err != 0) {
+        shell_error(sh, "Failed to open directory %s: %d", path, err);
+        return err;
+    }
+
+    shell_print(sh, "Directory listing of %s:", path);
+    storage_fs_dirent_t entry;
+    while (i_storage_fs_readdir(fs, dir, &entry) == 0) {
+        if (entry.name[0] == '\0') {
+            break;
+        }
+        if (entry.type == STORAGE_FS_ENTRY_DIR) {
+            shell_print(sh, "  <DIR>         %s", entry.name);
+        } else {
+            shell_print(sh, "  %10llu B  %s", (unsigned long long)entry.size_bytes, entry.name);
+        }
+    }
+
+    (void)i_storage_fs_closedir(fs, dir);
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_sd,
+    SHELL_CMD(status, NULL, "Display card detect status (PG5), mount state, total and free space", cmd_sd_status),
+    SHELL_CMD(mount, NULL, "Request manual mount of MicroSD card", cmd_sd_mount),
+    SHELL_CMD(eject, NULL, "Request clean unmount / safe removal of MicroSD card", cmd_sd_eject),
+    SHELL_CMD_ARG(ls, NULL, "List files and directories in path: sd ls [path]", cmd_sd_ls, 1, 1),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_CMD_REGISTER(sd, &sub_sd, "MicroSD storage and filesystem commands", NULL);
+
+

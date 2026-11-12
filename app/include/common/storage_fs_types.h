@@ -32,29 +32,48 @@ extern "C" {
  * @brief Bitwise flags for file opening modes.
  */
 typedef enum {
-    FS_OPEN_READ          = (1U << 0), /**< Open for read access */
-    FS_OPEN_WRITE         = (1U << 1), /**< Open for write access */
-    FS_OPEN_CREATE_ALWAYS = (1U << 2), /**< Create new file; if exists, truncate to 0 */
-    FS_OPEN_CREATE_NEW    = (1U << 3), /**< Create file only if it does not already exist */
-    FS_OPEN_APPEND        = (1U << 4), /**< Append writes to end of file */
-} fs_open_flags_t;
+    STORAGE_FS_OPEN_READ          = (1U << 0), /**< Open for read access */
+    STORAGE_FS_OPEN_WRITE         = (1U << 1), /**< Open for write access */
+    STORAGE_FS_OPEN_CREATE_ALWAYS = (1U << 2), /**< Create new file; if exists, truncate to 0 */
+    STORAGE_FS_OPEN_CREATE_NEW    = (1U << 3), /**< Create file only if it does not already exist */
+    STORAGE_FS_OPEN_APPEND        = (1U << 4), /**< Append writes to end of file */
+} storage_fs_open_flags_t;
+
+/* Backward-compatibility alias */
+typedef storage_fs_open_flags_t fs_open_flags_t;
+#define FS_OPEN_READ          STORAGE_FS_OPEN_READ
+#define FS_OPEN_WRITE         STORAGE_FS_OPEN_WRITE
+#define FS_OPEN_CREATE_ALWAYS STORAGE_FS_OPEN_CREATE_ALWAYS
+#define FS_OPEN_CREATE_NEW    STORAGE_FS_OPEN_CREATE_NEW
+#define FS_OPEN_APPEND        STORAGE_FS_OPEN_APPEND
 
 /**
  * @brief Origin positions for file seek operations.
  */
 typedef enum {
-    FS_SEEK_SET = 0, /**< Seek relative to start of file */
-    FS_SEEK_CUR = 1, /**< Seek relative to current file position */
-    FS_SEEK_END = 2, /**< Seek relative to end of file */
-} fs_seek_origin_t;
+    STORAGE_FS_SEEK_SET = 0, /**< Seek relative to start of file */
+    STORAGE_FS_SEEK_CUR = 1, /**< Seek relative to current file position */
+    STORAGE_FS_SEEK_END = 2, /**< Seek relative to end of file */
+} storage_fs_seek_origin_t;
+
+/* Backward-compatibility alias */
+typedef storage_fs_seek_origin_t fs_seek_origin_t;
+#define FS_SEEK_SET STORAGE_FS_SEEK_SET
+#define FS_SEEK_CUR STORAGE_FS_SEEK_CUR
+#define FS_SEEK_END STORAGE_FS_SEEK_END
 
 /**
  * @brief Directory entry and file classification.
  */
 typedef enum {
-    FS_ENTRY_TYPE_FILE = 0, /**< Regular data file */
-    FS_ENTRY_TYPE_DIR  = 1, /**< Directory node */
-} fs_entry_type_t;
+    STORAGE_FS_ENTRY_FILE = 0, /**< Regular data file */
+    STORAGE_FS_ENTRY_DIR  = 1, /**< Directory node */
+} storage_fs_entry_type_t;
+
+/* Backward-compatibility alias */
+typedef storage_fs_entry_type_t fs_entry_type_t;
+#define FS_ENTRY_TYPE_FILE STORAGE_FS_ENTRY_FILE
+#define FS_ENTRY_TYPE_DIR  STORAGE_FS_ENTRY_DIR
 
 /*============================================================================*
  * 2. METADATA & VOLUME DESCRIPTIONS
@@ -64,20 +83,26 @@ typedef enum {
  * @brief File or directory status information.
  */
 typedef struct {
-    uint64_t        size_bytes;                 /**< File size in bytes (0 for directories) */
-    fs_entry_type_t type;                       /**< Entry classification (File vs Dir) */
-    uint32_t        modified_timestamp;         /**< UNIX epoch timestamp if supported, else 0 */
-    char            name[FS_MAX_FILENAME_LEN];  /**< Base name of entry */
-} fs_stat_t;
+    uint64_t                size_bytes;                 /**< File size in bytes (0 for directories) */
+    storage_fs_entry_type_t type;                       /**< Entry classification (File vs Dir) */
+    uint32_t                modified_timestamp;         /**< UNIX epoch timestamp if supported, else 0 */
+    char                    name[FS_MAX_FILENAME_LEN];  /**< Base name of entry */
+} storage_fs_stat_t;
+
+/* Backward-compatibility alias */
+typedef storage_fs_stat_t fs_stat_t;
 
 /**
  * @brief Directory traversal entry.
  */
 typedef struct {
-    fs_entry_type_t type;                       /**< Entry type */
-    uint64_t        size_bytes;                 /**< File size in bytes */
-    char            name[FS_MAX_FILENAME_LEN];  /**< Entry name (null-terminated) */
-} fs_dirent_t;
+    storage_fs_entry_type_t type;                       /**< Entry type */
+    uint64_t                size_bytes;                 /**< File size in bytes */
+    char                    name[FS_MAX_FILENAME_LEN];  /**< Entry name (null-terminated) */
+} storage_fs_dirent_t;
+
+/* Backward-compatibility alias */
+typedef storage_fs_dirent_t fs_dirent_t;
 
 /**
  * @brief Mounted filesystem volume statistics.
@@ -89,27 +114,40 @@ typedef struct {
     uint32_t cluster_size_bytes;    /**< Allocation cluster size (e.g., 32768) */
     char     fs_type[16];           /**< Volume format (e.g., "FAT32", "exFAT") */
     char     volume_label[32];      /**< Volume label string */
-} fs_volume_info_t;
+} storage_fs_volume_info_t;
+
+/* Backward-compatibility alias */
+typedef storage_fs_volume_info_t fs_volume_info_t;
 
 /*============================================================================*
  * 3. SD CARD HOT-PLUG LIFECYCLE & CONCURRENCY
  *============================================================================*/
 
 /**
- * @brief High-level lifecycle state machine for hot-pluggable MicroSD cards.
+ * @brief High-level card status for hot-pluggable MicroSD cards.
  */
 typedef enum {
-    SD_CARD_STATE_NO_CARD = 0,         /**< MicroSD physical card absent (PG5 HIGH) */
-    SD_CARD_STATE_INSERTED_DEBOUNCING, /**< Card detect triggered, debouncing contact chatter */
-    SD_CARD_STATE_MOUNTING,            /**< Initializing SDMMC1 peripheral and mounting FATFS */
-    SD_CARD_STATE_READY,               /**< Filesystem successfully mounted and operational */
-    SD_CARD_STATE_UNMOUNTING,          /**< Orderly unmount or surprise removal cleanup */
-    SD_CARD_STATE_ERROR,               /**< Hardware failure, unsupported FS, or mount timeout */
+    STORAGE_FS_CARD_UNKNOWN = 0,         /**< Unknown or uninitialized card status */
+    STORAGE_FS_CARD_NOT_INSERTED,        /**< Card physically absent */
+    STORAGE_FS_CARD_INSERTED_UNMOUNTED,  /**< Card inserted but unmounted / debouncing */
+    STORAGE_FS_CARD_MOUNTED,             /**< Filesystem successfully mounted and operational */
+    STORAGE_FS_CARD_EJECT_REQUESTED,     /**< Eject requested / draining active ops */
+    STORAGE_FS_CARD_ERROR,               /**< Mount or hardware error */
+} storage_fs_card_status_t;
+
+/* Compatibility enum and mapping */
+typedef enum {
+    SD_CARD_STATE_NO_CARD = STORAGE_FS_CARD_NOT_INSERTED,
+    SD_CARD_STATE_INSERTED_DEBOUNCING = STORAGE_FS_CARD_INSERTED_UNMOUNTED,
+    SD_CARD_STATE_MOUNTING,
+    SD_CARD_STATE_READY = STORAGE_FS_CARD_MOUNTED,
+    SD_CARD_STATE_UNMOUNTING = STORAGE_FS_CARD_EJECT_REQUESTED,
+    SD_CARD_STATE_ERROR = STORAGE_FS_CARD_ERROR,
     SD_CARD_STATE_MAX
 } sd_card_state_t;
 
 /**
- * @brief Asynchronous status notification published over Zbus (chan_storage_sd_status).
+ * @brief Asynchronous status notification published over Zbus.
  */
 typedef struct {
     sd_card_state_t state;               /**< Current state machine status */
@@ -124,9 +162,6 @@ typedef struct {
  * 4. OPAQUE FILE & DIRECTORY HANDLE TYPES
  *============================================================================*/
 
-/**
- * @brief Opaque forward declarations for implementation handles.
- */
 struct fs_file_s;
 typedef struct fs_file_s *fs_file_t;
 

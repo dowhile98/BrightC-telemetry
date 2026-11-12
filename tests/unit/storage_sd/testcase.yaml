@@ -1,0 +1,8 @@
+tests:
+  unit.storage_sd:
+    tags:
+      - storage
+      - sd
+      - domain
+      - unit
+    platform_allow: native_sim

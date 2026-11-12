@@ -46,6 +46,8 @@
 #include "interfaces/i_thermal_energy.h"
 #include "interfaces/i_rtc.h"
 #include "common/rtc_types.h"
+#include "interfaces/i_storage_fs.h"
+#include "application/active_objects/ao_storage_sd.h"
 #include "application/active_objects/ao_alarm_manager.h"
 #include "application/active_objects/ao_thermal_energy.h"
 #include "infrastructure/adapters/adapter_alarm_detector_di.h"
@@ -68,6 +70,7 @@
 #include "infrastructure/adapters/adapter_buzzer_pwm.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
 #include "infrastructure/adapters/adapter_rtc_zephyr.h"
+#include "infrastructure/adapters/adapter_storage_sd_zephyr.h"
 #endif
 
 #ifdef __cplusplus
@@ -219,6 +222,18 @@ struct app_container {
 #endif
         bool initialized;
     } rtc;
+
+    /* Subsystem 12: MicroSD Storage & Filesystem */
+    struct {
+        i_storage_fs_t port;
+#ifndef CONFIG_ZTEST
+        adapter_storage_sd_zephyr_t zephyr_adapter;
+#endif
+        ao_storage_sd_t ao;
+        struct k_msgq queue;
+        uint8_t queue_buf[AO_STORAGE_SD_QUEUE_DEPTH * sizeof(ao_storage_sd_event_t)];
+        bool initialized;
+    } sd_storage;
 
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
@@ -564,12 +579,40 @@ i_thermal_energy_t composition_root_get_thermal_energy_port(app_container_t *sel
 int composition_root_init_rtc(app_container_t *self);
 
 /**
+ * @brief Initialize the MicroSD Storage and Filesystem subsystem.
+ *
+ * Configures the Zephyr VFS / FatFS adapter (or fake in Ztest), message queue,
+ * and starts the ao_storage_sd active object coordinator.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_sd_storage(app_container_t *self);
+
+/**
  * @brief Get the abstract RTC and System Time port handle.
  *
  * @param[in] self Container instance.
  * @return Pointer to RTC port, or NULL if uninitialized / invalid.
  */
 const i_rtc_t *app_container_get_rtc(const app_container_t *self);
+
+/**
+ * @brief Get the abstract MicroSD Storage and Filesystem port handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to Storage FS port, or NULL if uninitialized / invalid.
+ */
+const i_storage_fs_t *app_container_get_sd_storage(const app_container_t *self);
+
+/**
+ * @brief Get the MicroSD Storage Active Object handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_storage_sd_t, or NULL if uninitialized.
+ */
+ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self);
+
 
 /* =========================================================================
  * Full Lifecycle Management

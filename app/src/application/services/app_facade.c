@@ -1505,3 +1505,59 @@ uint32_t app_facade_time_get_fattime(void)
     return rtc_calc_datetime_to_fattime(&dt);
 }
 
+/* =========================================================================
+ * MicroSD Storage & Filesystem Service APIs
+ * ========================================================================= */
+
+int app_facade_sd_get_status(storage_fs_card_status_t *out_status, storage_fs_volume_info_t *out_vol)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    ao_storage_sd_t *ao = app_container_get_sd_storage_ao(s_app);
+    if (ao == NULL) {
+        return -ENODEV;
+    }
+
+    return ao_storage_sd_get_status(ao, out_status, out_vol);
+}
+
+int app_facade_sd_mount(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    ao_storage_sd_t *ao = app_container_get_sd_storage_ao(s_app);
+    if (ao == NULL) {
+        return -ENODEV;
+    }
+
+    return ao_storage_sd_mount(ao);
+}
+
+int app_facade_sd_eject(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+
+    ao_storage_sd_t *ao = app_container_get_sd_storage_ao(s_app);
+    if (ao == NULL) {
+        return -ENODEV;
+    }
+
+    return ao_storage_sd_eject(ao);
+}
+
+const i_storage_fs_t *app_facade_get_sd_storage(void)
+{
+    if (s_app == NULL) {
+        return NULL;
+    }
+
+    return app_container_get_sd_storage(s_app);
+}
+
+

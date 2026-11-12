@@ -26,35 +26,34 @@ extern "C" {
 #endif
 
 /*============================================================================*
- * 1. V-TABLE (implementation detail, never called directly by application)
+ * 1. V-TABLE
  *============================================================================*/
 
 typedef struct {
     /* --- Volume Operations --- */
-    int (*mount)(void *impl);
-    int (*unmount)(void *impl);
-    bool (*is_mounted)(void *impl);
     bool (*is_card_present)(void *impl);
-    int (*get_volume_info)(void *impl, fs_volume_info_t *out_info);
+    int (*mount)(void *impl, const char *mount_pt);
+    int (*unmount)(void *impl, const char *mount_pt);
+    int (*statvfs)(void *impl, const char *path, storage_fs_volume_info_t *out_vol);
 
     /* --- File Operations --- */
-    int (*file_open)(void *impl, fs_file_t *out_file, const char *path, uint32_t flags);
-    int (*file_close)(void *impl, fs_file_t file);
-    int (*file_read)(void *impl, fs_file_t file, void *buf, size_t count, size_t *out_bytes_read);
-    int (*file_write)(void *impl, fs_file_t file, const void *buf, size_t count, size_t *out_bytes_written);
-    int (*file_seek)(void *impl, fs_file_t file, int64_t offset, fs_seek_origin_t origin);
-    int (*file_tell)(void *impl, fs_file_t file, int64_t *out_offset);
-    int (*file_sync)(void *impl, fs_file_t file);
-    int (*file_truncate)(void *impl, fs_file_t file, int64_t length);
+    int (*open)(void *impl, void **out_file_handle, const char *path, uint32_t flags);
+    int (*close)(void *impl, void *file_handle);
+    int (*read)(void *impl, void *file_handle, void *buf, size_t len, size_t *out_read);
+    int (*write)(void *impl, void *file_handle, const void *buf, size_t len, size_t *out_written);
+    int (*sync)(void *impl, void *file_handle);
+    int (*seek)(void *impl, void *file_handle, int64_t offset, int whence);
+    int (*tell)(void *impl, void *file_handle, int64_t *out_offset);
+    int (*truncate)(void *impl, void *file_handle, int64_t length);
 
     /* --- Directory & Path Operations --- */
-    int (*dir_open)(void *impl, fs_dir_t *out_dir, const char *path);
-    int (*dir_read)(void *impl, fs_dir_t dir, fs_dirent_t *out_entry);
-    int (*dir_close)(void *impl, fs_dir_t dir);
     int (*mkdir)(void *impl, const char *path);
+    int (*stat)(void *impl, const char *path, storage_fs_stat_t *out_stat);
+    int (*opendir)(void *impl, void **out_dir_handle, const char *path);
+    int (*readdir)(void *impl, void *dir_handle, storage_fs_dirent_t *out_entry);
+    int (*closedir)(void *impl, void *dir_handle);
     int (*unlink)(void *impl, const char *path);
     int (*rename)(void *impl, const char *old_path, const char *new_path);
-    int (*stat)(void *impl, const char *path, fs_stat_t *out_stat);
 } i_storage_fs_api_t;
 
 /*============================================================================*
@@ -67,67 +66,34 @@ typedef struct {
 } i_storage_fs_t;
 
 /*============================================================================*
- * 3. VALIDATED WRAPPERS (public interface used by application and use cases)
+ * 3. VALIDATED WRAPPERS
  *============================================================================*/
 
-/**
- * @brief Check whether an i_storage_fs_t handle is bound to a valid implementation.
- *
- * @param storage Storage instance handle.
- * @return true if valid, false otherwise.
- */
 static inline bool i_storage_fs_is_bound(const i_storage_fs_t *storage)
 {
     return (storage != NULL &&
             storage->api != NULL &&
             storage->impl != NULL &&
+            storage->api->is_card_present != NULL &&
             storage->api->mount != NULL &&
             storage->api->unmount != NULL &&
-            storage->api->is_mounted != NULL &&
-            storage->api->is_card_present != NULL &&
-            storage->api->get_volume_info != NULL &&
-            storage->api->file_open != NULL &&
-            storage->api->file_close != NULL &&
-            storage->api->file_read != NULL &&
-            storage->api->file_write != NULL &&
-            storage->api->file_seek != NULL &&
-            storage->api->file_tell != NULL &&
-            storage->api->file_sync != NULL &&
-            storage->api->file_truncate != NULL &&
-            storage->api->dir_open != NULL &&
-            storage->api->dir_read != NULL &&
-            storage->api->dir_close != NULL &&
+            storage->api->statvfs != NULL &&
+            storage->api->open != NULL &&
+            storage->api->close != NULL &&
+            storage->api->read != NULL &&
+            storage->api->write != NULL &&
+            storage->api->sync != NULL &&
+            storage->api->seek != NULL &&
+            storage->api->tell != NULL &&
             storage->api->mkdir != NULL &&
-            storage->api->unlink != NULL &&
-            storage->api->rename != NULL &&
-            storage->api->stat != NULL);
+            storage->api->stat != NULL &&
+            storage->api->opendir != NULL &&
+            storage->api->readdir != NULL &&
+            storage->api->closedir != NULL &&
+            storage->api->unlink != NULL);
 }
 
 /* --- Volume Wrappers --- */
-
-static inline int i_storage_fs_mount(const i_storage_fs_t *storage)
-{
-    if (!i_storage_fs_is_bound(storage)) {
-        return -EINVAL;
-    }
-    return storage->api->mount(storage->impl);
-}
-
-static inline int i_storage_fs_unmount(const i_storage_fs_t *storage)
-{
-    if (!i_storage_fs_is_bound(storage)) {
-        return -EINVAL;
-    }
-    return storage->api->unmount(storage->impl);
-}
-
-static inline bool i_storage_fs_is_mounted(const i_storage_fs_t *storage)
-{
-    if (!i_storage_fs_is_bound(storage)) {
-        return false;
-    }
-    return storage->api->is_mounted(storage->impl);
-}
 
 static inline bool i_storage_fs_is_card_present(const i_storage_fs_t *storage)
 {
@@ -137,121 +103,120 @@ static inline bool i_storage_fs_is_card_present(const i_storage_fs_t *storage)
     return storage->api->is_card_present(storage->impl);
 }
 
-static inline int i_storage_fs_get_volume_info(const i_storage_fs_t *storage, fs_volume_info_t *out_info)
+static inline int i_storage_fs_mount(const i_storage_fs_t *storage, const char *mount_pt)
 {
-    if (!i_storage_fs_is_bound(storage) || out_info == NULL) {
+    if (!i_storage_fs_is_bound(storage) || mount_pt == NULL) {
         return -EINVAL;
     }
-    return storage->api->get_volume_info(storage->impl, out_info);
+    return storage->api->mount(storage->impl, mount_pt);
+}
+
+static inline int i_storage_fs_unmount(const i_storage_fs_t *storage, const char *mount_pt)
+{
+    if (!i_storage_fs_is_bound(storage) || mount_pt == NULL) {
+        return -EINVAL;
+    }
+    return storage->api->unmount(storage->impl, mount_pt);
+}
+
+static inline int i_storage_fs_statvfs(const i_storage_fs_t *storage,
+                                       const char *path,
+                                       storage_fs_volume_info_t *out_vol)
+{
+    if (!i_storage_fs_is_bound(storage) || path == NULL || out_vol == NULL) {
+        return -EINVAL;
+    }
+    return storage->api->statvfs(storage->impl, path, out_vol);
 }
 
 /* --- File Wrappers --- */
 
-static inline int i_storage_fs_file_open(const i_storage_fs_t *storage,
-                                         fs_file_t *out_file,
-                                         const char *path,
-                                         uint32_t flags)
+static inline int i_storage_fs_open(const i_storage_fs_t *storage,
+                                    void **out_file_handle,
+                                    const char *path,
+                                    uint32_t flags)
 {
-    if (!i_storage_fs_is_bound(storage) || out_file == NULL || path == NULL) {
+    if (!i_storage_fs_is_bound(storage) || out_file_handle == NULL || path == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_open(storage->impl, out_file, path, flags);
+    return storage->api->open(storage->impl, out_file_handle, path, flags);
 }
 
-static inline int i_storage_fs_file_close(const i_storage_fs_t *storage, fs_file_t file)
+static inline int i_storage_fs_close(const i_storage_fs_t *storage, void *file_handle)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_close(storage->impl, file);
+    return storage->api->close(storage->impl, file_handle);
 }
 
-static inline int i_storage_fs_file_read(const i_storage_fs_t *storage,
-                                         fs_file_t file,
-                                         void *buf,
-                                         size_t count,
-                                         size_t *out_bytes_read)
+static inline int i_storage_fs_read(const i_storage_fs_t *storage,
+                                    void *file_handle,
+                                    void *buf,
+                                    size_t len,
+                                    size_t *out_read)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL || buf == NULL) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL || buf == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_read(storage->impl, file, buf, count, out_bytes_read);
+    return storage->api->read(storage->impl, file_handle, buf, len, out_read);
 }
 
-static inline int i_storage_fs_file_write(const i_storage_fs_t *storage,
-                                          fs_file_t file,
-                                          const void *buf,
-                                          size_t count,
-                                          size_t *out_bytes_written)
+static inline int i_storage_fs_write(const i_storage_fs_t *storage,
+                                     void *file_handle,
+                                     const void *buf,
+                                     size_t len,
+                                     size_t *out_written)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL || buf == NULL) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL || buf == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_write(storage->impl, file, buf, count, out_bytes_written);
+    return storage->api->write(storage->impl, file_handle, buf, len, out_written);
 }
 
-static inline int i_storage_fs_file_seek(const i_storage_fs_t *storage,
-                                         fs_file_t file,
-                                         int64_t offset,
-                                         fs_seek_origin_t origin)
+static inline int i_storage_fs_sync(const i_storage_fs_t *storage, void *file_handle)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_seek(storage->impl, file, offset, origin);
+    return storage->api->sync(storage->impl, file_handle);
 }
 
-static inline int i_storage_fs_file_tell(const i_storage_fs_t *storage,
-                                         fs_file_t file,
-                                         int64_t *out_offset)
+static inline int i_storage_fs_seek(const i_storage_fs_t *storage,
+                                    void *file_handle,
+                                    int64_t offset,
+                                    int whence)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL || out_offset == NULL) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_tell(storage->impl, file, out_offset);
+    return storage->api->seek(storage->impl, file_handle, offset, whence);
 }
 
-static inline int i_storage_fs_file_sync(const i_storage_fs_t *storage, fs_file_t file)
+static inline int i_storage_fs_tell(const i_storage_fs_t *storage,
+                                    void *file_handle,
+                                    int64_t *out_offset)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL || out_offset == NULL) {
         return -EINVAL;
     }
-    return storage->api->file_sync(storage->impl, file);
+    return storage->api->tell(storage->impl, file_handle, out_offset);
 }
 
-static inline int i_storage_fs_file_truncate(const i_storage_fs_t *storage, fs_file_t file, int64_t length)
+static inline int i_storage_fs_truncate(const i_storage_fs_t *storage,
+                                        void *file_handle,
+                                        int64_t length)
 {
-    if (!i_storage_fs_is_bound(storage) || file == NULL || length < 0) {
+    if (!i_storage_fs_is_bound(storage) || file_handle == NULL || length < 0) {
         return -EINVAL;
     }
-    return storage->api->file_truncate(storage->impl, file, length);
+    if (storage->api->truncate == NULL) {
+        return -ENOSYS;
+    }
+    return storage->api->truncate(storage->impl, file_handle, length);
 }
 
 /* --- Directory & Path Wrappers --- */
-
-static inline int i_storage_fs_dir_open(const i_storage_fs_t *storage, fs_dir_t *out_dir, const char *path)
-{
-    if (!i_storage_fs_is_bound(storage) || out_dir == NULL || path == NULL) {
-        return -EINVAL;
-    }
-    return storage->api->dir_open(storage->impl, out_dir, path);
-}
-
-static inline int i_storage_fs_dir_read(const i_storage_fs_t *storage, fs_dir_t dir, fs_dirent_t *out_entry)
-{
-    if (!i_storage_fs_is_bound(storage) || dir == NULL || out_entry == NULL) {
-        return -EINVAL;
-    }
-    return storage->api->dir_read(storage->impl, dir, out_entry);
-}
-
-static inline int i_storage_fs_dir_close(const i_storage_fs_t *storage, fs_dir_t dir)
-{
-    if (!i_storage_fs_is_bound(storage) || dir == NULL) {
-        return -EINVAL;
-    }
-    return storage->api->dir_close(storage->impl, dir);
-}
 
 static inline int i_storage_fs_mkdir(const i_storage_fs_t *storage, const char *path)
 {
@@ -259,6 +224,44 @@ static inline int i_storage_fs_mkdir(const i_storage_fs_t *storage, const char *
         return -EINVAL;
     }
     return storage->api->mkdir(storage->impl, path);
+}
+
+static inline int i_storage_fs_stat(const i_storage_fs_t *storage,
+                                    const char *path,
+                                    storage_fs_stat_t *out_stat)
+{
+    if (!i_storage_fs_is_bound(storage) || path == NULL || out_stat == NULL) {
+        return -EINVAL;
+    }
+    return storage->api->stat(storage->impl, path, out_stat);
+}
+
+static inline int i_storage_fs_opendir(const i_storage_fs_t *storage,
+                                       void **out_dir_handle,
+                                       const char *path)
+{
+    if (!i_storage_fs_is_bound(storage) || out_dir_handle == NULL || path == NULL) {
+        return -EINVAL;
+    }
+    return storage->api->opendir(storage->impl, out_dir_handle, path);
+}
+
+static inline int i_storage_fs_readdir(const i_storage_fs_t *storage,
+                                       void *dir_handle,
+                                       storage_fs_dirent_t *out_entry)
+{
+    if (!i_storage_fs_is_bound(storage) || dir_handle == NULL || out_entry == NULL) {
+        return -EINVAL;
+    }
+    return storage->api->readdir(storage->impl, dir_handle, out_entry);
+}
+
+static inline int i_storage_fs_closedir(const i_storage_fs_t *storage, void *dir_handle)
+{
+    if (!i_storage_fs_is_bound(storage) || dir_handle == NULL) {
+        return -EINVAL;
+    }
+    return storage->api->closedir(storage->impl, dir_handle);
 }
 
 static inline int i_storage_fs_unlink(const i_storage_fs_t *storage, const char *path)
@@ -269,20 +272,94 @@ static inline int i_storage_fs_unlink(const i_storage_fs_t *storage, const char 
     return storage->api->unlink(storage->impl, path);
 }
 
-static inline int i_storage_fs_rename(const i_storage_fs_t *storage, const char *old_path, const char *new_path)
+static inline int i_storage_fs_rename(const i_storage_fs_t *storage,
+                                      const char *old_path,
+                                      const char *new_path)
 {
     if (!i_storage_fs_is_bound(storage) || old_path == NULL || new_path == NULL) {
         return -EINVAL;
     }
+    if (storage->api->rename == NULL) {
+        return -ENOSYS;
+    }
     return storage->api->rename(storage->impl, old_path, new_path);
 }
 
-static inline int i_storage_fs_stat(const i_storage_fs_t *storage, const char *path, fs_stat_t *out_stat)
+/* Backward compatibility wrappers */
+static inline int i_storage_fs_file_open(const i_storage_fs_t *storage,
+                                         fs_file_t *out_file,
+                                         const char *path,
+                                         uint32_t flags)
 {
-    if (!i_storage_fs_is_bound(storage) || path == NULL || out_stat == NULL) {
-        return -EINVAL;
-    }
-    return storage->api->stat(storage->impl, path, out_stat);
+    return i_storage_fs_open(storage, (void **)out_file, path, flags);
+}
+
+static inline int i_storage_fs_file_close(const i_storage_fs_t *storage, fs_file_t file)
+{
+    return i_storage_fs_close(storage, (void *)file);
+}
+
+static inline int i_storage_fs_file_read(const i_storage_fs_t *storage,
+                                         fs_file_t file,
+                                         void *buf,
+                                         size_t count,
+                                         size_t *out_bytes_read)
+{
+    return i_storage_fs_read(storage, (void *)file, buf, count, out_bytes_read);
+}
+
+static inline int i_storage_fs_file_write(const i_storage_fs_t *storage,
+                                          fs_file_t file,
+                                          const void *buf,
+                                          size_t count,
+                                          size_t *out_bytes_written)
+{
+    return i_storage_fs_write(storage, (void *)file, buf, count, out_bytes_written);
+}
+
+static inline int i_storage_fs_file_seek(const i_storage_fs_t *storage,
+                                         fs_file_t file,
+                                         int64_t offset,
+                                         fs_seek_origin_t origin)
+{
+    return i_storage_fs_seek(storage, (void *)file, offset, (int)origin);
+}
+
+static inline int i_storage_fs_file_tell(const i_storage_fs_t *storage,
+                                         fs_file_t file,
+                                         int64_t *out_offset)
+{
+    return i_storage_fs_tell(storage, (void *)file, out_offset);
+}
+
+static inline int i_storage_fs_file_sync(const i_storage_fs_t *storage, fs_file_t file)
+{
+    return i_storage_fs_sync(storage, (void *)file);
+}
+
+static inline int i_storage_fs_file_truncate(const i_storage_fs_t *storage, fs_file_t file, int64_t length)
+{
+    return i_storage_fs_truncate(storage, (void *)file, length);
+}
+
+static inline int i_storage_fs_dir_open(const i_storage_fs_t *storage, fs_dir_t *out_dir, const char *path)
+{
+    return i_storage_fs_opendir(storage, (void **)out_dir, path);
+}
+
+static inline int i_storage_fs_dir_read(const i_storage_fs_t *storage, fs_dir_t dir, fs_dirent_t *out_entry)
+{
+    return i_storage_fs_readdir(storage, (void *)dir, out_entry);
+}
+
+static inline int i_storage_fs_dir_close(const i_storage_fs_t *storage, fs_dir_t dir)
+{
+    return i_storage_fs_closedir(storage, (void *)dir);
+}
+
+static inline int i_storage_fs_get_volume_info(const i_storage_fs_t *storage, fs_volume_info_t *out_info)
+{
+    return i_storage_fs_statvfs(storage, "/SD:", out_info);
 }
 
 #ifdef __cplusplus
