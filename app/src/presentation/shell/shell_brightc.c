@@ -558,24 +558,24 @@ static int cmd_hvac_timers(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_hvac,
-    SHELL_CMD(status, NULL, "Show group modes, temperatures, active units, relays, alarms", cmd_hvac_status),
-    SHELL_CMD_ARG(mode, NULL, "Set operating mode: hvac mode <grp> <off|cool|heat|auto|fan_only|emergency>", cmd_hvac_mode, 3, 0),
-    SHELL_CMD_ARG(setpoint, NULL, "Set target temperature: hvac setpoint <grp> <cool_x10> [heat_x10]", cmd_hvac_setpoint, 3, 1),
-    SHELL_CMD_ARG(sensors, NULL, "Set group sensor range: hvac sensors <grp> <start> <end> [max|avg|min]", cmd_hvac_sensors, 4, 1),
-    SHELL_CMD_ARG(config, NULL, "Configure group units: hvac config <grp> <active_turn> [unit_mask_hex]", cmd_hvac_config, 3, 1),
-    SHELL_CMD_ARG(rotation, NULL, "Set group rotation interval: hvac rotation <grp> <days (e.g. 7, 15, 20, 30)>", cmd_hvac_rotation, 3, 0),
-    SHELL_CMD_ARG(fan_ctrl, NULL, "Configure Relay G fan control: hvac fan_ctrl <grp> <on|off> [delay_s]", cmd_hvac_fan_ctrl, 3, 1),
-    SHELL_CMD_ARG(rotate, NULL, "Force unit rotation turn: hvac rotate <grp>", cmd_hvac_rotate, 2, 0),
-    SHELL_CMD_ARG(manual, NULL, "Manual override: hvac manual <unit> <on|off> [comp_on|comp_off] [fan_on|fan_off]", cmd_hvac_manual, 3, 2),
-    SHELL_CMD_ARG(relay, NULL, "Directly drive relay: hvac relay <ch 0..17> <0|1>", cmd_hvac_relay, 3, 0),
-    SHELL_CMD_ARG(set_temp, NULL, "Inject test temperature: hvac set_temp <degrees_c>", cmd_hvac_set_temp, 2, 0),
-    SHELL_CMD(clear_temp, NULL, "Clear injected test temperature and resume sensors", cmd_hvac_clear_temp),
-    SHELL_CMD(eeprom_reset, NULL, "Reset HVAC domain in EEPROM to default 26/28/30/32 setpoints and apply", cmd_hvac_eeprom_reset),
-    SHELL_CMD(timers, NULL, "Show active countdown timers for all units and groups", cmd_hvac_timers),
+    SHELL_CMD(status, NULL, "Show each group's mode, setpoints, active units, relay states, and alarms", cmd_hvac_status),
+    SHELL_CMD_ARG(mode, NULL, "Set mode: <group 0-3> <off|cool|heat|auto|fan_only|emergency>", cmd_hvac_mode, 3, 0),
+    SHELL_CMD_ARG(setpoint, NULL, "Set targets in tenths C: <group> <cool_x10> [heat_x10] (heat defaults to 0)", cmd_hvac_setpoint, 3, 1),
+    SHELL_CMD_ARG(sensors, NULL, "Assign sensor ID range and metric policy: <group> <start_id> <end_id> [max|avg|min] (default max)", cmd_hvac_sensors, 4, 1),
+    SHELL_CMD_ARG(config, NULL, "Set active unit count and optional hex unit mask: <group> <active_turn> [mask_hex] (mask defaults to 0)", cmd_hvac_config, 3, 1),
+    SHELL_CMD_ARG(rotation, NULL, "Set rotation period in days (1-365): <group> <days>; common periods: 7, 15, 20, 30", cmd_hvac_rotation, 3, 0),
+    SHELL_CMD_ARG(fan_ctrl, NULL, "Set Relay G fan control: <group> <on|off> [purge_delay_seconds] (delay defaults to 0)", cmd_hvac_fan_ctrl, 3, 1),
+    SHELL_CMD_ARG(rotate, NULL, "Immediately advance the duty rotation for group <group 0-3>", cmd_hvac_rotate, 2, 0),
+    SHELL_CMD_ARG(manual, NULL, "Override unit: <unit> <on|off> [comp_on|comp_off] [fan_on|fan_off] (optional outputs default on)", cmd_hvac_manual, 3, 2),
+    SHELL_CMD_ARG(relay, NULL, "Test relay channel 0-17: <channel> <0|1> (1 closes, 0 opens)", cmd_hvac_relay, 3, 0),
+    SHELL_CMD_ARG(set_temp, NULL, "Inject a test HVAC temperature in degrees C: <temperature>", cmd_hvac_set_temp, 2, 0),
+    SHELL_CMD(clear_temp, NULL, "Remove the test temperature override and resume live sensor readings", cmd_hvac_clear_temp),
+    SHELL_CMD(eeprom_reset, NULL, "Reset HVAC EEPROM settings to defaults (26/28/30/32 C) and apply them", cmd_hvac_eeprom_reset),
+    SHELL_CMD(timers, NULL, "Show cooling, rotation, startup, and fan-purge countdowns", cmd_hvac_timers),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(hvac, &sub_hvac, "HVAC management commands", NULL);
+SHELL_CMD_REGISTER(hvac, &sub_hvac, "Inspect and configure HVAC groups, units, relays, and timers", NULL);
 
 /* =========================================================================
  * Sensor Shell Commands
@@ -858,14 +858,14 @@ static int cmd_sensor_raw(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor,
-    SHELL_CMD(matrix, NULL, "Display semantic sensor matrix (evaporator pairs, ambient, RH)", cmd_sensor_matrix),
-    SHELL_CMD(raw, NULL, "Display raw logical ADC channels (0..14)", cmd_sensor_raw),
-    SHELL_CMD(snapshot, NULL, "Display flat 64-channel Zbus telemetry snapshot", cmd_sensor_snapshot),
-    SHELL_CMD(status, NULL, "Display all RTD channels (internal 0..4, external Modbus)", cmd_sensor_status),
+    SHELL_CMD(matrix, NULL, "Show mapped evaporator sensor pairs, ambient temperatures, and humidity", cmd_sensor_matrix),
+    SHELL_CMD(raw, NULL, "Show raw logical ADC readings for channels 0-14", cmd_sensor_raw),
+    SHELL_CMD(snapshot, NULL, "Show the 64-channel sensor telemetry snapshot and validity mask", cmd_sensor_snapshot),
+    SHELL_CMD(status, NULL, "Show internal RTD channels 0-4 and external Modbus temperature channels", cmd_sensor_status),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(sensor, &sub_sensor, "Sensor subsystem commands", NULL);
+SHELL_CMD_REGISTER(sensor, &sub_sensor, "Inspect sensor readings, channel mappings, and validity", NULL);
 
 /* =========================================================================
  * Digital Input Shell Commands
@@ -905,11 +905,11 @@ static int cmd_di_status(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_di,
-    SHELL_CMD(status, NULL, "Display state of 24 internal + 32 external DI channels and named roles", cmd_di_status),
+    SHELL_CMD(status, NULL, "Show 24 internal and 32 external digital inputs with their assigned roles", cmd_di_status),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(di, &sub_di, "Digital Input subsystem commands", NULL);
+SHELL_CMD_REGISTER(di, &sub_di, "Inspect digital input channel states and role mappings", NULL);
 
 /* =========================================================================
  * Modbus Shell Commands
@@ -1013,18 +1013,18 @@ static int cmd_modbus_tcp_status(const struct shell *sh, size_t argc, char **arg
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_modbus_tcp,
-    SHELL_CMD(status, NULL, "Display Modbus TCP server sessions and statistics", cmd_modbus_tcp_status),
+    SHELL_CMD(status, NULL, "Show Modbus TCP frame, exception, CRC-error, and timeout counters", cmd_modbus_tcp_status),
     SHELL_SUBCMD_SET_END
 );
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_modbus,
-    SHELL_CMD(status, NULL, "Display status of active RS485 buses, polling stats, slave list", cmd_modbus_status),
-    SHELL_CMD_ARG(slave, NULL, "Configure Modbus slave device address and parameters", cmd_modbus_slave, 3, 4),
-    SHELL_CMD(tcp, &sub_modbus_tcp, "Modbus TCP server commands", NULL),
+    SHELL_CMD(status, NULL, "Show RS-485 bus health, polling counters, and registered slaves", cmd_modbus_status),
+    SHELL_CMD_ARG(slave, NULL, "Set slave: <device_id> <slave_addr> [bus] [type] [poll_ms] [timeout_ms]; defaults: bus 0, relay type, 500 ms, 300 ms; numbers allow 0x hex", cmd_modbus_slave, 3, 4),
+    SHELL_CMD(tcp, &sub_modbus_tcp, "Inspect Modbus TCP server counters with 'modbus tcp status'", NULL),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(modbus, &sub_modbus, "Modbus master subsystem commands", NULL);
+SHELL_CMD_REGISTER(modbus, &sub_modbus, "Inspect RS-485 Modbus buses/slaves and TCP server counters", NULL);
 
 /* =========================================================================
  * Network Shell Commands
@@ -1290,8 +1290,8 @@ static int cmd_network_save(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_network_eth,
-    SHELL_CMD(dhcp, NULL, "Set Ethernet to DHCP: network eth dhcp", cmd_network_eth_dhcp),
-    SHELL_CMD_ARG(static, NULL, "Set Ethernet static IP: network eth static <ip> <netmask> <gateway>", cmd_network_eth_static, 4, 0),
+    SHELL_CMD(dhcp, NULL, "Enable DHCP on Ethernet and request network configuration", cmd_network_eth_dhcp),
+    SHELL_CMD_ARG(static, NULL, "Set Ethernet IPv4 address, netmask, and gateway: <ip> <netmask> <gateway> (dotted decimal)", cmd_network_eth_static, 4, 0),
     SHELL_SUBCMD_SET_END
 );
 
@@ -1340,24 +1340,24 @@ static int cmd_network_wifi_list(const struct shell *sh, size_t argc, char **arg
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_network_wifi,
-    SHELL_CMD_ARG(connect, NULL, "Connect to AP: network wifi connect <ssid> [password]", cmd_network_wifi_connect, 2, 1),
-    SHELL_CMD(disconnect, NULL, "Disconnect WiFi station: network wifi disconnect", cmd_network_wifi_disconnect),
-    SHELL_CMD(list, NULL, "List discovered access points: network wifi list", cmd_network_wifi_list),
-    SHELL_CMD(save, NULL, "Force EEPROM write of WiFi config: network wifi save", cmd_network_save),
-    SHELL_CMD(scan, NULL, "Scan for WiFi access points: network wifi scan", cmd_network_wifi_scan),
-    SHELL_CMD(status, NULL, "Show WiFi status: network wifi status", cmd_network_wifi_status),
+    SHELL_CMD_ARG(connect, NULL, "Connect to an open AP with <ssid> or WPA2-PSK with <ssid> <password>", cmd_network_wifi_connect, 2, 1),
+    SHELL_CMD(disconnect, NULL, "Disconnect the Wi-Fi station from its current access point", cmd_network_wifi_disconnect),
+    SHELL_CMD(list, NULL, "List access points found by the most recent scan", cmd_network_wifi_list),
+    SHELL_CMD(save, NULL, "Immediately save the current Wi-Fi configuration to EEPROM", cmd_network_save),
+    SHELL_CMD(scan, NULL, "Scan for nearby Wi-Fi access points", cmd_network_wifi_scan),
+    SHELL_CMD(status, NULL, "Show Wi-Fi mode, connection state, address, and signal details", cmd_network_wifi_status),
     SHELL_SUBCMD_SET_END
 );
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_network,
-    SHELL_CMD(eth, &sub_network_eth, "Ethernet configuration commands", NULL),
-    SHELL_CMD(save, NULL, "Force immediate EEPROM flush of network configs: network save", cmd_network_save),
-    SHELL_CMD_ARG(status, NULL, "Show interface status: network status [eth|wifi]", cmd_network_status, 1, 1),
-    SHELL_CMD(wifi, &sub_network_wifi, "WiFi configuration commands", NULL),
+    SHELL_CMD(eth, &sub_network_eth, "Configure Ethernet with DHCP or a static IPv4 address", NULL),
+    SHELL_CMD(save, NULL, "Immediately save pending Ethernet and Wi-Fi configuration changes to EEPROM", cmd_network_save),
+    SHELL_CMD_ARG(status, NULL, "Show both interfaces or one interface: [eth|wifi]", cmd_network_status, 1, 1),
+    SHELL_CMD(wifi, &sub_network_wifi, "Scan for access points and manage Wi-Fi station connections", NULL),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(network, &sub_network, "Network interface commands", NULL);
+SHELL_CMD_REGISTER(network, &sub_network, "Inspect and configure Ethernet and Wi-Fi network interfaces", NULL);
 
 /* =========================================================================
  * Storage Shell Commands
@@ -1430,14 +1430,14 @@ static int cmd_storage_stats(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_storage,
-    SHELL_CMD(save, NULL, "Commit dirty configs to EEPROM immediately", cmd_storage_save),
-    SHELL_CMD(reload, NULL, "Reload all domains from storage", cmd_storage_reload),
-    SHELL_CMD(reset, NULL, "Reset EEPROM to factory defaults", cmd_storage_reset),
-    SHELL_CMD(stats, NULL, "Show storage transaction counters, CRC errors, write cycles", cmd_storage_stats),
+    SHELL_CMD(save, NULL, "Write all modified configuration domains to EEPROM now", cmd_storage_save),
+    SHELL_CMD(reload, NULL, "Reload every configuration domain from EEPROM and apply it", cmd_storage_reload),
+    SHELL_CMD(reset, NULL, "Erase stored configuration and restore factory defaults", cmd_storage_reset),
+    SHELL_CMD(stats, NULL, "Show storage reads, writes, failures, CRC errors, and write cycles", cmd_storage_stats),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(storage, &sub_storage, "Storage subsystem commands", NULL);
+SHELL_CMD_REGISTER(storage, &sub_storage, "Save, reload, reset, and inspect persistent configuration", NULL);
 
 /* =========================================================================
  * System / Diagnostics Shell Commands
@@ -1479,12 +1479,12 @@ static int cmd_sys_reboot(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sys,
-    SHELL_CMD(info, NULL, "Firmware version, uptime, heap/stack status, profile name", cmd_sys_info),
-    SHELL_CMD(reboot, NULL, "Software reset", cmd_sys_reboot),
+    SHELL_CMD(info, NULL, "Show firmware version, uptime, memory usage, and active profile", cmd_sys_info),
+    SHELL_CMD(reboot, NULL, "Restart the controller using a software reset", cmd_sys_reboot),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(sys, &sub_sys, "System diagnostics commands", NULL);
+SHELL_CMD_REGISTER(sys, &sub_sys, "Show controller diagnostics or restart the device", NULL);
 
 /* =========================================================================
  * Alarm Management Shell Commands
@@ -1708,17 +1708,17 @@ static int cmd_alarm_mute(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_alarm,
-    SHELL_CMD(status, NULL, "Overall alarm subsystem status", cmd_alarm_status),
-    SHELL_CMD(list, NULL, "List active and acknowledged alarms", cmd_alarm_list),
-    SHELL_CMD(active, NULL, "Alias for alarm list", cmd_alarm_list),
-    SHELL_CMD(catalog, NULL, "Catalog of all registered alarm descriptors", cmd_alarm_catalog),
-    SHELL_CMD_ARG(snapshot, NULL, "Detailed snapshot for alarm ID: alarm snapshot <id>", cmd_alarm_snapshot, 2, 0),
-    SHELL_CMD_ARG(ack, NULL, "Acknowledge active alarm: alarm ack <id>", cmd_alarm_ack, 2, 0),
-    SHELL_CMD_ARG(mute, NULL, "Query or set alarm buzzer mute: alarm mute [on|off|toggle]", cmd_alarm_mute, 1, 1),
+    SHELL_CMD(status, NULL, "Show active, acknowledged, latched, and muted alarm totals", cmd_alarm_status),
+    SHELL_CMD(list, NULL, "List current active and acknowledged alarms with their IDs", cmd_alarm_list),
+    SHELL_CMD(active, NULL, "Alias for 'alarm list': list current active and acknowledged alarms", cmd_alarm_list),
+    SHELL_CMD(catalog, NULL, "List all alarm IDs, names, severities, and source metadata", cmd_alarm_catalog),
+    SHELL_CMD_ARG(snapshot, NULL, "Show detailed state and metadata for alarm <id>", cmd_alarm_snapshot, 2, 0),
+    SHELL_CMD_ARG(ack, NULL, "Acknowledge alarm <id>; use the ID shown by 'alarm list'", cmd_alarm_ack, 2, 0),
+    SHELL_CMD_ARG(mute, NULL, "Show mute state or set buzzer mute: [on|off|toggle]", cmd_alarm_mute, 1, 1),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(alarm, &sub_alarm, "Alarm management subsystem commands", NULL);
+SHELL_CMD_REGISTER(alarm, &sub_alarm, "Inspect alarms, acknowledge them, and control the buzzer", NULL);
 
 /* =========================================================================
  * Thermal and Energy Subsystem Shell Commands
@@ -2082,18 +2082,18 @@ static int cmd_thermal_recalibrate(const struct shell *sh, size_t argc, char **a
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_thermal,
-    SHELL_CMD(status, NULL, "Thermodynamic status and psychrometrics", cmd_thermal_status),
-    SHELL_CMD(pairs, NULL, "Thermal supply/return pair metrics and diagnostics", cmd_thermal_pairs),
-    SHELL_CMD(compressors, NULL, "Compressor temporal FSM states and step loads", cmd_thermal_compressors),
-    SHELL_CMD(diagnostics, NULL, "Predictive alerts, derating, and safe margins", cmd_thermal_diagnostics),
-    SHELL_CMD(baseline, NULL, "Machine-learned baseline OLS coefficients and exergy", cmd_thermal_baseline),
-    SHELL_CMD(site, NULL, "Site thermal and HVAC topology configuration", cmd_thermal_site),
-    SHELL_CMD_ARG(history, NULL, "Dump last N hourly datalogger records: thermal history [hours]", cmd_thermal_history, 1, 1),
-    SHELL_CMD(recalibrate, NULL, "Trigger baseline OLS recalibration", cmd_thermal_recalibrate),
+    SHELL_CMD(status, NULL, "Show current thermal metrics, psychrometrics, and energy results", cmd_thermal_status),
+    SHELL_CMD(pairs, NULL, "Show supply/return sensor-pair temperatures and validation status", cmd_thermal_pairs),
+    SHELL_CMD(compressors, NULL, "Show compressor state-machine states and staged loads", cmd_thermal_compressors),
+    SHELL_CMD(diagnostics, NULL, "Show predictive alerts, capacity derating, and safety margins", cmd_thermal_diagnostics),
+    SHELL_CMD(baseline, NULL, "Show learned OLS baseline coefficients and exergy estimates", cmd_thermal_baseline),
+    SHELL_CMD(site, NULL, "Show site altitude, probe topology, redundancy, and unit ratings", cmd_thermal_site),
+    SHELL_CMD_ARG(history, NULL, "Show recent closed hourly records: [hours] (default 6, maximum 24)", cmd_thermal_history, 1, 1),
+    SHELL_CMD(recalibrate, NULL, "Recalculate the thermal baseline from current measurements", cmd_thermal_recalibrate),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(thermal, &sub_thermal, "Thermal and energy thermodynamic monitoring commands", NULL);
+SHELL_CMD_REGISTER(thermal, &sub_thermal, "Inspect thermal performance, energy metrics, and site configuration", NULL);
 
 /* =========================================================================
  * Real-Time Clock & System Time Shell Commands
@@ -2261,14 +2261,14 @@ static int cmd_rtc_set_epoch(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_rtc,
-    SHELL_CMD(status, NULL, "Display synchronization source, drift, leap year, hardware presence", cmd_rtc_status),
-    SHELL_CMD(get, NULL, "Print ISO-8601 formatted date/time and epoch seconds", cmd_rtc_get),
-    SHELL_CMD_ARG(set, NULL, "Set calendar time manually: rtc set <YYYY-MM-DD> <HH:MM:SS>", cmd_rtc_set, 3, 0),
-    SHELL_CMD_ARG(set_epoch, NULL, "Set time directly from UNIX epoch timestamp: rtc set_epoch <seconds>", cmd_rtc_set_epoch, 2, 0),
+    SHELL_CMD(status, NULL, "Show RTC source, synchronization state, drift, and hardware presence", cmd_rtc_status),
+    SHELL_CMD(get, NULL, "Show current date/time in ISO-8601 format and Unix epoch seconds", cmd_rtc_get),
+    SHELL_CMD_ARG(set, NULL, "Set RTC calendar time: <YYYY-MM-DD> <HH:MM:SS>", cmd_rtc_set, 3, 0),
+    SHELL_CMD_ARG(set_epoch, NULL, "Set time from Unix epoch seconds: <seconds>", cmd_rtc_set_epoch, 2, 0),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(rtc, &sub_rtc, "RTC and System Time subsystem commands", NULL);
+SHELL_CMD_REGISTER(rtc, &sub_rtc, "Read RTC status and set the controller's system time", NULL);
 
 /* =========================================================================
  * MicroSD Storage Shell Commands
@@ -2390,11 +2390,11 @@ static int cmd_sd_ls(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sd,
-    SHELL_CMD(status, NULL, "Display card detect status (PG5), mount state, total and free space", cmd_sd_status),
-    SHELL_CMD(mount, NULL, "Request manual mount of MicroSD card", cmd_sd_mount),
-    SHELL_CMD(eject, NULL, "Request clean unmount / safe removal of MicroSD card", cmd_sd_eject),
-    SHELL_CMD_ARG(ls, NULL, "List files and directories in path: sd ls [path]", cmd_sd_ls, 1, 1),
+    SHELL_CMD(status, NULL, "Show card detect, mount state, capacity, and free space", cmd_sd_status),
+    SHELL_CMD(mount, NULL, "Mount the inserted MicroSD card", cmd_sd_mount),
+    SHELL_CMD(eject, NULL, "Flush pending filesystem data and safely unmount the card", cmd_sd_eject),
+    SHELL_CMD_ARG(ls, NULL, "List files in [path] (default: filesystem root)", cmd_sd_ls, 1, 1),
     SHELL_SUBCMD_SET_END
 );
 
-SHELL_CMD_REGISTER(sd, &sub_sd, "MicroSD storage and filesystem commands", NULL);
+SHELL_CMD_REGISTER(sd, &sub_sd, "Inspect and manage MicroSD card mounting and files", NULL);
