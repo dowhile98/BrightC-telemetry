@@ -17,8 +17,12 @@
 #include <stdint.h>
 
 #include <zephyr/kernel.h>
+#if defined(CONFIG_NANOMODBUS)
 #include <zephyr/nanomodbus/nanomodbus_z.h>
 #include <zephyr/nanomodbus/nanomodbus_z_tcp.h>
+#else
+typedef struct nmbs_callbacks nmbs_callbacks;
+#endif
 
 #include "common/modbus_tcp_types.h"
 #include "interfaces/i_modbus_tcp_server.h"
@@ -33,9 +37,11 @@ extern "C" {
  * Wraps nmbs_z_server_tcp_t directly. Because nmbs_z_server_tcp_t embeds
  * the listener thread stack, ao_modbus_tcp_t instances must reside in static storage.
  */
-typedef struct {
+typedef struct ao_modbus_tcp {
     i_modbus_tcp_server_t       port;                     /**< Concrete port handle */
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
     nmbs_z_server_tcp_t         server;                   /**< nanoMODBUS Zephyr TCP server */
+#endif
     modbus_tcp_server_config_t  config;                   /**< Active configuration */
     modbus_tcp_server_state_t   state;                    /**< Operational lifecycle state */
     bool                        is_initialized;           /**< True when initialized */

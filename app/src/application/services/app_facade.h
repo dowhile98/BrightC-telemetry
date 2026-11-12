@@ -25,6 +25,7 @@
 #include "common/alarm_types.h"
 #include "common/modbus_types.h"
 #include "common/modbus_tcp_types.h"
+#include "common/network_types.h"
 #include "common/sensor_types.h"
 #include "common/thermal_energy_types.h"
 #include "common/rtc_types.h"
@@ -809,6 +810,95 @@ int app_facade_time_get_status(rtc_sync_status_t *out_status);
  * @return Packed 32-bit DOS timestamp.
  */
 uint32_t app_facade_time_get_fattime(void);
+
+/* =========================================================================
+ * Network Service APIs
+ * ========================================================================= */
+
+/**
+ * @brief Get runtime status of a network interface.
+ *
+ * @param[in]  iface      Interface to query (Ethernet or WiFi).
+ * @param[out] out_status Destination status structure.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_get_status(network_interface_t iface, net_status_t *out_status);
+
+/**
+ * @brief Get the active Ethernet configuration from the network Active Object.
+ *
+ * @param[out] out_cfg Destination configuration structure.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_get_eth_config(net_eth_config_t *out_cfg);
+
+/**
+ * @brief Get the active WiFi configuration from the network Active Object.
+ *
+ * @param[out] out_cfg Destination configuration structure.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_get_wifi_config(net_wifi_config_t *out_cfg);
+
+/**
+ * @brief Set Ethernet interface to DHCP mode.
+ *
+ * Reconfigures Ethernet to dynamic IP allocation, posts config update
+ * to ao_network, and marks CONFIG_DOMAIN_NET_ETH dirty in storage.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_network_eth_set_dhcp(void);
+
+/**
+ * @brief Set Ethernet interface to static IPv4 parameters.
+ *
+ * @param[in] ip      IPv4 host address in host-byte order (e.g., 0xC0A80132 for 192.168.1.50).
+ * @param[in] netmask Subnet mask in host-byte order (e.g., 0xFFFFFF00 for 255.255.255.0).
+ * @param[in] gateway Default gateway in host-byte order.
+ * @return 0 on success, -EINVAL on invalid IP configuration, negative errno on failure.
+ */
+int app_facade_network_eth_set_static(uint32_t ip, uint32_t netmask, uint32_t gateway);
+
+/**
+ * @brief Trigger a WiFi access-point scan.
+ *
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_wifi_scan(void);
+
+/**
+ * @brief Configure and connect WiFi station to an access point.
+ *
+ * Preserves Soft-AP mode (promoting to NET_WIFI_MODE_STA_AP if active),
+ * sets DHCP client for STA, posts event to ao_network, initiates
+ * connection attempt, and marks CONFIG_DOMAIN_NET_WIFI dirty.
+ *
+ * @param[in] ssid SSID string (null-terminated, non-NULL).
+ * @param[in] psk  Pre-shared key (null-terminated, required unless sec is OPEN).
+ * @param[in] sec  Security protocol.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_network_wifi_connect(const char *ssid, const char *psk, net_wifi_security_t sec);
+
+/**
+ * @brief Disconnect WiFi station from the current access point.
+ *
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_wifi_disconnect(void);
+
+/**
+ * @brief Force immediate write/flush of dirty network configurations to persistent storage (EEPROM).
+ *
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_save(void);
+
+/**
+ * @brief Compatibility alias for app_facade_network_save.
+ */
+int app_facade_network_wifi_config_save(void);
 
 /* =========================================================================
  * MicroSD Storage & Filesystem Service APIs

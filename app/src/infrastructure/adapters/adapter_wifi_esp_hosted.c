@@ -47,6 +47,9 @@ static int start_sta(adapter_wifi_esp_hosted_t *ctx)
         return -ENODEV;
     }
 
+    /* Bring interface up before initiating connection */
+    net_if_up(ctx->sta_iface);
+
     struct wifi_connect_req_params params;
     (void)memset(&params, 0, sizeof(params));
 
@@ -350,9 +353,13 @@ static int wifi_net_get_status(void *impl, net_status_t *out_status)
         return -EINVAL;
     }
 
-    struct net_if *active_iface = (ctx->cfg.mode == NET_WIFI_MODE_AP && ctx->ap_iface != NULL)
-                                      ? ctx->ap_iface
-                                      : ctx->sta_iface;
+    struct net_if *active_iface = NULL;
+    if (ctx->cfg.mode == NET_WIFI_MODE_AP) {
+        active_iface = (ctx->ap_iface != NULL) ? ctx->ap_iface : ctx->sta_iface;
+    } else {
+        /* In NET_WIFI_MODE_STA and NET_WIFI_MODE_STA_AP (concurrent), prioritize STA interface */
+        active_iface = (ctx->sta_iface != NULL) ? ctx->sta_iface : ctx->ap_iface;
+    }
 
     if (active_iface == NULL) {
         ctx->status.state = NET_IF_STATE_FAILED;
@@ -478,6 +485,13 @@ static int wifi_ctrl_connect_ap(void *impl, const char *ssid, const char *psk, n
     }
 
     ctx->cfg.sta.security = (uint8_t)sec;
+
+    /* Promote to concurrent STA_AP if Soft-AP was active, else set STA mode */
+    if (ctx->cfg.mode == NET_WIFI_MODE_AP || ctx->cfg.mode == NET_WIFI_MODE_STA_AP) {
+        ctx->cfg.mode = (uint8_t)NET_WIFI_MODE_STA_AP;
+    } else {
+        ctx->cfg.mode = (uint8_t)NET_WIFI_MODE_STA;
+    }
 
     int ret = start_sta(ctx);
     if (ret == 0) {

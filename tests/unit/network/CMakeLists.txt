@@ -10,6 +10,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/tests/fakes/src/fake_network.c
     ${APP_DIR}/app/src/application/zbus/network_channels.c
     ${APP_DIR}/app/src/application/active_objects/ao_network.c
+    ${APP_DIR}/app/src/application/services/app_facade_network.c
 )
 
 

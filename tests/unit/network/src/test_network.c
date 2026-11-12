@@ -16,6 +16,9 @@
 #include "fake_network.h"
 #include "application/zbus/network_channels.h"
 #include "application/active_objects/ao_network.h"
+#include "application/services/app_facade.h"
+#include "infrastructure/di/composition_root.h"
+#include "application/active_objects/ao_storage.h"
 
 static uint32_t s_eth_alarm_feed_count = 0;
 static void test_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
@@ -563,6 +566,218 @@ ZTEST(network_suite, test_ao_network_lifecycle_and_zbus_publication)
     zassert_ok(ao_network_stop(&s_test_ao_net), "Stop ao_network");
     zassert_ok(ao_network_wait_stopped(&s_test_ao_net, K_MSEC(1000)), "Wait stopped");
     zassert_ok(ao_network_deinit(&s_test_ao_net), "Deinit");
+}
+
+/* =========================================================================
+ * Mock Container & Storage Hooks for Facade Unit Testing
+ * ========================================================================= */
+
+static app_container_t s_mock_container;
+static const i_network_t *s_mock_eth_port = NULL;
+static const i_network_t *s_mock_wifi_port = NULL;
+static const i_wifi_control_t *s_mock_wifi_ctrl = NULL;
+static ao_network_t *s_mock_net_ao = NULL;
+static ao_storage_t *s_mock_storage_ao = NULL;
+static config_domain_t s_last_dirty_domain = (config_domain_t)999;
+static uint16_t s_last_dirty_sub_id = 999;
+static bool s_storage_flush_called = false;
+
+const i_network_t *app_container_get_network_eth(const app_container_t *self)
+{
+    ARG_UNUSED(self);
+    return s_mock_eth_port;
+}
+
+const i_network_t *app_container_get_network_wifi(const app_container_t *self)
+{
+    ARG_UNUSED(self);
+    return s_mock_wifi_port;
+}
+
+const i_wifi_control_t *app_container_get_wifi_control(const app_container_t *self)
+{
+    ARG_UNUSED(self);
+    return s_mock_wifi_ctrl;
+}
+
+ao_network_t *app_container_get_network_ao(app_container_t *self)
+{
+    ARG_UNUSED(self);
+    return s_mock_net_ao;
+}
+
+ao_storage_t *app_container_get_storage_ao(app_container_t *self)
+{
+    ARG_UNUSED(self);
+    return s_mock_storage_ao;
+}
+
+int ao_storage_mark_dirty(ao_storage_t *self, config_domain_t domain, uint16_t sub_id)
+{
+    ARG_UNUSED(self);
+    s_last_dirty_domain = domain;
+    s_last_dirty_sub_id = sub_id;
+    return 0;
+}
+
+int ao_storage_flush_now(ao_storage_t *self)
+{
+    ARG_UNUSED(self);
+    s_storage_flush_called = true;
+    return 0;
+}
+
+/* =========================================================================
+ * Facade Unit Tests
+ * ========================================================================= */
+
+ZTEST(network_suite, test_facade_network_uninitialized_and_parameter_validation)
+{
+    net_status_t status;
+    net_eth_config_t eth_cfg;
+    net_wifi_config_t wifi_cfg;
+
+    /* 1. Prior to app_facade_init, all facade APIs must return -EINVAL */
+    zassert_equal(app_facade_network_get_status(NETWORK_INTERFACE_ETHERNET, &status), -EINVAL);
+    zassert_equal(app_facade_network_get_eth_config(&eth_cfg), -EINVAL);
+    zassert_equal(app_facade_network_get_wifi_config(&wifi_cfg), -EINVAL);
+    zassert_equal(app_facade_network_eth_set_dhcp(), -EINVAL);
+    zassert_equal(app_facade_network_eth_set_static(0xC0A80132, 0xFFFFFF00, 0xC0A80101), -EINVAL);
+    zassert_equal(app_facade_network_wifi_scan(), -EINVAL);
+    zassert_equal(app_facade_network_wifi_connect("TestSSID", "TestPassword", NET_WIFI_SEC_WPA2_PSK), -EINVAL);
+    zassert_equal(app_facade_network_wifi_disconnect(), -EINVAL);
+    zassert_equal(app_facade_network_save(), -EINVAL);
+    zassert_equal(app_facade_init(NULL), -EINVAL);
+
+    /* 2. Initialize facade with mock container */
+    zassert_ok(app_facade_init(&s_mock_container));
+
+    /* 3. Parameter validation checks */
+    zassert_equal(app_facade_network_get_status(NETWORK_INTERFACE_ETHERNET, NULL), -EINVAL);
+    zassert_equal(app_facade_network_get_status(NETWORK_INTERFACE_MAX, &status), -EINVAL);
+    zassert_equal(app_facade_network_get_status((network_interface_t)99, &status), -EINVAL);
+
+    zassert_equal(app_facade_network_get_eth_config(NULL), -EINVAL);
+    zassert_equal(app_facade_network_get_wifi_config(NULL), -EINVAL);
+
+    zassert_equal(app_facade_network_eth_set_static(0, 0, 0), -EINVAL, "Zero IP should fail validation");
+
+    zassert_equal(app_facade_network_wifi_connect(NULL, "password", NET_WIFI_SEC_WPA2_PSK), -EINVAL);
+    zassert_equal(app_facade_network_wifi_connect("SSID", NULL, NET_WIFI_SEC_WPA2_PSK), -EINVAL);
+    zassert_equal(app_facade_network_wifi_connect("SSID", "password", (net_wifi_security_t)99), -EINVAL);
+}
+
+ZTEST(network_suite, test_facade_network_missing_components_enodev)
+{
+    /* Ensure container accessors return NULL */
+    s_mock_eth_port = NULL;
+    s_mock_wifi_port = NULL;
+    s_mock_wifi_ctrl = NULL;
+    s_mock_net_ao = NULL;
+    s_mock_storage_ao = NULL;
+
+    net_status_t status;
+    net_eth_config_t eth_cfg;
+    net_wifi_config_t wifi_cfg;
+
+    zassert_equal(app_facade_network_get_status(NETWORK_INTERFACE_ETHERNET, &status), -ENODEV);
+    zassert_equal(app_facade_network_get_status(NETWORK_INTERFACE_WIFI, &status), -ENODEV);
+    zassert_equal(app_facade_network_get_eth_config(&eth_cfg), -ENODEV);
+    zassert_equal(app_facade_network_get_wifi_config(&wifi_cfg), -ENODEV);
+    zassert_equal(app_facade_network_eth_set_dhcp(), -ENODEV);
+    zassert_equal(app_facade_network_eth_set_static(0xC0A80132, 0xFFFFFF00, 0xC0A80101), -ENODEV);
+    zassert_equal(app_facade_network_wifi_connect("SSID", "password", NET_WIFI_SEC_WPA2_PSK), -ENODEV);
+    zassert_equal(app_facade_network_wifi_scan(), -ENODEV);
+    zassert_equal(app_facade_network_wifi_disconnect(), -ENODEV);
+    zassert_equal(app_facade_network_save(), -ENODEV);
+}
+
+ZTEST(network_suite, test_facade_network_operations_and_storage_persistence)
+{
+    fake_network_reset();
+    i_network_t eth_port = fake_network_get_eth_port();
+    i_network_t wifi_port = fake_network_get_wifi_port();
+    i_wifi_control_t wifi_ctrl = fake_network_get_wifi_control_port();
+
+    s_mock_eth_port = &eth_port;
+    s_mock_wifi_port = &wifi_port;
+    s_mock_wifi_ctrl = &wifi_ctrl;
+    s_mock_net_ao = &s_test_ao_net;
+    s_mock_storage_ao = (ao_storage_t *)0x12345678;
+
+    k_msgq_init(&s_test_ao_net_queue, s_test_ao_net_queue_buf, sizeof(ao_network_event_t), AO_NETWORK_QUEUE_DEPTH);
+    zassert_ok(ao_network_init(&s_test_ao_net, &eth_port, &wifi_port, NULL, NULL, &s_test_ao_net_queue, s_test_ao_net_stack, AO_NETWORK_STACK_SIZE));
+    zassert_ok(ao_network_start(&s_test_ao_net));
+
+    /* 1. Status query via facade */
+    fake_network_set_state(NETWORK_INTERFACE_ETHERNET, NET_IF_STATE_CONNECTED, 0xC0A80150, 0xFFFFFF00, 0xC0A80101);
+    fake_network_set_state(NETWORK_INTERFACE_WIFI, NET_IF_STATE_CONNECTED, 0x0A000005, 0xFFFFFF00, 0x0A000001);
+
+    net_status_t status;
+    zassert_ok(app_facade_network_get_status(NETWORK_INTERFACE_ETHERNET, &status));
+    zassert_equal(status.state, NET_IF_STATE_CONNECTED);
+    zassert_equal(status.ip_addr, 0xC0A80150);
+
+    zassert_ok(app_facade_network_get_status(NETWORK_INTERFACE_WIFI, &status));
+    zassert_equal(status.state, NET_IF_STATE_CONNECTED);
+    zassert_equal(status.ip_addr, 0x0A000005);
+
+    /* 2. Config query via facade */
+    net_eth_config_t eth_cfg;
+    zassert_ok(app_facade_network_get_eth_config(&eth_cfg));
+    zassert_equal(eth_cfg.ip_mode, NET_IP_MODE_DHCP);
+
+    net_wifi_config_t wifi_cfg;
+    zassert_ok(app_facade_network_get_wifi_config(&wifi_cfg));
+    zassert_equal(wifi_cfg.mode, NET_WIFI_MODE_AP);
+
+    /* 3. Static IP configuration via facade */
+    s_last_dirty_domain = (config_domain_t)999;
+    zassert_ok(app_facade_network_eth_set_static(0xC0A80164, 0xFFFFFF00, 0xC0A80101));
+    zassert_equal(s_last_dirty_domain, CONFIG_DOMAIN_NET_ETH);
+    zassert_equal(s_last_dirty_sub_id, 0);
+
+    /* 4. DHCP configuration via facade */
+    s_last_dirty_domain = (config_domain_t)999;
+    zassert_ok(app_facade_network_eth_set_dhcp());
+    zassert_equal(s_last_dirty_domain, CONFIG_DOMAIN_NET_ETH);
+    zassert_equal(s_last_dirty_sub_id, 0);
+
+    /* 5. Wi-Fi scan via facade */
+    const fake_network_state_t *st = fake_network_get_state();
+    uint32_t scans_before = st->wifi_scan_calls;
+    zassert_ok(app_facade_network_wifi_scan());
+    zassert_equal(st->wifi_scan_calls, scans_before + 1);
+
+    /* 6. Wi-Fi connect via facade */
+    s_last_dirty_domain = (config_domain_t)999;
+    zassert_ok(app_facade_network_wifi_connect("BrightC-Mesh", "MyPassword123", NET_WIFI_SEC_WPA2_PSK));
+    zassert_equal(s_last_dirty_domain, CONFIG_DOMAIN_NET_WIFI);
+    zassert_equal(s_last_dirty_sub_id, 0);
+    zassert_equal(st->wifi_connect_ap_calls, 1);
+    zassert_str_equal(st->last_connect_ssid, "BrightC-Mesh");
+    zassert_str_equal(st->last_connect_psk, "MyPassword123");
+    zassert_equal(st->last_connect_sec, NET_WIFI_SEC_WPA2_PSK);
+
+    /* Wi-Fi connect with OPEN security (NULL password permitted) */
+    zassert_ok(app_facade_network_wifi_connect("PublicWifi", NULL, NET_WIFI_SEC_OPEN));
+    zassert_str_equal(st->last_connect_ssid, "PublicWifi");
+    zassert_equal(st->last_connect_sec, NET_WIFI_SEC_OPEN);
+
+    /* 7. Wi-Fi disconnect via facade */
+    uint32_t disc_before = st->wifi_disconnect_calls;
+    zassert_ok(app_facade_network_wifi_disconnect());
+    zassert_equal(st->wifi_disconnect_calls, disc_before + 1);
+
+    /* 8. Network save via facade */
+    s_storage_flush_called = false;
+    zassert_ok(app_facade_network_save());
+    zassert_true(s_storage_flush_called);
+
+    /* Clean up ao_network */
+    zassert_ok(ao_network_stop(&s_test_ao_net));
+    zassert_ok(ao_network_wait_stopped(&s_test_ao_net, K_MSEC(1000)));
+    zassert_ok(ao_network_deinit(&s_test_ao_net));
 }
 
 

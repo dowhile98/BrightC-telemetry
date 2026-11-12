@@ -19,6 +19,32 @@
 
 LOG_MODULE_REGISTER(adapter_eth_stm32, LOG_LEVEL_INF);
 
+struct remove_ipv4_ctx {
+    struct net_in_addr addrs[4];
+    size_t count;
+};
+
+static void collect_unicast_ipv4(struct net_if *iface, struct net_if_addr *ifaddr, void *user_data)
+{
+    ARG_UNUSED(iface);
+    struct remove_ipv4_ctx *c = (struct remove_ipv4_ctx *)user_data;
+    if (ifaddr != NULL && ifaddr->is_used && c->count < ARRAY_SIZE(c->addrs)) {
+        c->addrs[c->count++] = ifaddr->address.in_addr;
+    }
+}
+
+static void clear_iface_ipv4_addresses(struct net_if *iface)
+{
+    if (iface == NULL) {
+        return;
+    }
+    struct remove_ipv4_ctx coll = { 0 };
+    net_if_ipv4_addr_foreach(iface, collect_unicast_ipv4, &coll);
+    for (size_t i = 0; i < coll.count; i++) {
+        (void)net_if_ipv4_addr_rm(iface, &coll.addrs[i]);
+    }
+}
+
 static int apply_ip_config(adapter_eth_stm32_t *ctx)
 {
     if (ctx == NULL || ctx->iface == NULL) {
@@ -27,6 +53,7 @@ static int apply_ip_config(adapter_eth_stm32_t *ctx)
 
     if (ctx->cfg.ip_mode == NET_IP_MODE_DHCP) {
 #if defined(CONFIG_NET_DHCPV4)
+        clear_iface_ipv4_addresses(ctx->iface);
         LOG_INF("Ethernet: starting DHCPv4 client");
         net_dhcpv4_start(ctx->iface);
 #else
@@ -36,6 +63,7 @@ static int apply_ip_config(adapter_eth_stm32_t *ctx)
 #if defined(CONFIG_NET_DHCPV4)
         net_dhcpv4_stop(ctx->iface);
 #endif
+        clear_iface_ipv4_addresses(ctx->iface);
         struct net_in_addr ip;
         struct net_in_addr nm;
         struct net_in_addr gw;
@@ -46,10 +74,10 @@ static int apply_ip_config(adapter_eth_stm32_t *ctx)
 
         LOG_INF("Ethernet: applying static IPv4: 0x%08X", (unsigned int)ctx->cfg.ip_addr);
 
-        /* Add or replace static unicast address */
+        /* Add static unicast address */
         struct net_if_addr *ifaddr = net_if_ipv4_addr_add(ctx->iface, &ip, NET_ADDR_MANUAL, 0);
         if (ifaddr == NULL) {
-            LOG_WRN("Ethernet: net_if_ipv4_addr_add returned NULL (address may already exist)");
+            LOG_WRN("Ethernet: net_if_ipv4_addr_add returned NULL");
         }
 
         if (!net_if_ipv4_set_netmask_by_addr(ctx->iface, &ip, &nm)) {

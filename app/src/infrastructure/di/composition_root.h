@@ -50,13 +50,15 @@
 #include "interfaces/i_modbus_tcp_server.h"
 #include "application/active_objects/ao_storage_sd.h"
 #include "application/active_objects/ao_modbus_tcp.h"
+#if defined(CONFIG_NANOMODBUS)
+#include "infrastructure/adapters/adapter_modbus_tcp_server.h"
+#endif
 #include "application/active_objects/ao_alarm_manager.h"
 #include "application/active_objects/ao_thermal_energy.h"
 #include "infrastructure/adapters/adapter_alarm_detector_di.h"
 #include "infrastructure/adapters/adapter_alarm_detector_temp.h"
 #include "infrastructure/adapters/adapter_alarm_detector_volt.h"
 #include "infrastructure/adapters/adapter_alarm_detector_hvac.h"
-#include "infrastructure/adapters/adapter_modbus_tcp_server.h"
 
 #ifdef CONFIG_NANOMODBUS
 #include "infrastructure/adapters/adapter_modbus_nmbs.h"
@@ -241,7 +243,9 @@ struct app_container {
     /* Subsystem 13: Modbus TCP Server Subsystem */
     struct {
         i_modbus_tcp_server_t port;                    /**< Modbus TCP server port handle */
+#if defined(CONFIG_NANOMODBUS)
         adapter_modbus_tcp_server_t adapter;           /**< nanoMODBUS server callback adapter */
+#endif
         ao_modbus_tcp_t ao;                            /**< Modbus TCP Active Object */
         modbus_tcp_server_config_t config;             /**< Server configuration */
         bool initialized;                              /**< Subsystem initialization status */

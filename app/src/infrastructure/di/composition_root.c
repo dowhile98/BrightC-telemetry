@@ -1717,6 +1717,7 @@ int composition_root_init_sd_storage(app_container_t *self)
 
 int composition_root_init_modbus_tcp(app_container_t *self)
 {
+#if defined(CONFIG_NANOMODBUS) && defined(CONFIG_NANOMODBUS_SERVER_TCP)
     if (self == NULL)
     {
         return -EINVAL;
@@ -1752,6 +1753,10 @@ int composition_root_init_modbus_tcp(app_container_t *self)
     self->modbus_tcp.port = ao_modbus_tcp_get_port(&self->modbus_tcp.ao);
     self->modbus_tcp.initialized = true;
     return 0;
+#else
+    ARG_UNUSED(self);
+    return 0;
+#endif
 }
 
 int composition_root_wire_thermal_energy(app_container_t *self)
@@ -2002,6 +2007,7 @@ int composition_root_start(app_container_t *self)
         }
     }
 
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
     if (self->modbus_tcp.initialized)
     {
         int err = ao_modbus_tcp_start(&self->modbus_tcp.ao);
@@ -2011,6 +2017,7 @@ int composition_root_start(app_container_t *self)
             return err;
         }
     }
+#endif
 
     self->is_running = true;
     return 0;
@@ -2025,6 +2032,7 @@ int composition_root_stop(app_container_t *self)
 
     int rc = 0;
 
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
     /* 0. Stop Modbus TCP server */
     if (self->modbus_tcp.initialized)
     {
@@ -2034,6 +2042,7 @@ int composition_root_stop(app_container_t *self)
             LOG_WRN("ao_modbus_tcp_stop returned %d", rc);
         }
     }
+#endif
 
     /* 1. Stop network coordinator (wait up to 2000 ms) */
     if (self->network.initialized)
@@ -2617,20 +2626,30 @@ ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self)
 
 const i_modbus_tcp_server_t *app_container_get_modbus_tcp_server(const app_container_t *self)
 {
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
     if (self == NULL || !self->modbus_tcp.initialized)
     {
         return NULL;
     }
     return &self->modbus_tcp.port;
+#else
+    ARG_UNUSED(self);
+    return NULL;
+#endif
 }
 
 ao_modbus_tcp_t *app_container_get_modbus_tcp_ao(app_container_t *self)
 {
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
     if (self == NULL || !self->modbus_tcp.initialized)
     {
         return NULL;
     }
     return &self->modbus_tcp.ao;
+#else
+    ARG_UNUSED(self);
+    return NULL;
+#endif
 }
 
 int app_container_set_alarm_buzzer_mute(app_container_t *self, bool mute)
