@@ -1,0 +1,8 @@
+tests:
+  unit.rtc:
+    tags:
+      - rtc
+      - domain
+      - time
+      - unit
+    platform_allow: native_sim

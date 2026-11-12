@@ -26,6 +26,7 @@
 #include "common/modbus_types.h"
 #include "common/sensor_types.h"
 #include "common/thermal_energy_types.h"
+#include "common/rtc_types.h"
 #include "application/zbus/sensor_channels.h"
 
 #ifdef __cplusplus
@@ -704,6 +705,79 @@ int app_facade_thermal_get_site_config(config_thermal_site_t *out_site_cfg);
  * @return 0 on success, negative errno on error.
  */
 int app_facade_thermal_trigger_recalibration(void);
+
+/* =========================================================================
+ * Real-Time Clock & System Time Service APIs
+ * ========================================================================= */
+
+/**
+ * @brief Obtain current broken-down calendar date and time.
+ *
+ * @param[out] out_dt Destination date/time structure.
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_time_get_datetime(rtc_date_time_t *out_dt);
+
+/**
+ * @brief Commit calendar date and time adjustment from an authorized source.
+ *
+ * @param[in] dt     New calendar date and time.
+ * @param[in] source Originating authority.
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_time_set_datetime(const rtc_date_time_t *dt, rtc_time_source_t source);
+
+/**
+ * @brief Obtain current UTC Unix epoch seconds and optional subsecond milliseconds.
+ *
+ * @param[out] out_epoch_s       Pointer to receive UTC epoch seconds.
+ * @param[out] out_subsecond_ms  Optional pointer to receive subsecond milliseconds (0..999, may be NULL).
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_time_get_unix(int64_t *out_epoch_s, uint16_t *out_subsecond_ms);
+
+/**
+ * @brief Fast query alias: obtain current UTC Unix epoch time and subsecond milliseconds.
+ */
+int app_facade_time_get_epoch(int64_t *out_sec, uint32_t *out_ms);
+
+/**
+ * @brief Commit current time from UTC Unix epoch seconds and authority source.
+ *
+ * @param[in] epoch_s UTC epoch seconds.
+ * @param[in] source  Originating authority.
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_time_set_unix(int64_t epoch_s, rtc_time_source_t source);
+
+/**
+ * @brief Format current UTC timestamp into an ISO-8601 string ("YYYY-MM-DDTHH:MM:SS.mmmZ").
+ *
+ * @param[out] buf    Destination character buffer.
+ * @param[in]  buf_sz Capacity of buffer (must be >= RTC_ISO8601_STR_LEN).
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_time_get_iso8601(char *buf, size_t buf_sz);
+
+/**
+ * @brief Format current UTC timestamp alias.
+ */
+int app_facade_time_format_iso8601(char *buf, size_t buf_sz);
+
+/**
+ * @brief Query current synchronization state and diagnostic metadata.
+ *
+ * @param[out] out_status Pointer to status structure to populate.
+ * @return 0 on success, negative errno on failure.
+ */
+int app_facade_time_get_status(rtc_sync_status_t *out_status);
+
+/**
+ * @brief Obtain current 32-bit DOS FATFS timestamp for MicroSD file writes.
+ *
+ * @return Packed 32-bit DOS timestamp.
+ */
+uint32_t app_facade_time_get_fattime(void);
 
 #ifdef __cplusplus
 }

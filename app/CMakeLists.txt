@@ -61,6 +61,8 @@ target_sources(app PRIVATE
     src/infrastructure/adapters/sensor_matrix_mapper.c
     src/application/zbus/thermal_channels.c
     src/application/active_objects/ao_thermal_energy.c
+    src/domain/time/rtc_time_calc.c
+    src/infrastructure/adapters/adapter_rtc_zephyr.c
 )
 
 if(CONFIG_SHELL)

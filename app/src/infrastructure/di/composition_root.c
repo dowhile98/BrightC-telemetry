@@ -184,6 +184,7 @@ static int storage_provider_thermal_baseline(void *ctx, config_domain_t domain,
 #include "fake_led.h"
 #include "fake_buzzer.h"
 #include "fake_sensor_matrix.h"
+#include "fake_rtc.h"
 #endif
 
 /* =========================================================================
@@ -1632,6 +1633,37 @@ int composition_root_init_thermal_energy(app_container_t *self)
     return 0;
 }
 
+int composition_root_init_rtc(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->rtc.initialized)
+    {
+        return 0;
+    }
+
+#if defined(CONFIG_ZTEST)
+    if (!i_rtc_is_bound(&self->rtc.port))
+    {
+        self->rtc.port = fake_rtc_get_port();
+    }
+#else
+    const struct device *rtc_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(rtc));
+    int err = adapter_rtc_zephyr_init(&self->rtc.zephyr_adapter, rtc_dev);
+    if (err != 0 && err != -ENODEV)
+    {
+        LOG_WRN("Zephyr RTC adapter init: %d", err);
+    }
+    self->rtc.port = adapter_rtc_zephyr_bind(&self->rtc.zephyr_adapter);
+#endif
+
+    self->rtc.initialized = true;
+    return 0;
+}
+
 int composition_root_wire_thermal_energy(app_container_t *self)
 {
     if (self == NULL || !self->thermal_energy.initialized)
@@ -1728,6 +1760,12 @@ int composition_root_init(app_container_t *self)
     }
 
     err = composition_root_init_network(self);
+    if (err != 0)
+    {
+        return err;
+    }
+
+    err = composition_root_init_rtc(self);
     if (err != 0)
     {
         return err;
@@ -2388,6 +2426,15 @@ ao_alarm_manager_t *app_container_get_alarm_manager_ao(app_container_t *self)
         return NULL;
     }
     return (ao_alarm_manager_t *)&self->alarm.ao;
+}
+
+const i_rtc_t *app_container_get_rtc(const app_container_t *self)
+{
+    if (self == NULL || !self->rtc.initialized)
+    {
+        return NULL;
+    }
+    return &self->rtc.port;
 }
 
 int app_container_set_alarm_buzzer_mute(app_container_t *self, bool mute)

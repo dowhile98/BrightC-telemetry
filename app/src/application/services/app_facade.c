@@ -19,6 +19,8 @@
 
 #include "infrastructure/di/composition_root.h"
 #include "interfaces/i_thermal_energy.h"
+#include "interfaces/i_rtc.h"
+#include "domain/time/rtc_time_calc.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -1327,5 +1329,179 @@ int app_facade_thermal_trigger_recalibration(void)
 
     i_thermal_energy_t port = composition_root_get_thermal_energy_port(s_app);
     return i_thermal_energy_trigger_baseline_recalibration(&port);
+}
+
+/* =========================================================================
+ * Real-Time Clock & System Time Service APIs
+ * ========================================================================= */
+
+int app_facade_time_get_datetime(rtc_date_time_t *out_dt)
+{
+    if (s_app == NULL || out_dt == NULL) {
+        return -EINVAL;
+    }
+
+    const i_rtc_t *rtc = app_container_get_rtc(s_app);
+    if (rtc == NULL || !i_rtc_is_bound(rtc)) {
+        return -ENODEV;
+    }
+
+    return i_rtc_get_time(rtc, out_dt);
+}
+
+int app_facade_time_set_datetime(const rtc_date_time_t *dt, rtc_time_source_t source)
+{
+    if (s_app == NULL || dt == NULL) {
+        return -EINVAL;
+    }
+
+    if (!rtc_calc_is_valid_datetime(dt)) {
+        return -EINVAL;
+    }
+
+    const i_rtc_t *rtc = app_container_get_rtc(s_app);
+    if (rtc == NULL || !i_rtc_is_bound(rtc)) {
+        return -ENODEV;
+    }
+
+    int err = i_rtc_set_time(rtc, dt);
+    if (err != 0) {
+        return err;
+    }
+
+    rtc_sync_status_t status;
+    memset(&status, 0, sizeof(status));
+    (void)i_rtc_get_sync_status(rtc, &status);
+
+    if (source == RTC_TIME_SOURCE_SNTP || source == RTC_TIME_SOURCE_CLOUD_MQTT) {
+        status.sync_state = RTC_SYNC_STATE_SYNCHRONIZED;
+    } else {
+        status.sync_state = RTC_SYNC_STATE_BATTERY_RETAINED;
+    }
+    status.last_sync_source = source;
+    (void)rtc_calc_datetime_to_epoch(dt, &status.last_sync_epoch_s);
+    status.last_sync_uptime_ms = k_uptime_get();
+    status.sync_count++;
+    status.battery_ok = true;
+
+    (void)i_rtc_set_sync_status(rtc, &status);
+    return 0;
+}
+
+int app_facade_time_get_unix(int64_t *out_epoch_s, uint16_t *out_subsecond_ms)
+{
+    if (s_app == NULL || out_epoch_s == NULL) {
+        return -EINVAL;
+    }
+
+    const i_rtc_t *rtc = app_container_get_rtc(s_app);
+    if (rtc == NULL || !i_rtc_is_bound(rtc)) {
+        return -ENODEV;
+    }
+
+    uint32_t ms = 0;
+    int err = i_rtc_get_epoch(rtc, out_epoch_s, &ms);
+    if (err != 0) {
+        return err;
+    }
+
+    if (out_subsecond_ms != NULL) {
+        *out_subsecond_ms = (uint16_t)ms;
+    }
+    return 0;
+}
+
+int app_facade_time_get_epoch(int64_t *out_sec, uint32_t *out_ms)
+{
+    if (s_app == NULL || out_sec == NULL) {
+        return -EINVAL;
+    }
+
+    const i_rtc_t *rtc = app_container_get_rtc(s_app);
+    if (rtc == NULL || !i_rtc_is_bound(rtc)) {
+        return -ENODEV;
+    }
+
+    return i_rtc_get_epoch(rtc, out_sec, out_ms);
+}
+
+int app_facade_time_set_unix(int64_t epoch_s, rtc_time_source_t source)
+{
+    if (s_app == NULL || epoch_s < 0) {
+        return -EINVAL;
+    }
+
+    const i_rtc_t *rtc = app_container_get_rtc(s_app);
+    if (rtc == NULL || !i_rtc_is_bound(rtc)) {
+        return -ENODEV;
+    }
+
+    int err = i_rtc_set_epoch(rtc, epoch_s, 0);
+    if (err != 0) {
+        return err;
+    }
+
+    rtc_sync_status_t status;
+    memset(&status, 0, sizeof(status));
+    (void)i_rtc_get_sync_status(rtc, &status);
+
+    if (source == RTC_TIME_SOURCE_SNTP || source == RTC_TIME_SOURCE_CLOUD_MQTT) {
+        status.sync_state = RTC_SYNC_STATE_SYNCHRONIZED;
+    } else {
+        status.sync_state = RTC_SYNC_STATE_BATTERY_RETAINED;
+    }
+    status.last_sync_source = source;
+    status.last_sync_epoch_s = epoch_s;
+    status.last_sync_uptime_ms = k_uptime_get();
+    status.sync_count++;
+    status.battery_ok = true;
+
+    (void)i_rtc_set_sync_status(rtc, &status);
+    return 0;
+}
+
+int app_facade_time_get_iso8601(char *buf, size_t buf_sz)
+{
+    if (buf == NULL || buf_sz < 25) {
+        return -EINVAL;
+    }
+
+    rtc_date_time_t dt;
+    int err = app_facade_time_get_datetime(&dt);
+    if (err != 0) {
+        return err;
+    }
+
+    return rtc_calc_format_iso8601(&dt, buf, buf_sz);
+}
+
+int app_facade_time_format_iso8601(char *buf, size_t buf_sz)
+{
+    return app_facade_time_get_iso8601(buf, buf_sz);
+}
+
+int app_facade_time_get_status(rtc_sync_status_t *out_status)
+{
+    if (s_app == NULL || out_status == NULL) {
+        return -EINVAL;
+    }
+
+    const i_rtc_t *rtc = app_container_get_rtc(s_app);
+    if (rtc == NULL || !i_rtc_is_bound(rtc)) {
+        return -ENODEV;
+    }
+
+    return i_rtc_get_sync_status(rtc, out_status);
+}
+
+uint32_t app_facade_time_get_fattime(void)
+{
+    rtc_date_time_t dt;
+    int err = app_facade_time_get_datetime(&dt);
+    if (err != 0) {
+        return rtc_calc_datetime_to_fattime(NULL);
+    }
+
+    return rtc_calc_datetime_to_fattime(&dt);
 }
 

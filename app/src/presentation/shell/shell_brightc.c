@@ -1734,3 +1734,178 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_thermal,
 
 SHELL_CMD_REGISTER(thermal, &sub_thermal, "Thermal and energy thermodynamic monitoring commands", NULL);
 
+/* =========================================================================
+ * Real-Time Clock & System Time Shell Commands
+ * ========================================================================= */
+
+static const char *rtc_sync_state_str(rtc_sync_state_t state)
+{
+    switch (state) {
+    case RTC_SYNC_STATE_UNINITIALIZED:    return "UNINITIALIZED";
+    case RTC_SYNC_STATE_BATTERY_RETAINED: return "BATTERY_RETAINED";
+    case RTC_SYNC_STATE_SYNCHRONIZED:     return "SYNCHRONIZED";
+    case RTC_SYNC_STATE_DRIFTING:         return "DRIFTING";
+    case RTC_SYNC_STATE_HARDWARE_FAULT:   return "HARDWARE_FAULT";
+    default:                              return "UNKNOWN";
+    }
+}
+
+static const char *rtc_time_source_str(rtc_time_source_t source)
+{
+    switch (source) {
+    case RTC_TIME_SOURCE_NONE:          return "NONE";
+    case RTC_TIME_SOURCE_BUILD_DEFAULT: return "BUILD_DEFAULT";
+    case RTC_TIME_SOURCE_VBAT_BACKUP:   return "VBAT_BACKUP";
+    case RTC_TIME_SOURCE_MANUAL_SHELL:  return "MANUAL_SHELL";
+    case RTC_TIME_SOURCE_HMI_DWIN:      return "HMI_DWIN";
+    case RTC_TIME_SOURCE_CLOUD_MQTT:    return "CLOUD_MQTT";
+    case RTC_TIME_SOURCE_SNTP:          return "SNTP";
+    default:                            return "UNKNOWN";
+    }
+}
+
+static int cmd_rtc_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    rtc_sync_status_t status;
+    int err = app_facade_time_get_status(&status);
+    if (err != 0) {
+        shell_error(sh, "Failed to query RTC status: %d", err);
+        return err;
+    }
+
+    rtc_date_time_t dt;
+    bool has_dt = (app_facade_time_get_datetime(&dt) == 0);
+
+    shell_print(sh, "=================== RTC & SYSTEM TIME STATUS ===================");
+    shell_print(sh, "Sync State       : %s", rtc_sync_state_str(status.sync_state));
+    shell_print(sh, "Last Sync Source : %s", rtc_time_source_str(status.last_sync_source));
+    shell_print(sh, "Last Sync Epoch  : %lld s", (long long)status.last_sync_epoch_s);
+    shell_print(sh, "Last Sync Uptime : %lld ms", (long long)status.last_sync_uptime_ms);
+    shell_print(sh, "Estimated Drift  : %d ppb", (int)status.estimated_drift_ppb);
+    shell_print(sh, "Sync Cycle Count : %u", (unsigned int)status.sync_count);
+    shell_print(sh, "Hardware Present : %s", status.sync_state != RTC_SYNC_STATE_HARDWARE_FAULT ? "YES" : "NO / FAULT");
+    shell_print(sh, "Oscillator State : %s", status.oscillator_running ? "RUNNING & LOCKED" : "STOPPED / FAULT");
+    shell_print(sh, "VBAT Power Domain: %s", status.battery_ok ? "OK (Retained)" : "DEAD / LOW");
+    if (has_dt) {
+        bool is_leap = ((dt.year % 4 == 0 && dt.year % 100 != 0) || (dt.year % 400 == 0));
+        shell_print(sh, "Current Year     : %u (%s)", dt.year, is_leap ? "Leap Year" : "Common Year");
+    }
+    shell_print(sh, "================================================================");
+    return 0;
+}
+
+static int cmd_rtc_get(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    rtc_date_time_t dt;
+    int err = app_facade_time_get_datetime(&dt);
+    if (err != 0) {
+        shell_error(sh, "Failed to read RTC time: %d", err);
+        return err;
+    }
+
+    char iso_buf[RTC_ISO8601_STR_LEN];
+    if (app_facade_time_get_iso8601(iso_buf, sizeof(iso_buf)) != 0) {
+        snprintf(iso_buf, sizeof(iso_buf), "ERROR");
+    }
+
+    int64_t epoch_s = 0;
+    uint16_t sub_ms = 0;
+    (void)app_facade_time_get_unix(&epoch_s, &sub_ms);
+
+    rtc_sync_status_t status;
+    (void)app_facade_time_get_status(&status);
+
+    shell_print(sh, "Current UTC Time : %04u-%02u-%02u %02u:%02u:%02u.%03u UTC",
+                dt.year, dt.month, dt.day, dt.hours, dt.minutes, dt.seconds, dt.milliseconds);
+    shell_print(sh, "ISO-8601 String  : %s", iso_buf);
+    shell_print(sh, "Unix Epoch       : %lld s (%lld ms)",
+                (long long)epoch_s, (long long)epoch_s * 1000LL + sub_ms);
+    shell_print(sh, "Time Source      : %s", rtc_time_source_str(status.last_sync_source));
+    shell_print(sh, "Sync State       : %s", rtc_sync_state_str(status.sync_state));
+    return 0;
+}
+
+static int cmd_rtc_set(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 3) {
+        shell_error(sh, "Usage: rtc set <YYYY-MM-DD> <HH:MM:SS>");
+        return -EINVAL;
+    }
+
+    unsigned int yr = 0, mo = 0, dy = 0;
+    unsigned int hr = 0, mn = 0, sc = 0;
+
+    if (sscanf(argv[1], "%u-%u-%u", &yr, &mo, &dy) != 3 ||
+        sscanf(argv[2], "%u:%u:%u", &hr, &mn, &sc) != 3) {
+        shell_error(sh, "Invalid date/time syntax. Expected <YYYY-MM-DD> <HH:MM:SS>");
+        return -EINVAL;
+    }
+
+    rtc_date_time_t dt;
+    memset(&dt, 0, sizeof(dt));
+    dt.year = (uint16_t)yr;
+    dt.month = (uint8_t)mo;
+    dt.day = (uint8_t)dy;
+    dt.hours = (uint8_t)hr;
+    dt.minutes = (uint8_t)mn;
+    dt.seconds = (uint8_t)sc;
+    dt.milliseconds = 0;
+    dt.day_of_week = 0;
+
+    int err = app_facade_time_set_datetime(&dt, RTC_TIME_SOURCE_MANUAL_SHELL);
+    if (err != 0) {
+        shell_error(sh, "Failed to set RTC date/time: %d", err);
+        return err;
+    }
+
+    shell_print(sh, "RTC calendar updated successfully: %04u-%02u-%02u %02u:%02u:%02u UTC",
+                dt.year, dt.month, dt.day, dt.hours, dt.minutes, dt.seconds);
+    return 0;
+}
+
+static int cmd_rtc_set_epoch(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        shell_error(sh, "Usage: rtc set_epoch <seconds>");
+        return -EINVAL;
+    }
+
+    char *endptr = NULL;
+    int64_t epoch_s = (int64_t)strtoll(argv[1], &endptr, 10);
+    if (endptr == argv[1] || epoch_s < 0) {
+        shell_error(sh, "Invalid epoch timestamp: %s", argv[1]);
+        return -EINVAL;
+    }
+
+    int err = app_facade_time_set_unix(epoch_s, RTC_TIME_SOURCE_MANUAL_SHELL);
+    if (err != 0) {
+        shell_error(sh, "Failed to set RTC epoch: %d", err);
+        return err;
+    }
+
+    rtc_date_time_t dt;
+    if (app_facade_time_get_datetime(&dt) == 0) {
+        shell_print(sh, "RTC epoch updated successfully: %lld s (%04u-%02u-%02u %02u:%02u:%02u UTC)",
+                    (long long)epoch_s, dt.year, dt.month, dt.day, dt.hours, dt.minutes, dt.seconds);
+    } else {
+        shell_print(sh, "RTC epoch updated successfully: %lld s", (long long)epoch_s);
+    }
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_rtc,
+    SHELL_CMD(status, NULL, "Display synchronization source, drift, leap year, hardware presence", cmd_rtc_status),
+    SHELL_CMD(get, NULL, "Print ISO-8601 formatted date/time and epoch seconds", cmd_rtc_get),
+    SHELL_CMD_ARG(set, NULL, "Set calendar time manually: rtc set <YYYY-MM-DD> <HH:MM:SS>", cmd_rtc_set, 3, 0),
+    SHELL_CMD_ARG(set_epoch, NULL, "Set time directly from UNIX epoch timestamp: rtc set_epoch <seconds>", cmd_rtc_set_epoch, 2, 0),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_CMD_REGISTER(rtc, &sub_rtc, "RTC and System Time subsystem commands", NULL);
+

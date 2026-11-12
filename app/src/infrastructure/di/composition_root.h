@@ -44,6 +44,8 @@
 #include "interfaces/i_wifi_control.h"
 #include "interfaces/i_alarm_query.h"
 #include "interfaces/i_thermal_energy.h"
+#include "interfaces/i_rtc.h"
+#include "common/rtc_types.h"
 #include "application/active_objects/ao_alarm_manager.h"
 #include "application/active_objects/ao_thermal_energy.h"
 #include "infrastructure/adapters/adapter_alarm_detector_di.h"
@@ -65,6 +67,7 @@
 #include "infrastructure/adapters/adapter_led_gpio.h"
 #include "infrastructure/adapters/adapter_buzzer_pwm.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
+#include "infrastructure/adapters/adapter_rtc_zephyr.h"
 #endif
 
 #ifdef __cplusplus
@@ -207,6 +210,15 @@ struct app_container {
         i_thermal_energy_t port;
         bool initialized;
     } thermal_energy;
+
+    /* Subsystem 11: Real-Time Clock & System Time Management */
+    struct {
+        i_rtc_t port;
+#ifndef CONFIG_ZTEST
+        adapter_rtc_zephyr_t zephyr_adapter;
+#endif
+        bool initialized;
+    } rtc;
 
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
@@ -539,6 +551,25 @@ int composition_root_init_hvac(app_container_t *self);
 int composition_root_init_thermal_energy(app_container_t *self);
 int composition_root_wire_thermal_energy(app_container_t *self);
 i_thermal_energy_t composition_root_get_thermal_energy_port(app_container_t *self);
+
+/**
+ * @brief Initialize the Real-Time Clock and System Time subsystem.
+ *
+ * Configures the hardware RTC adapter (or fake in Ztest), checks VBAT backup retention,
+ * and binds the i_rtc_t port.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_rtc(app_container_t *self);
+
+/**
+ * @brief Get the abstract RTC and System Time port handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to RTC port, or NULL if uninitialized / invalid.
+ */
+const i_rtc_t *app_container_get_rtc(const app_container_t *self);
 
 /* =========================================================================
  * Full Lifecycle Management

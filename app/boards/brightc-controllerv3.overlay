@@ -4,7 +4,16 @@
 		modbus-uart-2 = &usart6;
 		modbus-rtu-1 = &modbusRTU0;
 		modbus-rtu-2 = &modbusRTU1;
+		rtc = &rtc;
 	};
+};
+
+&rtc {
+	clocks = <&rcc STM32_CLOCK(APB4, 16)>,
+		 <&rcc STM32_SRC_LSE RTC_SEL(1)>;
+	async-prescaler = <127>;
+	sync-prescaler = <255>;
+	status = "okay";
 };
 &usart2_rx_pd6 {
 	bias-pull-up;

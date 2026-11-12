@@ -870,6 +870,8 @@ zephyr_udc0: &usbotg_fs {
 &rtc {
 	clocks = <&rcc STM32_CLOCK(APB4, 16)>,
 		 <&rcc STM32_SRC_LSE RTC_SEL(1)>;
+	async-prescaler = <127>;
+	sync-prescaler = <255>;
 	status = "okay";
 };
 
