@@ -25,6 +25,7 @@
 #include "common/alarm_types.h"
 #include "common/modbus_types.h"
 #include "common/modbus_tcp_types.h"
+#include "common/network_types.h"
 #include "common/sensor_types.h"
 #include "common/thermal_energy_types.h"
 #include "common/rtc_types.h"
@@ -809,6 +810,53 @@ int app_facade_time_get_status(rtc_sync_status_t *out_status);
  * @return Packed 32-bit DOS timestamp.
  */
 uint32_t app_facade_time_get_fattime(void);
+
+/* =========================================================================
+ * Network Service APIs
+ * ========================================================================= */
+
+/**
+ * @brief Get runtime status of a network interface.
+ *
+ * @param[in]  iface      Interface to query (Ethernet or WiFi).
+ * @param[out] out_status Destination status structure.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_get_status(network_interface_t iface, net_status_t *out_status);
+
+/**
+ * @brief Trigger a WiFi access-point scan.
+ *
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_wifi_scan(void);
+
+/**
+ * @brief Configure and connect WiFi station to an access point.
+ *
+ * The configuration is applied through ao_network, persisted to EEPROM via
+ * ao_storage, and the connection attempt is started synchronously.
+ *
+ * @param[in] ssid SSID string (null-terminated, non-NULL).
+ * @param[in] psk  Pre-shared key (null-terminated, required unless sec is OPEN).
+ * @param[in] sec  Security protocol.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_network_wifi_connect(const char *ssid, const char *psk, net_wifi_security_t sec);
+
+/**
+ * @brief Disconnect WiFi station from the current access point.
+ *
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_wifi_disconnect(void);
+
+/**
+ * @brief Force immediate persistence of the current WiFi configuration.
+ *
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_network_wifi_config_save(void);
 
 /* =========================================================================
  * MicroSD Storage & Filesystem Service APIs
