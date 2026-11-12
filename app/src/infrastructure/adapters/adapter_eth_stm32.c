@@ -14,6 +14,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/ethernet.h>
+#include <zephyr/net/ethernet_mgmt.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
 
@@ -306,6 +307,43 @@ static const i_network_api_t s_adapter_eth_stm32_api = {
     .get_status = eth_api_get_status,
 };
 
+#if defined(CONFIG_NET_MGMT_EVENT)
+static void eth_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                   uint64_t mgmt_event,
+                                   struct net_if *iface)
+{
+    ARG_UNUSED(cb);
+    ARG_UNUSED(iface);
+    if (mgmt_event == NET_EVENT_ETHERNET_CARRIER_ON) {
+        LOG_INF("Ethernet: Link UP (Carrier detected)");
+    } else if (mgmt_event == NET_EVENT_ETHERNET_CARRIER_OFF) {
+        LOG_INF("Ethernet: Link DOWN (Cable disconnected)");
+    }
+}
+
+static void eth_ipv4_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                        uint64_t mgmt_event,
+                                        struct net_if *iface)
+{
+    adapter_eth_stm32_t *ctx = CONTAINER_OF(cb, adapter_eth_stm32_t, ipv4_mgmt_cb);
+    if (ctx == NULL || iface == NULL || iface != ctx->iface) {
+        return;
+    }
+
+    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND || mgmt_event == NET_EVENT_IPV4_ADDR_ADD) {
+        struct net_in_addr *addr = net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED);
+        if (addr != NULL && addr->s_addr != 0) {
+            char ip_str[16];
+            net_addr_ntop(AF_INET, addr, ip_str, sizeof(ip_str));
+            LOG_INF("Ethernet: IPv4 address bound: %s", ip_str);
+            ctx->status.state = NET_IF_STATE_CONNECTED;
+            ctx->status.ip_addr = net_ntohl(addr->s_addr);
+            ctx->fsm_state = NET_ADAPTER_STATE_IP_ACQUIRED;
+        }
+    }
+}
+#endif
+
 int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_dev)
 {
     if (ctx == NULL) {
@@ -340,6 +378,18 @@ int adapter_eth_stm32_init(adapter_eth_stm32_t *ctx, const struct device *eth_de
 
     ctx->status.state = NET_IF_STATE_DISCONNECTED;
     ctx->status.rssi = -128;
+
+#if defined(CONFIG_NET_MGMT_EVENT)
+    net_mgmt_init_event_callback(&ctx->eth_mgmt_cb, eth_mgmt_event_handler,
+                                 NET_EVENT_ETHERNET_CARRIER_ON |
+                                 NET_EVENT_ETHERNET_CARRIER_OFF);
+    (void)net_mgmt_add_event_callback(&ctx->eth_mgmt_cb);
+
+    net_mgmt_init_event_callback(&ctx->ipv4_mgmt_cb, eth_ipv4_mgmt_event_handler,
+                                 NET_EVENT_IPV4_DHCP_BOUND |
+                                 NET_EVENT_IPV4_ADDR_ADD);
+    (void)net_mgmt_add_event_callback(&ctx->ipv4_mgmt_cb);
+#endif
 
     return 0;
 }

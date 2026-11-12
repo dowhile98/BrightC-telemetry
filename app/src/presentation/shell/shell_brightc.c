@@ -1295,9 +1295,54 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_network_eth,
     SHELL_SUBCMD_SET_END
 );
 
+static int cmd_network_wifi_list(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    net_wifi_scan_entry_t entries[NET_WIFI_MAX_SCAN_RESULTS];
+    size_t count = 0;
+
+    int err = app_facade_network_wifi_get_scan_results(entries, ARRAY_SIZE(entries), &count);
+    if (err != 0) {
+        shell_error(sh, "Failed to retrieve scan results: %d", err);
+        return err;
+    }
+
+    if (count == 0) {
+        shell_print(sh, "No Wi-Fi networks discovered yet. Run 'network wifi scan' first.");
+        return 0;
+    }
+
+    shell_print(sh, "+----+--------------------------------+------+---------+-------------------+");
+    shell_print(sh, "| #  | SSID                           | RSSI | Channel | Security          |");
+    shell_print(sh, "+----+--------------------------------+------+---------+-------------------+");
+
+    size_t display_count = (count < ARRAY_SIZE(entries)) ? count : ARRAY_SIZE(entries);
+    for (size_t i = 0; i < display_count; i++) {
+        const char *sec_str = "OPEN";
+        switch (entries[i].security) {
+        case NET_WIFI_SEC_WPA_PSK:  sec_str = "WPA-PSK"; break;
+        case NET_WIFI_SEC_WPA2_PSK: sec_str = "WPA2-PSK"; break;
+        case NET_WIFI_SEC_WPA3_SAE: sec_str = "WPA3-SAE"; break;
+        default:                    sec_str = "OPEN"; break;
+        }
+
+        shell_print(sh, "| %02u | %-30s | %4d | %7u | %-17s |",
+                    (unsigned int)(i + 1U),
+                    entries[i].ssid[0] ? entries[i].ssid : "<Hidden>",
+                    (int)entries[i].rssi,
+                    (unsigned int)entries[i].channel,
+                    sec_str);
+    }
+    shell_print(sh, "+----+--------------------------------+------+---------+-------------------+");
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_network_wifi,
     SHELL_CMD_ARG(connect, NULL, "Connect to AP: network wifi connect <ssid> [password]", cmd_network_wifi_connect, 2, 1),
     SHELL_CMD(disconnect, NULL, "Disconnect WiFi station: network wifi disconnect", cmd_network_wifi_disconnect),
+    SHELL_CMD(list, NULL, "List discovered access points: network wifi list", cmd_network_wifi_list),
     SHELL_CMD(save, NULL, "Force EEPROM write of WiFi config: network wifi save", cmd_network_save),
     SHELL_CMD(scan, NULL, "Scan for WiFi access points: network wifi scan", cmd_network_wifi_scan),
     SHELL_CMD(status, NULL, "Show WiFi status: network wifi status", cmd_network_wifi_status),
@@ -2353,5 +2398,3 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_sd,
 );
 
 SHELL_CMD_REGISTER(sd, &sub_sd, "MicroSD storage and filesystem commands", NULL);
-
-

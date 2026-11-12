@@ -13,6 +13,7 @@
 
 #include <zephyr/device.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_mgmt.h>
 
 #include "common/network_types.h"
 #include "interfaces/i_network.h"
@@ -35,6 +36,13 @@ typedef struct {
     net_status_t status;                /**< Last reported status */
     uint32_t link_up_time;              /**< Timestamp (ms) when link became UP */
     net_adapter_fsm_state_t fsm_state;  /**< Explicit finite state machine state */
+#if defined(CONFIG_NET_MGMT_EVENT)
+    struct net_mgmt_event_callback wifi_mgmt_cb; /**< Wi-Fi subsystem event subscription */
+    struct net_mgmt_event_callback ipv4_mgmt_cb; /**< IPv4 address event subscription */
+#endif
+#define ADAPTER_WIFI_MAX_SCAN_RESULTS 16U
+    net_wifi_scan_entry_t scan_results[ADAPTER_WIFI_MAX_SCAN_RESULTS]; /**< Cached AP scan results */
+    size_t scan_count;                   /**< Number of valid scan entries */
 } adapter_wifi_esp_hosted_t;
 
 /**
@@ -69,6 +77,20 @@ i_wifi_control_t adapter_wifi_esp_hosted_wifi_control_port(adapter_wifi_esp_host
  * @return Current net_adapter_fsm_state_t value.
  */
 net_adapter_fsm_state_t adapter_wifi_esp_hosted_get_fsm_state(const adapter_wifi_esp_hosted_t *ctx);
+
+/**
+ * @brief Retrieve cached Wi-Fi AP scan results.
+ *
+ * @param[in]  ctx         Adapter context instance.
+ * @param[out] out_entries Destination buffer for scan results.
+ * @param[in]  max_entries Maximum entries to copy.
+ * @param[out] out_count   Pointer to receive total available entries.
+ * @return 0 on success, negative errno on failure.
+ */
+int adapter_wifi_esp_hosted_get_scan_results(adapter_wifi_esp_hosted_t *ctx,
+                                             net_wifi_scan_entry_t *out_entries,
+                                             size_t max_entries,
+                                             size_t *out_count);
 
 #ifdef __cplusplus
 }

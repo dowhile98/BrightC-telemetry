@@ -459,7 +459,15 @@ static int wifi_ctrl_scan(void *impl)
         return -ENODEV;
     }
 
-    return net_mgmt(NET_REQUEST_WIFI_SCAN, ctx->sta_iface, NULL, 0);
+    /* Ensure STA interface is admin UP so wifi_mgmt does not reject with -ENETDOWN */
+    net_if_up(ctx->sta_iface);
+    ctx->scan_count = 0;
+
+    int ret = net_mgmt(NET_REQUEST_WIFI_SCAN, ctx->sta_iface, NULL, 0);
+    if (ret != 0) {
+        LOG_WRN("WiFi: NET_REQUEST_WIFI_SCAN returned %d", ret);
+    }
+    return ret;
 }
 
 static int wifi_ctrl_connect_ap(void *impl, const char *ssid, const char *psk, net_wifi_security_t sec)
@@ -539,6 +547,139 @@ static const i_wifi_control_api_t s_adapter_wifi_esp_hosted_ctrl_api = {
     .set_mode = wifi_ctrl_set_mode,
 };
 
+#if defined(CONFIG_NET_MGMT_EVENT)
+static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                    uint64_t mgmt_event,
+                                    struct net_if *iface)
+{
+    adapter_wifi_esp_hosted_t *ctx = CONTAINER_OF(cb, adapter_wifi_esp_hosted_t, wifi_mgmt_cb);
+    if (ctx == NULL) {
+        return;
+    }
+
+    switch (mgmt_event) {
+    case NET_EVENT_WIFI_CONNECT_RESULT: {
+        const struct wifi_status *status = (const struct wifi_status *)cb->info;
+        if (status != NULL && status->status == 0) {
+            LOG_INF("WiFi STA: connected successfully to SSID '%s'", ctx->cfg.sta.ssid);
+            ctx->fsm_state = NET_ADAPTER_STATE_LINK_UP;
+            ctx->status.state = NET_IF_STATE_CONNECTING;
+            if (ctx->cfg.sta.ip_mode == NET_IP_MODE_DHCP && ctx->sta_iface != NULL) {
+                LOG_INF("WiFi STA: starting DHCPv4 client");
+                net_dhcpv4_start(ctx->sta_iface);
+            }
+        } else {
+            int code = (status != NULL) ? status->status : -1;
+            LOG_WRN("WiFi STA: connection to '%s' failed (status %d)", ctx->cfg.sta.ssid, code);
+            ctx->fsm_state = NET_ADAPTER_STATE_ERROR;
+            ctx->status.state = NET_IF_STATE_FAILED;
+        }
+        break;
+    }
+    case NET_EVENT_WIFI_DISCONNECT_RESULT: {
+        LOG_INF("WiFi STA: disconnected from network");
+        ctx->status.state = NET_IF_STATE_DISCONNECTED;
+        ctx->status.ip_addr = 0;
+        ctx->fsm_state = NET_ADAPTER_STATE_DISCONNECTED;
+        break;
+    }
+    case NET_EVENT_WIFI_AP_ENABLE_RESULT: {
+        LOG_INF("WiFi AP: Soft-AP '%s' enabled", ctx->cfg.ap.ssid);
+        break;
+    }
+    case NET_EVENT_WIFI_AP_DISABLE_RESULT: {
+        LOG_INF("WiFi AP: Soft-AP disabled");
+        break;
+    }
+#if defined(CONFIG_WIFI_ESP_HOSTED_MCU_AP_STA_MODE)
+    case NET_EVENT_WIFI_AP_STA_CONNECTED: {
+        const struct wifi_ap_sta_info *sta_info = (const struct wifi_ap_sta_info *)cb->info;
+        if (sta_info != NULL) {
+            LOG_INF("WiFi Soft-AP: client connected [MAC: %02X:%02X:%02X:%02X:%02X:%02X]",
+                    sta_info->mac[0], sta_info->mac[1], sta_info->mac[2],
+                    sta_info->mac[3], sta_info->mac[4], sta_info->mac[5]);
+        } else {
+            LOG_INF("WiFi Soft-AP: client connected");
+        }
+        break;
+    }
+    case NET_EVENT_WIFI_AP_STA_DISCONNECTED: {
+        const struct wifi_ap_sta_info *sta_info = (const struct wifi_ap_sta_info *)cb->info;
+        if (sta_info != NULL) {
+            LOG_INF("WiFi Soft-AP: client disconnected [MAC: %02X:%02X:%02X:%02X:%02X:%02X]",
+                    sta_info->mac[0], sta_info->mac[1], sta_info->mac[2],
+                    sta_info->mac[3], sta_info->mac[4], sta_info->mac[5]);
+        } else {
+            LOG_INF("WiFi Soft-AP: client disconnected");
+        }
+        break;
+    }
+#endif
+    case NET_EVENT_WIFI_SCAN_RESULT: {
+        const struct wifi_scan_result *res = (const struct wifi_scan_result *)cb->info;
+        if (res != NULL && res->ssid_length > 0) {
+            char ssid_buf[NET_SSID_MAX_LEN + 1U];
+            size_t slen = (res->ssid_length < NET_SSID_MAX_LEN) ? res->ssid_length : NET_SSID_MAX_LEN;
+            memcpy(ssid_buf, res->ssid, slen);
+            ssid_buf[slen] = '\0';
+            LOG_INF("WiFi Scan: AP found '%s' (RSSI: %d dBm, Ch: %u, Sec: %s)",
+                    ssid_buf, (int)res->rssi, (unsigned int)res->channel,
+                    wifi_security_txt(res->security));
+
+            if (ctx->scan_count < ADAPTER_WIFI_MAX_SCAN_RESULTS) {
+                net_wifi_scan_entry_t *entry = &ctx->scan_results[ctx->scan_count++];
+                strncpy(entry->ssid, ssid_buf, sizeof(entry->ssid) - 1U);
+                entry->ssid[sizeof(entry->ssid) - 1U] = '\0';
+                entry->rssi = res->rssi;
+                entry->channel = res->channel;
+                entry->security = (uint8_t)res->security;
+                if (res->mac_length >= NET_MAC_ADDR_LEN) {
+                    memcpy(entry->mac, res->mac, NET_MAC_ADDR_LEN);
+                } else {
+                    memset(entry->mac, 0, sizeof(entry->mac));
+                }
+            }
+        }
+        break;
+    }
+    case NET_EVENT_WIFI_SCAN_DONE: {
+        const struct wifi_status *status = (const struct wifi_status *)cb->info;
+        int status_val = (status != NULL) ? status->status : 0;
+        LOG_INF("WiFi Scan: completed (status=%d, APs found: %u)", status_val, (unsigned int)ctx->scan_count);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void ipv4_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                    uint64_t mgmt_event,
+                                    struct net_if *iface)
+{
+    adapter_wifi_esp_hosted_t *ctx = CONTAINER_OF(cb, adapter_wifi_esp_hosted_t, ipv4_mgmt_cb);
+    if (ctx == NULL || iface == NULL) {
+        return;
+    }
+
+    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND || mgmt_event == NET_EVENT_IPV4_ADDR_ADD) {
+        struct net_in_addr *addr = net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED);
+        if (addr != NULL && addr->s_addr != 0) {
+            char ip_str[16];
+            net_addr_ntop(AF_INET, addr, ip_str, sizeof(ip_str));
+            if (iface == ctx->sta_iface) {
+                LOG_INF("WiFi STA: IPv4 address bound: %s", ip_str);
+                ctx->status.state = NET_IF_STATE_CONNECTED;
+                ctx->status.ip_addr = net_ntohl(addr->s_addr);
+                ctx->fsm_state = NET_ADAPTER_STATE_IP_ACQUIRED;
+            } else if (iface == ctx->ap_iface) {
+                LOG_INF("WiFi AP: IPv4 address configured: %s", ip_str);
+            }
+        }
+    }
+}
+#endif
+
 int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct device *wifi_dev)
 {
     if (ctx == NULL) {
@@ -587,6 +728,30 @@ int adapter_wifi_esp_hosted_init(adapter_wifi_esp_hosted_t *ctx, const struct de
     ctx->status.state = NET_IF_STATE_DISCONNECTED;
     ctx->status.rssi = -128;
 
+    if (ctx->sta_iface != NULL) {
+        net_if_up(ctx->sta_iface);
+    }
+
+#if defined(CONFIG_NET_MGMT_EVENT)
+    net_mgmt_init_event_callback(&ctx->wifi_mgmt_cb, wifi_mgmt_event_handler,
+                                 NET_EVENT_WIFI_CONNECT_RESULT |
+                                 NET_EVENT_WIFI_DISCONNECT_RESULT |
+                                 NET_EVENT_WIFI_AP_ENABLE_RESULT |
+                                 NET_EVENT_WIFI_AP_DISABLE_RESULT |
+#if defined(CONFIG_WIFI_ESP_HOSTED_MCU_AP_STA_MODE)
+                                 NET_EVENT_WIFI_AP_STA_CONNECTED |
+                                 NET_EVENT_WIFI_AP_STA_DISCONNECTED |
+#endif
+                                 NET_EVENT_WIFI_SCAN_RESULT |
+                                 NET_EVENT_WIFI_SCAN_DONE);
+    (void)net_mgmt_add_event_callback(&ctx->wifi_mgmt_cb);
+
+    net_mgmt_init_event_callback(&ctx->ipv4_mgmt_cb, ipv4_mgmt_event_handler,
+                                 NET_EVENT_IPV4_DHCP_BOUND |
+                                 NET_EVENT_IPV4_ADDR_ADD);
+    (void)net_mgmt_add_event_callback(&ctx->ipv4_mgmt_cb);
+#endif
+
     return 0;
 }
 
@@ -614,4 +779,23 @@ net_adapter_fsm_state_t adapter_wifi_esp_hosted_get_fsm_state(const adapter_wifi
         return NET_ADAPTER_STATE_UNINITIALIZED;
     }
     return ctx->fsm_state;
+}
+
+int adapter_wifi_esp_hosted_get_scan_results(adapter_wifi_esp_hosted_t *ctx,
+                                             net_wifi_scan_entry_t *out_entries,
+                                             size_t max_entries,
+                                             size_t *out_count)
+{
+    if (ctx == NULL || out_entries == NULL) {
+        return -EINVAL;
+    }
+
+    size_t count = (ctx->scan_count < max_entries) ? ctx->scan_count : max_entries;
+    if (count > 0) {
+        memcpy(out_entries, ctx->scan_results, count * sizeof(net_wifi_scan_entry_t));
+    }
+    if (out_count != NULL) {
+        *out_count = ctx->scan_count;
+    }
+    return 0;
 }

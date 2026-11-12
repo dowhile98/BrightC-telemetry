@@ -30,6 +30,7 @@ extern "C" {
 #define NET_WIFI_CHANNEL_MAX 14U
 
 #define NET_WIFI_MAX_CLIENTS_DEFAULT 5U
+#define NET_WIFI_MAX_SCAN_RESULTS 16U
 
 /*============================================================================*
  * ENUMERATIONS
@@ -184,6 +185,17 @@ typedef struct {
     uint8_t        reserved[3]; /**< Alignment padding */
     uint32_t       link_up_ms;  /**< Milliseconds since link established */
 } net_status_t;
+
+/**
+ * @brief Discovered Wi-Fi access point descriptor.
+ */
+typedef struct {
+    char     ssid[NET_SSID_MAX_LEN + 1U]; /**< AP SSID (null-terminated) */
+    int8_t   rssi;                        /**< Signal strength in dBm */
+    uint8_t  channel;                     /**< Operating channel (1..14) */
+    uint8_t  security;                    /**< net_wifi_security_t */
+    uint8_t  mac[NET_MAC_ADDR_LEN];       /**< BSSID MAC address */
+} net_wifi_scan_entry_t;
 
 /*============================================================================*
  * INLINED VALIDATORS (PURE PREDICATES)

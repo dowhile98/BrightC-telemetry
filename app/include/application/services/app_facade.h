@@ -868,6 +868,18 @@ int app_facade_network_eth_set_static(uint32_t ip, uint32_t netmask, uint32_t ga
 int app_facade_network_wifi_scan(void);
 
 /**
+ * @brief Retrieve discovered Wi-Fi scan results from the adapter cache.
+ *
+ * @param[out] out_entries Destination buffer for scan results.
+ * @param[in]  max_entries Maximum entries to copy.
+ * @param[out] out_count   Total available entries discovered.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_network_wifi_get_scan_results(net_wifi_scan_entry_t *out_entries,
+                                             size_t max_entries,
+                                             size_t *out_count);
+
+/**
  * @brief Configure and connect WiFi station to an access point.
  *
  * Preserves Soft-AP mode (promoting to NET_WIFI_MODE_STA_AP if active),

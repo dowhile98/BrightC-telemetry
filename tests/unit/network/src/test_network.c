@@ -20,6 +20,8 @@
 #include "infrastructure/di/composition_root.h"
 #include "application/active_objects/ao_storage.h"
 
+void app_facade_test_reset(void);
+
 static uint32_t s_eth_alarm_feed_count = 0;
 static void test_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
 {
@@ -633,6 +635,7 @@ int ao_storage_flush_now(ao_storage_t *self)
 
 ZTEST(network_suite, test_facade_network_uninitialized_and_parameter_validation)
 {
+    app_facade_test_reset();
     net_status_t status;
     net_eth_config_t eth_cfg;
     net_wifi_config_t wifi_cfg;
@@ -669,6 +672,7 @@ ZTEST(network_suite, test_facade_network_uninitialized_and_parameter_validation)
 
 ZTEST(network_suite, test_facade_network_missing_components_enodev)
 {
+    zassert_ok(app_facade_init(&s_mock_container));
     /* Ensure container accessors return NULL */
     s_mock_eth_port = NULL;
     s_mock_wifi_port = NULL;
@@ -694,6 +698,7 @@ ZTEST(network_suite, test_facade_network_missing_components_enodev)
 
 ZTEST(network_suite, test_facade_network_operations_and_storage_persistence)
 {
+    zassert_ok(app_facade_init(&s_mock_container));
     fake_network_reset();
     i_network_t eth_port = fake_network_get_eth_port();
     i_network_t wifi_port = fake_network_get_wifi_port();

@@ -17,6 +17,7 @@
 #include "infrastructure/di/composition_root.h"
 #include "application/active_objects/ao_network.h"
 #include "application/active_objects/ao_storage.h"
+#include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
 
 #ifndef APP_FACADE_CONTAINER_DEFINED
 static app_container_t *s_app = NULL;
@@ -29,6 +30,13 @@ int app_facade_init(void *container)
     s_app = (app_container_t *)container;
     return 0;
 }
+
+#if defined(CONFIG_ZTEST)
+void app_facade_test_reset(void)
+{
+    s_app = NULL;
+}
+#endif
 #endif
 
 /* =========================================================================
@@ -164,6 +172,25 @@ int app_facade_network_eth_set_static(uint32_t ip, uint32_t netmask, uint32_t ga
     }
 
     return 0;
+}
+
+int app_facade_network_wifi_get_scan_results(net_wifi_scan_entry_t *out_entries,
+                                             size_t max_entries,
+                                             size_t *out_count)
+{
+    if (s_app == NULL || out_entries == NULL) {
+        return -EINVAL;
+    }
+
+#if !defined(CONFIG_ZTEST)
+    return adapter_wifi_esp_hosted_get_scan_results(&s_app->network.wifi_adapter,
+                                                   out_entries, max_entries, out_count);
+#else
+    if (out_count != NULL) {
+        *out_count = 0;
+    }
+    return 0;
+#endif
 }
 
 int app_facade_network_wifi_scan(void)

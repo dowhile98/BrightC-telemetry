@@ -25,6 +25,7 @@
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
 #include "interfaces/i_modbus_tcp_server.h"
+#include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
 #include "transducer_rtd.h"
 
 LOG_MODULE_REGISTER(app_facade, LOG_LEVEL_INF);

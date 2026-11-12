@@ -13,6 +13,7 @@
 
 #include <zephyr/device.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_mgmt.h>
 
 #include "common/network_types.h"
 #include "interfaces/i_network.h"
@@ -33,6 +34,10 @@ typedef struct {
     net_status_t status;               /**< Last reported status */
     uint32_t link_up_time;             /**< Timestamp (ms) when carrier link came UP */
     net_adapter_fsm_state_t fsm_state; /**< Explicit finite state machine state */
+#if defined(CONFIG_NET_MGMT_EVENT)
+    struct net_mgmt_event_callback eth_mgmt_cb;  /**< Ethernet link carrier subscription */
+    struct net_mgmt_event_callback ipv4_mgmt_cb; /**< IPv4 address event subscription */
+#endif
 } adapter_eth_stm32_t;
 
 /**
