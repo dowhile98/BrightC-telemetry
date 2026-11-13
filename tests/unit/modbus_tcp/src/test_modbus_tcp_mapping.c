@@ -331,7 +331,11 @@ ZTEST_SUITE(modbus_tcp_mapping_suite, NULL, modbus_tcp_setup, NULL, NULL, NULL);
 
 ZTEST(modbus_tcp_mapping_suite, test_discrete_inputs_mapping)
 {
-    uint8_t bitfield[16] = {0};
+    /* Sized as the nanoMODBUS bitfield type: the callbacks take nmbs_bitfield,
+     * whose extent is NMBS_BITFIELD_MAX/8 (250 B at the default 2000), and the
+     * write goes through a runtime-indexed helper, so an undersized buffer
+     * trips -Wstringop-overflow. */
+    nmbs_bitfield bitfield = {0};
 
     /* 1.1 Digital Inputs 10001..10056 (PDU offset 0..55) */
     s_mock_di_snapshot.channel_count = 56;
@@ -385,7 +389,8 @@ ZTEST(modbus_tcp_mapping_suite, test_discrete_inputs_mapping)
 
 ZTEST(modbus_tcp_mapping_suite, test_coils_read_and_write)
 {
-    uint8_t bitfield[8] = {0};
+    /* See test_discrete_inputs_mapping: must match nmbs_bitfield extent. */
+    nmbs_bitfield bitfield = {0};
 
     /* 2.1 Buzzer mute coil (offset 49, Modbus Ref 00050) */
     s_mock_buzzer_muted = false;

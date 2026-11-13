@@ -56,11 +56,20 @@ typedef enum {
     STORAGE_FS_SEEK_END = 2, /**< Seek relative to end of file */
 } storage_fs_seek_origin_t;
 
-/* Backward-compatibility alias */
+/* Backward-compatibility alias.
+ * Guarded: Zephyr's <zephyr/fs/fs.h> defines these to the same values (0/1/2),
+ * and both headers can end up in the same translation unit (e.g. Modbus TCP
+ * tests, whose sockets include chain pulls fs.h in). */
 typedef storage_fs_seek_origin_t fs_seek_origin_t;
+#ifndef FS_SEEK_SET
 #define FS_SEEK_SET STORAGE_FS_SEEK_SET
+#endif
+#ifndef FS_SEEK_CUR
 #define FS_SEEK_CUR STORAGE_FS_SEEK_CUR
+#endif
+#ifndef FS_SEEK_END
 #define FS_SEEK_END STORAGE_FS_SEEK_END
+#endif
 
 /**
  * @brief Directory entry and file classification.
