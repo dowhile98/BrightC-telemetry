@@ -28,6 +28,15 @@
 
 LOG_MODULE_REGISTER(composition_root, LOG_LEVEL_INF);
 
+/* Structured prefixes make the deferred log stream readable in the field. */
+#define BOOT_INF(fmt, ...) LOG_INF("[BOOT] " fmt, ##__VA_ARGS__)
+#define BOOT_WRN(fmt, ...) LOG_WRN("[BOOT] " fmt, ##__VA_ARGS__)
+#define BOOT_ERR(fmt, ...) LOG_ERR("[BOOT] " fmt, ##__VA_ARGS__)
+#define CFG_INF(fmt, ...)  LOG_INF("[CFG] " fmt, ##__VA_ARGS__)
+#define CFG_WRN(fmt, ...)  LOG_WRN("[CFG] " fmt, ##__VA_ARGS__)
+#define DI_INF(fmt, ...)   LOG_INF("[DI] " fmt, ##__VA_ARGS__)
+#define RUN_INF(fmt, ...)  LOG_INF("[RUN] " fmt, ##__VA_ARGS__)
+
 /* Compile-time assertions for persistent storage layout (5 domains per ADR-6) */
 BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 576 - 32,
              "config_hvac_t envelope exceeds storage slot size (576 - 32 bytes)");
@@ -378,8 +387,11 @@ int composition_root_init_storage(app_container_t *self)
 
     if (self->storage.initialized)
     {
+        BOOT_INF("storage initialization skipped; subsystem already ready");
         return 0;
     }
+
+    CFG_INF("storage load started; backend=AT24C256C EEPROM, envelope=versioned/ping-pong");
 
 #if defined(CONFIG_ZTEST)
     if (!i_config_storage_is_bound(&self->storage.port))
@@ -411,7 +423,7 @@ int composition_root_init_storage(app_container_t *self)
 
     if (!i_config_storage_is_bound(&self->storage.port))
     {
-        LOG_WRN("Persistent storage is not bound; storage subsystem operating in degraded mode");
+        CFG_WRN("EEPROM backend unavailable; using compiled defaults, persistence disabled");
     }
 
     k_msgq_init(&self->storage.queue, self->storage.queue_buf,
@@ -449,7 +461,11 @@ int composition_root_init_storage(app_container_t *self)
                 dev_unpacked == sizeof(config_device_t))
             {
                 self->device_cfg = dev_cfg;
-                LOG_INF("Loaded DEVICE config from storage");
+                CFG_INF("DEVICE loaded from EEPROM; payload=%u bytes", (unsigned int)dev_unpacked);
+            }
+            else
+            {
+                CFG_WRN("DEVICE record absent or invalid; retaining compiled defaults");
             }
         }
 
@@ -467,7 +483,11 @@ int composition_root_init_storage(app_container_t *self)
                 cal_unpacked == sizeof(config_calibration_t))
             {
                 self->calibration_cfg = cal_cfg;
-                LOG_INF("Loaded CALIBRATION config from storage");
+                CFG_INF("CALIBRATION loaded from EEPROM; payload=%u bytes", (unsigned int)cal_unpacked);
+            }
+            else
+            {
+                CFG_WRN("CALIBRATION record absent or invalid; retaining compiled defaults");
             }
         }
 
@@ -486,13 +506,13 @@ int composition_root_init_storage(app_container_t *self)
                 config_hvac_is_valid(&hvac_cfg))
             {
                 self->hvac.config = hvac_cfg;
-                LOG_INF("Loaded HVAC config from storage (mode=%u, units=%u)",
+                CFG_INF("HVAC loaded from EEPROM; mode=%u, total_units=%u",
                         (unsigned int)self->hvac.config.operation_mode,
                         (unsigned int)self->hvac.config.total_units);
             }
             else
             {
-                LOG_INF("No valid HVAC config in storage, applying defaults");
+                CFG_WRN("HVAC record absent or invalid; applying compiled defaults and persisting them");
                 size_t pack_len = 0U;
                 if (config_envelope_pack(CONFIG_DOMAIN_HVAC, &self->hvac.config,
                                          sizeof(self->hvac.config), hvac_buf,
@@ -502,7 +522,7 @@ int composition_root_init_storage(app_container_t *self)
                                                         hvac_buf, pack_len);
                     if (save_rc != 0)
                     {
-                        LOG_ERR("Failed to persist default HVAC config: %d", save_rc);
+                        BOOT_ERR("CFG HVAC default persist failed: rc=%d", save_rc);
                     }
                 }
             }
@@ -523,13 +543,13 @@ int composition_root_init_storage(app_container_t *self)
                 config_thermal_site_is_valid(&site_cfg))
             {
                 self->thermal_site_cfg = site_cfg;
-                LOG_INF("Loaded THERMAL_SITE config from storage (pairs=%u, altitude=%d m)",
+                CFG_INF("THERMAL_SITE loaded from EEPROM; configured_pairs=%u, altitude_m=%d",
                         (unsigned int)self->thermal_site_cfg.configured_pairs_count,
                         (int)self->thermal_site_cfg.site_altitude_m);
             }
             else
             {
-                LOG_INF("No valid THERMAL_SITE config in storage, applying defaults");
+                CFG_WRN("THERMAL_SITE record absent or invalid; applying compiled defaults and persisting them");
                 size_t pack_len = 0U;
                 if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, &self->thermal_site_cfg,
                                          sizeof(self->thermal_site_cfg), site_buf,
@@ -539,7 +559,7 @@ int composition_root_init_storage(app_container_t *self)
                                                         site_buf, pack_len);
                     if (save_rc != 0)
                     {
-                        LOG_ERR("Failed to persist default THERMAL_SITE config: %d", save_rc);
+                        BOOT_ERR("CFG THERMAL_SITE default persist failed: rc=%d", save_rc);
                     }
                 }
             }
@@ -560,13 +580,13 @@ int composition_root_init_storage(app_container_t *self)
                 config_thermal_baseline_is_valid(&base_cfg))
             {
                 self->thermal_baseline_cfg = base_cfg;
-                LOG_INF("Loaded THERMAL_BASELINE config from storage (valid=%u, hours=%u)",
+                CFG_INF("THERMAL_BASELINE loaded from EEPROM; valid=%u, training_hours=%u",
                         (unsigned int)self->thermal_baseline_cfg.is_valid,
                         (unsigned int)self->thermal_baseline_cfg.training_hours_accumulated);
             }
             else
             {
-                LOG_INF("No valid THERMAL_BASELINE config in storage, applying defaults");
+                CFG_WRN("THERMAL_BASELINE record absent or invalid; applying compiled defaults and persisting them");
                 size_t pack_len = 0U;
                 if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &self->thermal_baseline_cfg,
                                          sizeof(self->thermal_baseline_cfg), base_buf,
@@ -576,7 +596,7 @@ int composition_root_init_storage(app_container_t *self)
                                                         base_buf, pack_len);
                     if (save_rc != 0)
                     {
-                        LOG_ERR("Failed to persist default THERMAL_BASELINE config: %d", save_rc);
+                        BOOT_ERR("CFG THERMAL_BASELINE default persist failed: rc=%d", save_rc);
                     }
                 }
             }
@@ -584,6 +604,7 @@ int composition_root_init_storage(app_container_t *self)
     }
 
     self->storage.initialized = true;
+    CFG_INF("configuration load complete; RAM state is ready for subsystem injection");
     return 0;
 }
 
@@ -669,12 +690,14 @@ int composition_root_init_network(app_container_t *self)
                                    &loaded_eth_cfg, sizeof(loaded_eth_cfg), NULL) == 0 &&
             net_eth_config_is_valid(&loaded_eth_cfg))
         {
-            LOG_INF("Loaded Ethernet config from storage");
+            CFG_INF("NET_ETH loaded from EEPROM; address_mode=%u, dhcp=%u",
+                    (unsigned int)loaded_eth_cfg.ip_mode,
+                    (unsigned int)loaded_eth_cfg.auto_dhcpv4);
             eth_cfg_ptr = &loaded_eth_cfg;
         }
         else
         {
-            LOG_INF("No valid Ethernet config in storage (%d), applying defaults", eth_load_res);
+            CFG_WRN("NET_ETH unavailable or invalid (rc=%d); applying compiled defaults", eth_load_res);
             size_t pack_len = 0;
             if (config_envelope_pack(CONFIG_DOMAIN_NET_ETH, eth_cfg_ptr, sizeof(*eth_cfg_ptr),
                                      eth_buf, sizeof(eth_buf), &pack_len) == 0)
@@ -683,7 +706,7 @@ int composition_root_init_network(app_container_t *self)
                                                     eth_buf, pack_len);
                 if (save_rc != 0)
                 {
-                    LOG_ERR("Failed to persist default net_eth configuration: %d", save_rc);
+                    BOOT_ERR("CFG NET_ETH default persist failed: rc=%d", save_rc);
                 }
             }
         }
@@ -705,12 +728,15 @@ int composition_root_init_network(app_container_t *self)
                                    &loaded_wifi_cfg, sizeof(loaded_wifi_cfg), NULL) == 0 &&
             net_wifi_config_is_valid(&loaded_wifi_cfg))
         {
-            LOG_INF("Loaded Wi-Fi config from storage");
+            CFG_INF("NET_WIFI loaded from EEPROM; mode=%u, security=%u, ssid=%s",
+                    (unsigned int)loaded_wifi_cfg.mode,
+                    (unsigned int)loaded_wifi_cfg.sta.security,
+                    loaded_wifi_cfg.sta.ssid[0] != '\0' ? loaded_wifi_cfg.sta.ssid : "<empty>");
             wifi_cfg_ptr = &loaded_wifi_cfg;
         }
         else
         {
-            LOG_INF("No valid Wi-Fi config in storage (%d), applying defaults", wifi_load_res);
+            CFG_WRN("NET_WIFI unavailable or invalid (rc=%d); applying compiled defaults", wifi_load_res);
             size_t pack_len = 0;
             if (config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, wifi_cfg_ptr, sizeof(*wifi_cfg_ptr),
                                      wifi_buf, sizeof(wifi_buf), &pack_len) == 0)
@@ -719,7 +745,7 @@ int composition_root_init_network(app_container_t *self)
                                                     wifi_buf, pack_len);
                 if (save_rc != 0)
                 {
-                    LOG_ERR("Failed to persist default net_wifi configuration: %d", save_rc);
+                    BOOT_ERR("CFG NET_WIFI default persist failed: rc=%d", save_rc);
                 }
             }
         }
@@ -1089,6 +1115,7 @@ int composition_root_wire(app_container_t *self)
 
     if (self->storage.initialized)
     {
+        DI_INF("binding storage providers for persisted configuration domains");
         int reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_DEVICE,
                                                    storage_provider_device, self);
         if (reg_err != 0)
@@ -1824,85 +1851,117 @@ int composition_root_init(app_container_t *self)
     (void)memset(self, 0, sizeof(*self));
     s_active_container = self;
 
+    BOOT_INF("composition root: initialization started (dependency order enforced)");
+
+    BOOT_INF("phase 01/12: initializing persistent storage and loading configuration");
     int err = composition_root_init_storage(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 01/12 failed: storage/configuration rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 02/12: initializing Modbus RTU buses and device registry");
     err = composition_root_init_modbus(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 02/12 failed: Modbus RTU rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 03/12: initializing system indicators");
     err = composition_root_init_indicators(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 03/12 failed: indicators rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 04/12: initializing digital inputs");
     err = composition_root_init_digital_inputs(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 04/12 failed: digital inputs rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 05/12: initializing HVAC control");
     err = composition_root_init_hvac(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 05/12 failed: HVAC rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 06/12: initializing alarm manager");
     err = composition_root_init_alarm(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 06/12 failed: alarm manager rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 07/12: initializing sensor matrix");
     err = composition_root_init_sensor_matrix(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 07/12 failed: sensor matrix rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 08/12: initializing thermal-energy processing");
     err = composition_root_init_thermal_energy(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 08/12 failed: thermal energy rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 09/12: initializing Ethernet and Wi-Fi networking");
     err = composition_root_init_network(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 09/12 failed: network rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 10/12: initializing real-time clock");
     err = composition_root_init_rtc(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 10/12 failed: RTC rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 11/12: initializing MicroSD storage pipeline");
     err = composition_root_init_sd_storage(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 11/12 failed: MicroSD rc=%d", err);
         return err;
     }
 
+    BOOT_INF("phase 12/12: initializing Modbus TCP server");
     err = composition_root_init_modbus_tcp(self);
     if (err != 0)
     {
+        BOOT_ERR("phase 12/12 failed: Modbus TCP rc=%d", err);
         return err;
     }
 
+    BOOT_INF("wiring cross-subsystem callbacks, storage providers and ports");
     err = composition_root_wire(self);
     if (err != 0)
     {
+        BOOT_ERR("composition-root wiring failed: rc=%d", err);
         return err;
     }
 
     self->is_initialized = true;
+    BOOT_INF("composition root ready: storage=%u modbus=%u network=%u hvac=%u sensors=%u alarms=%u",
+             self->storage.initialized, self->modbus.initialized,
+             self->network.initialized, self->hvac.initialized,
+             self->sensor.initialized, self->alarm.initialized);
     return 0;
 }
 
@@ -1915,8 +1974,11 @@ int composition_root_start(app_container_t *self)
 
     if (self->is_running)
     {
+        RUN_INF("start request ignored; runtime is already active");
         return 0;
     }
+
+    RUN_INF("starting initialized Active Objects in dependency-safe order");
 
     if (self->modbus.initialized)
     {
@@ -2038,6 +2100,7 @@ int composition_root_start(app_container_t *self)
 #endif
 
     self->is_running = true;
+    RUN_INF("all enabled Active Objects started; runtime state=RUNNING");
     return 0;
 }
 

@@ -20,6 +20,11 @@
 
 LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 
+/* Keep boot messages easy to scan when several modules are logging together. */
+#define BOOT_INF(fmt, ...) LOG_INF("[BOOT] " fmt, ##__VA_ARGS__)
+#define BOOT_WRN(fmt, ...) LOG_WRN("[BOOT] " fmt, ##__VA_ARGS__)
+#define BOOT_ERR(fmt, ...) LOG_ERR("[BOOT] " fmt, ##__VA_ARGS__)
+
 static app_container_t g_app;
 
 #if DT_NODE_EXISTS(DT_ALIAS(sw0))
@@ -38,7 +43,7 @@ static void check_boot_factory_reset(app_container_t *app)
 	}
 
 	if (gpio_pin_get_dt(&s_user_button) > 0) {
-		LOG_INF("Factory reset button held at boot, waiting 5 seconds...");
+		BOOT_INF("factory-reset input asserted; sampling for 5 s");
 		int held_ms = 0;
 		while (held_ms < 5000 && gpio_pin_get_dt(&s_user_button) > 0) {
 			k_sleep(K_MSEC(100));
@@ -46,7 +51,7 @@ static void check_boot_factory_reset(app_container_t *app)
 		}
 
 		if (held_ms >= 5000) {
-			LOG_WRN("Button held > 5 seconds: Performing factory reset!");
+			BOOT_WRN("factory-reset hold confirmed; restoring persistent defaults");
 			(void)app_facade_storage_reset_defaults();
 
 			const i_led_t *led = app_container_get_led(app);
@@ -59,7 +64,7 @@ static void check_boot_factory_reset(app_container_t *app)
 				}
 			}
 		} else {
-			LOG_INF("Button released early, continuing standard boot");
+			BOOT_INF("factory-reset hold cancelled after %d ms; continuing normal boot", held_ms);
 		}
 	}
 #else
@@ -69,15 +74,23 @@ static void check_boot_factory_reset(app_container_t *app)
 
 int main(void)
 {
+	BOOT_INF("BrightC telemetry controller boot sequence started");
+	BOOT_INF("initializing dependency-injection container and hardware adapters");
 	int err = composition_root_init(&g_app);
 
 	if (err != 0)
 	{
-		LOG_ERR("composition root init failed (%d)", err);
+		BOOT_ERR("composition-root initialization failed: rc=%d", err);
 		return err;
 	}
+	BOOT_INF("composition-root initialization complete; all required dependencies wired");
 
-	(void)app_facade_init(&g_app);
+	err = app_facade_init(&g_app);
+	if (err != 0) {
+		BOOT_ERR("application facade initialization failed: rc=%d", err);
+		return err;
+	}
+	BOOT_INF("application facade initialized");
 
 	check_boot_factory_reset(&g_app);
 
@@ -96,11 +109,11 @@ int main(void)
 	err = composition_root_start(&g_app);
 	if (err != 0)
 	{
-		LOG_ERR("composition root start failed (%d)", err);
+		BOOT_ERR("composition-root start failed: rc=%d", err);
 		return err;
 	}
 
-	LOG_INF("BrightC telemetry controller started");
+	BOOT_INF("runtime started successfully; controller is operational");
 
 	while (true)
 	{

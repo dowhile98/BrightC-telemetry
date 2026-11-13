@@ -29,6 +29,10 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-12**: Standardized boot and composition-root observability:
+  - Added structured `[BOOT]`, `[CFG]`, `[DI]`, and `[RUN]` prefixes in `app/src/main.c` and `app/src/infrastructure/di/composition_root.c`.
+  - Added numbered initialization phases, dependency-wiring status, runtime start summary, and explicit degraded-storage reporting.
+  - Enriched persisted-configuration logs with source and safe operational fields; Wi-Fi PSK is never logged.
 - **2026-11-07**: Completed Phase 2 of Architectural Refactor (Storage Pruning):
   - Refactored `config_types.h` down to 5 active site-commissioning domains (`DEVICE`, `NET_ETH`, `NET_WIFI`, `HVAC`, `CALIBRATION`).
   - Removed volatile runtime mappings (Modbus tables, DIs, sensor tables) from EEPROM persistence.
