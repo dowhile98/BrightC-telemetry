@@ -58,17 +58,6 @@ static bool address_in_use(const modbus_registry_t *self, uint8_t bus_id, uint8_
     return false;
 }
 
-static void store_le16(uint8_t *dst, uint16_t value)
-{
-    dst[0] = (uint8_t) (value & 0xFFU);
-    dst[1] = (uint8_t) ((value >> 8) & 0xFFU);
-}
-
-static uint16_t load_le16(const uint8_t *src)
-{
-    return (uint16_t) ((uint16_t) src[0] | ((uint16_t) src[1] << 8));
-}
-
 /*============================================================================*
  * LIFECYCLE
  *============================================================================*/
@@ -154,37 +143,6 @@ int modbus_registry_register(modbus_registry_t *self, const modbus_slave_descrip
     return ret;
 }
 
-int modbus_registry_set_bus(modbus_registry_t *self, uint8_t device_id, uint8_t new_bus_id)
-{
-    if (self == NULL || !bus_is_valid(new_bus_id)) {
-        return -EINVAL;
-    }
-
-    int ret = 0;
-
-    (void) k_mutex_lock(&self->lock, K_FOREVER);
-
-    modbus_slave_snapshot_t *slot = find_by_device_id(self, device_id);
-
-    if (slot == NULL) {
-        ret = -ENOENT;
-    } else if (slot->descriptor.bus_id == new_bus_id) {
-        ret = 0;
-    } else if (address_in_use(self, new_bus_id, slot->descriptor.slave_addr, device_id)) {
-        ret = -EADDRINUSE;
-    } else if (count_on_bus(self, new_bus_id) >= MODBUS_MAX_SLAVES_PER_BUS) {
-        ret = -ENOSPC;
-    } else {
-        slot->descriptor.bus_id = new_bus_id;
-        /* The device now answers on another wire: restart its schedule. */
-        slave_scheduler_reset(&slot->runtime);
-    }
-
-    (void) k_mutex_unlock(&self->lock);
-
-    return ret;
-}
-
 int modbus_registry_get(const modbus_registry_t *self, uint8_t device_id,
                         modbus_slave_descriptor_t *out)
 {
@@ -247,20 +205,6 @@ int modbus_registry_get_bus_cfg(const modbus_registry_t *self, uint8_t bus_id,
     (void) k_mutex_lock(&mutable_self->lock, K_FOREVER);
     *out = mutable_self->bus_cfg[bus_id];
     (void) k_mutex_unlock(&mutable_self->lock);
-
-    return 0;
-}
-
-int modbus_registry_set_bus_cfg(modbus_registry_t *self, uint8_t bus_id,
-                                const modbus_bus_cfg_t *cfg)
-{
-    if (self == NULL || cfg == NULL || !bus_is_valid(bus_id) || !modbus_bus_cfg_is_valid(cfg)) {
-        return -EINVAL;
-    }
-
-    (void) k_mutex_lock(&self->lock, K_FOREVER);
-    self->bus_cfg[bus_id] = *cfg;
-    (void) k_mutex_unlock(&self->lock);
 
     return 0;
 }
@@ -424,197 +368,8 @@ int modbus_registry_next_due_in(const modbus_registry_t *self, uint8_t bus_id, u
 }
 
 /*============================================================================*
- * PERSISTENCE
- *============================================================================*/
-
-int modbus_registry_export(const modbus_registry_t *self, void *buf, size_t max,
-                           size_t *out_size)
-{
-    if (self == NULL || buf == NULL || out_size == NULL) {
-        return -EINVAL;
-    }
-
-    uint8_t *dst = (uint8_t *) buf;
-    size_t offset = 0U;
-
-    modbus_registry_t *mutable_self = (modbus_registry_t *) self;
-
-    (void) k_mutex_lock(&mutable_self->lock, K_FOREVER);
-
-    /* Captured once: the table must not grow between the size check and the
-     * copy loop, or the records would be written past the caller's buffer. */
-    const size_t records = mutable_self->count;
-
-    size_t needed = MODBUS_REGISTRY_EXPORT_HEADER_SIZE +
-                    (records * MODBUS_REGISTRY_EXPORT_RECORD_SIZE);
-
-    if (max < needed) {
-        (void) k_mutex_unlock(&mutable_self->lock);
-
-        return -ENOSPC;
-    }
-
-    dst[offset++] = (uint8_t) MODBUS_REGISTRY_EXPORT_VERSION;
-    dst[offset++] = (uint8_t) MODBUS_BUS_MAX;
-
-    for (uint8_t bus = 0U; bus < (uint8_t) MODBUS_BUS_MAX; bus++) {
-        const modbus_bus_cfg_t *cfg = &mutable_self->bus_cfg[bus];
-
-        dst[offset++] = (uint8_t) (cfg->baudrate & 0xFFU);
-        dst[offset++] = (uint8_t) ((cfg->baudrate >> 8) & 0xFFU);
-        dst[offset++] = (uint8_t) ((cfg->baudrate >> 16) & 0xFFU);
-        dst[offset++] = (uint8_t) ((cfg->baudrate >> 24) & 0xFFU);
-        dst[offset++] = (uint8_t) cfg->parity;
-        dst[offset++] = cfg->stop_bits;
-        dst[offset++] = cfg->data_bits;
-    }
-
-    store_le16(&dst[offset], (uint16_t) records);
-    offset += 2U;
-
-    for (size_t i = 0U; i < records; i++) {
-        const modbus_slave_descriptor_t *desc = &mutable_self->entries[i].descriptor;
-
-        dst[offset++] = desc->device_id;
-        dst[offset++] = desc->bus_id;
-        dst[offset++] = desc->slave_addr;
-        dst[offset++] = desc->dev_type;
-        store_le16(&dst[offset], desc->poll_interval_ms);
-        offset += 2U;
-        store_le16(&dst[offset], desc->timeout_ms);
-        offset += 2U;
-        dst[offset++] = desc->is_enabled ? 1U : 0U;
-    }
-
-    (void) k_mutex_unlock(&mutable_self->lock);
-
-    *out_size = offset;
-
-    return 0;
-}
-
-int modbus_registry_import(modbus_registry_t *self, const void *buf, size_t size)
-{
-    if (self == NULL || buf == NULL) {
-        return -EINVAL;
-    }
-
-    const uint8_t *src = (const uint8_t *) buf;
-
-    if (size < MODBUS_REGISTRY_EXPORT_HEADER_SIZE) {
-        return -EINVAL;
-    }
-
-    if (src[0] != (uint8_t) MODBUS_REGISTRY_EXPORT_VERSION) {
-        return -EINVAL;
-    }
-
-    if (src[1] != (uint8_t) MODBUS_BUS_MAX) {
-        return -EINVAL;
-    }
-
-    modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];
-    size_t offset = 2U;
-
-    for (uint8_t bus = 0U; bus < (uint8_t) MODBUS_BUS_MAX; bus++) {
-        bus_cfg[bus].baudrate = (uint32_t) src[offset] | ((uint32_t) src[offset + 1U] << 8) |
-                                ((uint32_t) src[offset + 2U] << 16) |
-                                ((uint32_t) src[offset + 3U] << 24);
-        bus_cfg[bus].parity = (modbus_parity_t) src[offset + 4U];
-        bus_cfg[bus].stop_bits = src[offset + 5U];
-        bus_cfg[bus].data_bits = src[offset + 6U];
-        offset += 7U;
-
-        if (!modbus_bus_cfg_is_valid(&bus_cfg[bus])) {
-            return -EINVAL;
-        }
-    }
-
-    uint16_t record_count = load_le16(&src[offset]);
-    offset += 2U;
-
-    if (record_count > MODBUS_MAX_TOTAL_SLAVES) {
-        return -EINVAL;
-    }
-
-    if (size < offset + ((size_t) record_count * MODBUS_REGISTRY_EXPORT_RECORD_SIZE)) {
-        return -EINVAL;
-    }
-
-    /* Validate the whole blob before touching the table. */
-    size_t per_bus[MODBUS_BUS_MAX] = {0U};
-
-    for (uint16_t i = 0U; i < record_count; i++) {
-        const uint8_t *record = &src[offset + ((size_t) i * MODBUS_REGISTRY_EXPORT_RECORD_SIZE)];
-        modbus_slave_descriptor_t desc = {
-            .device_id = record[0],
-            .bus_id = record[1],
-            .slave_addr = record[2],
-            .dev_type = record[3],
-            .poll_interval_ms = load_le16(&record[4]),
-            .timeout_ms = load_le16(&record[6]),
-            .is_enabled = (record[8] != 0U),
-        };
-
-        if (!modbus_slave_descriptor_is_valid(&desc)) {
-            return -EINVAL;
-        }
-
-        if (++per_bus[desc.bus_id] > MODBUS_MAX_SLAVES_PER_BUS) {
-            return -EINVAL;
-        }
-
-        for (uint16_t j = 0U; j < i; j++) {
-            const uint8_t *other =
-                &src[offset + ((size_t) j * MODBUS_REGISTRY_EXPORT_RECORD_SIZE)];
-
-            if (other[0] == desc.device_id) {
-                return -EINVAL;
-            }
-
-            if (other[1] == desc.bus_id && other[2] == desc.slave_addr) {
-                return -EINVAL;
-            }
-        }
-    }
-
-    /* Commit. */
-    (void) k_mutex_lock(&self->lock, K_FOREVER);
-
-    (void) memcpy(self->bus_cfg, bus_cfg, sizeof(self->bus_cfg));
-    (void) memset(self->entries, 0, sizeof(self->entries));
-    (void) memset(self->cursor, 0, sizeof(self->cursor));
-
-    for (uint16_t i = 0U; i < record_count; i++) {
-        const uint8_t *record = &src[offset + ((size_t) i * MODBUS_REGISTRY_EXPORT_RECORD_SIZE)];
-        modbus_slave_snapshot_t *slot = &self->entries[i];
-
-        slot->descriptor.device_id = record[0];
-        slot->descriptor.bus_id = record[1];
-        slot->descriptor.slave_addr = record[2];
-        slot->descriptor.dev_type = record[3];
-        slot->descriptor.poll_interval_ms = load_le16(&record[4]);
-        slot->descriptor.timeout_ms = load_le16(&record[6]);
-        slot->descriptor.is_enabled = (record[8] != 0U);
-
-        slave_scheduler_reset(&slot->runtime);
-    }
-
-    self->count = record_count;
-
-    (void) k_mutex_unlock(&self->lock);
-
-    return 0;
-}
-
-/*============================================================================*
  * PORT ADAPTER
  *============================================================================*/
-
-static int port_register_device(void *impl, const modbus_slave_descriptor_t *desc)
-{
-    return modbus_registry_register((modbus_registry_t *) impl, desc);
-}
 
 static int port_claim_next_due(void *impl, uint8_t bus_id, uint64_t now_ms,
                                modbus_poll_target_t *out)
@@ -633,11 +388,6 @@ static int port_next_due_in(void *impl, uint8_t bus_id, uint64_t now_ms, uint32_
     return modbus_registry_next_due_in((const modbus_registry_t *) impl, bus_id, now_ms, out_ms);
 }
 
-static int port_set_bus(void *impl, uint8_t device_id, uint8_t new_bus_id)
-{
-    return modbus_registry_set_bus((modbus_registry_t *) impl, device_id, new_bus_id);
-}
-
 static int port_get_bus_cfg(void *impl, uint8_t bus_id, modbus_bus_cfg_t *out)
 {
     return modbus_registry_get_bus_cfg((const modbus_registry_t *) impl, bus_id, out);
@@ -650,11 +400,9 @@ static int port_snapshot(void *impl, uint8_t bus_id, modbus_slave_snapshot_t *ou
 }
 
 static const i_slave_registry_api_t k_registry_port_api = {
-    .register_device = port_register_device,
     .claim_next_due = port_claim_next_due,
     .next_due_in = port_next_due_in,
     .record = port_record,
-    .set_bus = port_set_bus,
     .get_bus_cfg = port_get_bus_cfg,
     .snapshot = port_snapshot,
 };

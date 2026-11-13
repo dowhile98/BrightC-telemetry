@@ -112,17 +112,10 @@ typedef struct {
                                                         const uint8_t *values, int32_t timeout_ms);
 
     /**
-     * @brief Apply a new line configuration to the underlying UART.
+     * @brief Report the line configuration applied by the devicetree.
      *
-     * The implementation must preserve the RS-485 flow-control mode so that a
-     * hardware driver-enable is not silently disabled.
-     *
-     * @return 0 on success, negative errno on failure.
-     */
-    int (*set_bus_cfg)(void *impl, const modbus_bus_cfg_t *cfg);
-
-    /**
-     * @brief Report the line configuration currently applied.
+     * There is no setter on purpose: the line parameters are compile-time
+     * configuration and never change while the firmware runs.
      *
      * @return 0 on success, negative errno on failure.
      */
@@ -302,25 +295,6 @@ i_modbus_client_write_multiple_coils(const i_modbus_client_t *client, uint8_t sl
 
     return client->api->write_multiple_coils(client->impl, slave_addr, coil_addr, quantity,
                                              values, timeout_ms);
-}
-
-/**
- * @brief Apply a new line configuration to the underlying UART.
- *
- * @param[in] client Bound client handle.
- * @param[in] cfg    Configuration to apply; validated before dispatch.
- *
- * @return 0 on success, -EINVAL on an unbound handle or an unsupported
- *         configuration, or the adapter error.
- */
-static inline int i_modbus_client_set_bus_cfg(const i_modbus_client_t *client,
-                                              const modbus_bus_cfg_t *cfg)
-{
-    if (!i_modbus_client_is_bound(client) || !modbus_bus_cfg_is_valid(cfg)) {
-        return -EINVAL;
-    }
-
-    return client->api->set_bus_cfg(client->impl, cfg);
 }
 
 /**

@@ -19,6 +19,8 @@ target_sources(app PRIVATE
     ${APP_DIR}/tests/fakes/src/fake_energy_meter.c
     ${APP_DIR}/tests/fakes/src/fake_network.c
     ${APP_DIR}/tests/fakes/src/fake_config_storage.c
+    ${APP_DIR}/tests/fakes/src/fake_rtc.c
+    ${APP_DIR}/tests/mocks/fake_storage_fs.c
     ${APP_DIR}/tests/fakes/src/fake_led.c
     ${APP_DIR}/tests/fakes/src/fake_buzzer.c
     ${APP_DIR}/tests/fakes/src/fake_digital_input.c
@@ -28,16 +30,21 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/domain/services/waveshare_relay_codec.c
     ${APP_DIR}/app/src/domain/services/sensor_matrix_mapper.c
     ${APP_DIR}/app/src/domain/services/slave_scheduler.c
+    ${APP_DIR}/app/src/domain/time/rtc_time_calc.c
+    ${APP_DIR}/app/src/domain/storage/sd_lifecycle_sm.c
     ${APP_DIR}/app/src/domain/services/digital_input_aggregator.c
     ${APP_DIR}/app/src/application/modbus/modbus_registry.c
+    ${APP_DIR}/app/src/application/modbus/modbus_device_table.c
     ${APP_DIR}/app/src/application/active_objects/ao_modbus.c
     ${APP_DIR}/app/src/application/active_objects/ao_network.c
     ${APP_DIR}/app/src/application/active_objects/ao_storage.c
+    ${APP_DIR}/app/src/application/active_objects/ao_storage_sd.c
     ${APP_DIR}/app/src/application/active_objects/ao_system_indicator.c
     ${APP_DIR}/app/src/application/active_objects/ao_digital_input.c
     ${APP_DIR}/app/src/application/active_objects/ao_sensor_matrix.c
     ${APP_DIR}/app/src/application/zbus/network_channels.c
     ${APP_DIR}/app/src/application/zbus/config_channels.c
+    ${APP_DIR}/app/src/application/zbus/storage_channels.c
     ${APP_DIR}/app/src/application/zbus/indicator_channels.c
     ${APP_DIR}/app/src/application/zbus/digital_input_channels.c
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_relay_modbus.c

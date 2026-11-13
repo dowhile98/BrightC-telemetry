@@ -59,6 +59,8 @@ BUILD_ASSERT(0x0000 + 256 <= 0x0100, "DEVICE domain overlaps NET_ETH");
 BUILD_ASSERT(0x0100 + 128 <= 0x0180, "NET_ETH domain overlaps NET_WIFI");
 BUILD_ASSERT(0x0180 + 640 <= 0x0400, "NET_WIFI domain overlaps HVAC");
 BUILD_ASSERT(0x0400 + 1152 <= 0x0880, "HVAC domain overlaps CALIBRATION");
+BUILD_ASSERT(0x1000 + 1024 <= EEPROM_AT24C256C_CAPACITY_BYTES,
+             "THERMAL_BASELINE domain exceeds physical EEPROM capacity");
 
 #ifdef CONFIG_NANOMODBUS
 /**
@@ -215,13 +217,20 @@ int composition_root_init_modbus(app_container_t *self)
         return 0;
     }
 
-    if (!self->storage.initialized)
-    {
-        LOG_ERR("storage not initialized; boot sequence requires storage before modbus");
-        return -EAGAIN;
-    }
+    /*
+     * Static topology. The line configuration of each bus is owned by the
+     * devicetree (app/boards/brightc-controllerv3.overlay) and the slave map by
+     * the table compiled from app/Kconfig.modbus. Nothing is loaded from EEPROM
+     * and nothing is applied at run time, so the storage subsystem is not a
+     * boot dependency of this initializer.
+     */
+    const modbus_bus_cfg_t unavailable_cfg = MODBUS_BUS_CFG_UNAVAILABLE_INIT;
 
-    (void)memcpy(self->modbus.bus_cfg, k_brightc_modbus_bus_table, sizeof(self->modbus.bus_cfg));
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
+        self->modbus.bus_cfg[bus] = unavailable_cfg;
+    }
+    (void)memset(self->modbus.available, 0, sizeof(self->modbus.available));
 
 #ifdef CONFIG_NANOMODBUS
     size_t bound_buses = 0U;
@@ -237,6 +246,9 @@ int composition_root_init_modbus(app_container_t *self)
 
         if (err == 0)
         {
+            /* The adapter reports what the devicetree configured. This is a
+             * read, not a transfer of authority: the devicetree stays the only
+             * source of truth for the line parameters. */
             err = i_modbus_client_get_bus_cfg(&self->modbus.client_port[bus], &self->modbus.bus_cfg[bus]);
         }
 
@@ -247,6 +259,8 @@ int composition_root_init_modbus(app_container_t *self)
             self->modbus.client_port[bus].impl = NULL;
             continue;
         }
+
+        self->modbus.available[bus] = true;
 
         const char *bus_name = (bus == MODBUS_BUS_RS485_1) ? "RS485-1" : "RS485-2";
         const char *parity_name = "none";
@@ -291,42 +305,50 @@ int composition_root_init_modbus(app_container_t *self)
     }
 
     size_t slave_count = 0U;
-    const modbus_slave_descriptor_t *default_slaves = modbus_device_table_get_slaves(&slave_count);
-    hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
-    uint8_t total_units = self->hvac.config.total_units;
+    const modbus_slave_descriptor_t *compiled_slaves = modbus_device_table_get_slaves(&slave_count);
 
     for (size_t i = 0U; i < slave_count; i++)
     {
-        uint8_t dev_type = default_slaves[i].dev_type;
-
-        /* Filter slaves based on persistent operational mode and unit count */
-        if (op_mode == HVAC_MODE_TELEMETRY_ONLY)
+        if (!compiled_slaves[i].is_enabled)
         {
-            if (dev_type == (uint8_t)MODBUS_DEV_TYPE_MBSL32DI ||
-                dev_type == (uint8_t)MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH)
-            {
-                continue;
-            }
-        }
-        else
-        {
-            /* Hybrid full or control-only: Waveshare relay only needed if total_units > 4 */
-            if (dev_type == (uint8_t)MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH && total_units <= 4U)
-            {
-                continue;
-            }
+            /* Disabled at build time: the row exists only to document the slot
+             * in the table, it must not appear in the registry or in a status
+             * snapshot. */
+            LOG_DBG("slave %u (%s) disabled at build time", compiled_slaves[i].device_id,
+                    (compiled_slaves[i].bus_id == (uint8_t)MODBUS_BUS_RS485_1) ? "RS485-1"
+                                                                                : "RS485-2");
+            continue;
         }
 
-        err = modbus_registry_register(&self->modbus.registry_impl, &default_slaves[i]);
+#if !defined(CONFIG_ZTEST)
+        /* A slave whose bus never came up is not registered at all: keeping it
+         * in the table would report it as ONLINE while nothing polls it. Unit
+         * tests bind fake transports after init, so the table is always seeded
+         * there. */
+        if (!self->modbus.available[compiled_slaves[i].bus_id])
+        {
+            LOG_WRN("slave %u skipped: bus %u transport unavailable",
+                    compiled_slaves[i].device_id, compiled_slaves[i].bus_id);
+            continue;
+        }
+#endif
+
+        err = modbus_registry_register(&self->modbus.registry_impl, &compiled_slaves[i]);
         if (err != 0)
         {
-            LOG_ERR("registering device %u failed (%d)", default_slaves[i].device_id, err);
+            LOG_ERR("registering device %u failed (%d)", compiled_slaves[i].device_id, err);
             return err;
         }
     }
 
     for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
     {
+#if !defined(CONFIG_ZTEST)
+        if (!self->modbus.available[bus]) {
+            continue;
+        }
+#endif
+
         k_msgq_init(&self->modbus.ao_queue[bus], self->modbus.ao_queue_buf[bus],
                     sizeof(modbus_event_t), AO_MODBUS_QUEUE_DEPTH);
 
@@ -1167,6 +1189,7 @@ int composition_root_wire(app_container_t *self)
         {
             LOG_WRN("failed to register storage provider for THERMAL_BASELINE: %d", reg_err);
         }
+
     }
 
     if (self->network.initialized)
@@ -1984,6 +2007,11 @@ int composition_root_start(app_container_t *self)
     {
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
         {
+            if (!self->modbus.available[bus] &&
+                !i_modbus_client_is_bound(&self->modbus.client_port[bus])) {
+                LOG_WRN("bus %u: polling AO not started because transport is unavailable", bus);
+                continue;
+            }
             int err = ao_modbus_start(&self->modbus.ao[bus]);
 
             if (err != 0 && err != -EALREADY)
@@ -2374,6 +2402,9 @@ int composition_root_deinit(app_container_t *self)
     {
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
         {
+            if (!self->modbus.available[bus] && !self->modbus.ao[bus].is_initialized) {
+                continue;
+            }
             rc = ao_modbus_deinit(&self->modbus.ao[bus]);
             if (rc != 0)
             {

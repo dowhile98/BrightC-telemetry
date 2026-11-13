@@ -16,6 +16,7 @@ target_sources(app PRIVATE
     src/application/active_objects/ao_sensor_matrix.c
     src/application/zbus/network_channels.c
     src/application/modbus/modbus_registry.c
+    src/application/modbus/modbus_device_table.c
     src/domain/services/cwt_tm16pt_codec.c
     src/domain/services/jsy_mk339_codec.c
     src/domain/services/mbsl32di_codec.c

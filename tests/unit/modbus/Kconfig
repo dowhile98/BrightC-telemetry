@@ -12,3 +12,7 @@ config APP_MODBUS_INTER_POLL_DELAY_MS
 	  Turnaround delay between consecutive Modbus transactions on the same
 	  RS-485 bus. Gives slave transceivers time to release the bus and
 	  satisfies the Modbus RTU inter-frame silence interval (t3.5+).
+
+# Compile the unit tests against the production Modbus topology so the test
+# build and the firmware build cannot disagree about slaves, buses or addresses.
+rsource "../../../app/Kconfig.modbus"

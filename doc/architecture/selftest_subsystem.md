@@ -324,7 +324,7 @@ The baseline configuration registers the following concrete diagnostic probes ac
 | `0x0001` | `MCU_VREFINT` | STM32H743 Internal ADC3 Channel | `SYNC_POST` | `CRITICAL` | 50 ms | Converts internal $V_{REFINT}$ (nominal ~1.21 V). Verifies analog supply rail $V_{DDA}$ is between 3.10 V and 3.50 V. |
 | `0x0002` | `MCU_TEMPSENSOR`| STM32H743 Die Temperature Sensor | `SYNC_POST` | `DEGRADED` | 50 ms | Converts internal temperature sensor. Verifies core die temperature is within industrial limits ($-40^\circ	ext{C} \le T \le +105^\circ	ext{C}$). |
 | `0x0101` | `EEPROM_I2C2` | AT24C256C (I2C2 @ `0x50`) | `SYNC_POST` | `CRITICAL` | 100 ms | Performs 0-byte I2C addressing poll. Validates that the external EEPROM acknowledges on I2C2 and bus is healthy. |
-| `0x0102` | `STORAGE_INTEGRITY`| `microconf` Dual-Slot Table | `SYNC_POST` | `CRITICAL` | 150 ms | Inspects ping-pong headers of `CONFIG_DOMAIN_DEVICE` and `CONFIG_DOMAIN_MODBUS`. Validates active slot CRC32 matches stored CRC. |
+| `0x0102` | `STORAGE_INTEGRITY`| `microconf` Dual-Slot Table | `SYNC_POST` | `CRITICAL` | 150 ms | Inspects ping-pong headers of the persisted domains (e.g. `CONFIG_DOMAIN_DEVICE`, `CONFIG_DOMAIN_HVAC`). Validates active slot CRC32 matches stored CRC. The Modbus topology has no domain and is therefore out of scope. |
 | `0x0201` | `ETH_PHY_LAN8742`| LAN8742A RMII PHY (MDIO/MDC) | `ASYNC` | `DEGRADED` | 200 ms | Reads PHY Identifier Registers 1 & 2 (`PHYIDR1=0x0007`, `PHYIDR2=0xC13X`) over MDIO. Confirms PHY silicon is alive. |
 | `0x0202` | `WIFI_ESP_HOSTED`| ESP32 Coprocessor via SPI4 | `ASYNC` | `DEGRADED` | 500 ms | Probes ESP-Hosted-MCU control channel. Confirms SPI4 link negotiation, sync handshake, and co-processor firmware ready. |
 | `0x0301` | `RS485_1_TRANSCEIVER`| RS-485 Port 1 (USART2, DE=PD4) | `ASYNC` | `DEGRADED` | 100 ms | Asserts DE pin, verifies GPIO drive state, checks UART baud rate configuration ($9600..115200$). |
@@ -360,8 +360,10 @@ composition_root_init()
 Once operational threads start, a lightweight one-shot work item (`k_work`) or the Network/System orchestrator executes `SELFTEST_STAGE_ASYNC_ACCEPTANCE`:
 1. Gathers dynamic status from physical links (Ethernet link carrier, Wi-Fi association, Modbus initial slave polling).
 2. Computes the complete `selftest_report_t`.
-3. If all tests pass $ightarrow$ publishes `SYSTEM_HEALTH_HEALTHY` to `chan_system_health`.
-4. If one or more `DEGRADED` tests fail $ightarrow$ publishes `SYSTEM_HEALTH_DEGRADED` along with the first faulted ID.
+3. If all tests pass $
+ightarrow$ publishes `SYSTEM_HEALTH_HEALTHY` to `chan_system_health`.
+4. If one or more `DEGRADED` tests fail $
+ightarrow$ publishes `SYSTEM_HEALTH_DEGRADED` along with the first faulted ID.
 
 ---
 

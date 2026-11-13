@@ -1,4 +1,3 @@
-#include "common/modbus_device_table.h"
 /*
  * Copyright (c) 2026 DAECGE
  * SPDX-License-Identifier: Apache-2.0
@@ -6,6 +5,10 @@
  * Composition-root smoke test: the container must wire the registry and start
  * one polling thread per bus, and the polling loop must reach the client port.
  * Runs on native_sim; no hardware and no nanoMODBUS.
+ *
+ * The Modbus topology is compile-time (app/Kconfig.modbus) and independent of
+ * the HVAC profile, so every expectation below is derived from the compiled
+ * table instead of from a seeded configuration.
  */
 
 #include <zephyr/ztest.h>
@@ -19,7 +22,7 @@
 #include "application/zbus/digital_input_channels.h"
 #include "common/config_types.h"
 #include "common/config_envelope.h"
-#include "common/default_config_profiles.h"
+#include "common/modbus_device_table.h"
 
 #define FAKE_BUS 0U
 
@@ -126,14 +129,6 @@ static modbus_transaction_result_t fake_write_multiple_coils(void *impl, uint8_t
     return MODBUS_RESULT_OK;
 }
 
-static int fake_set_cfg(void *impl, const modbus_bus_cfg_t *cfg)
-{
-    ARG_UNUSED(impl);
-    ARG_UNUSED(cfg);
-
-    return 0;
-}
-
 static int fake_get_cfg(void *impl, modbus_bus_cfg_t *out)
 {
     ARG_UNUSED(impl);
@@ -152,12 +147,14 @@ static const i_modbus_client_api_t k_fake_api = {
     .read_coils = fake_read_coils,
     .write_single_coil = fake_write_single_coil,
     .write_multiple_coils = fake_write_multiple_coils,
-    .set_bus_cfg = fake_set_cfg,
     .get_bus_cfg = fake_get_cfg,
 };
 
 /* The container is ~10 KB: keep it off the ztest stack. */
 static app_container_t s_app;
+
+/** Container used to prove Modbus no longer depends on the storage subsystem. */
+static app_container_t s_bare_app;
 
 static void composition_root_test_after(void *fixture)
 {
@@ -194,14 +191,6 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     (void) memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();
 
-    /* Seed with 8-unit configuration so both MBSL32DI and Waveshare Relay are registered on Bus 2 */
-    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-    size_t packed_len = 0U;
-    const config_hvac_t *ctrl_cfg = default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, ctrl_cfg, sizeof(*ctrl_cfg),
-                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
-    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
-
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
     zassert_true(s_app.is_initialized, "is_initialized must be true");
     zassert_true(s_app.modbus.initialized, "modbus subsystem must be initialized");
@@ -235,13 +224,13 @@ ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
     size_t count_bus1 = 0U;
     zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap_bus1, 5U, &count_bus1),
                   0, "Snapshot bus 1 failed");
-    zassert_equal(count_bus1, 3U, "Bus 1 devices (JSY + 2 CWT)");
+    zassert_equal(count_bus1, 2U, "Bus 1 devices (JSY + CWT #1; CWT #2 is disabled)");
 
     modbus_slave_snapshot_t snap_bus2[5];
     size_t count_bus2 = 0U;
     zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_2, snap_bus2, 5U, &count_bus2),
                   0, "Snapshot bus 2 failed");
-    zassert_equal(count_bus2, 2U, "Bus 2 devices (MBSL32DI + Waveshare)");
+    zassert_equal(count_bus2, 2U, "Bus 2 devices (MBSL32DI + Waveshare relay)");
 
     /* Relay ports verification */
     const i_relay_t *relay_ext = app_container_get_relay(&s_app);
@@ -290,14 +279,6 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
     (void) memset(&s_fake, 0, sizeof(s_fake));
     fake_config_storage_reset();
 
-    /* Seed with 8-unit configuration so both MBSL32DI and Waveshare Relay are polled on Bus 2 */
-    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-    size_t packed_len = 0U;
-    const config_hvac_t *ctrl_cfg = default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, ctrl_cfg, sizeof(*ctrl_cfg),
-                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
-    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
-
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
 
     /* Bind fake transport to both Bus 1 (Telemetry) and Bus 2 (Control) */
@@ -329,7 +310,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 3U, "Snapshot count mismatch on Bus 1");
+    zassert_equal(count, 2U, "Snapshot count mismatch on Bus 1");
     zassert_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "A successful poll must be ONLINE");
     zassert_true(snap[0].runtime.successful_polls > 0U, "Success counter not updated");
     zassert_false(snap[0].runtime.in_flight, "The claim was not released");
@@ -344,7 +325,7 @@ ZTEST(composition_root_suite, test_start_runs_both_threads_and_polls_the_bound_b
 
     zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap, 5U, &count),
                   0, "Snapshot failed");
-    zassert_equal(count, 3U, "Snapshot count mismatch after failure");
+    zassert_equal(count, 2U, "Snapshot count mismatch after failure");
     zassert_true(snap[0].runtime.timeout_count > 0U, "Timeouts not recorded");
     zassert_not_equal(snap[0].runtime.health, MODBUS_HEALTH_ONLINE, "Timeouts must degrade");
     zassert_true(snap[1].runtime.timeout_count > 0U, "Timeouts not recorded");
@@ -445,8 +426,11 @@ ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
     /* Out of bounds bus must return NULL */
     zassert_is_null(app_container_get_modbus_client(&isolated_app, MODBUS_BUS_MAX), "Out of bounds must be NULL");
 
-    /* Calling dependents before storage must fail with -EAGAIN (P2-4) */
-    zassert_equal(composition_root_init_modbus(&isolated_app), -EAGAIN, "Modbus before storage must return -EAGAIN");
+    /* Calling the persisted-configuration dependents before storage must fail
+     * with -EAGAIN. Modbus is intentionally absent from this list: its topology
+     * is compile-time and its line parameters come from the devicetree, so it
+     * has no boot dependency on the storage subsystem (see the dedicated test
+     * below). */
     zassert_equal(composition_root_init_network(&isolated_app), -EAGAIN, "Network before storage must return -EAGAIN");
     zassert_equal(composition_root_init_hvac(&isolated_app), -EAGAIN, "HVAC before storage must return -EAGAIN");
 
@@ -467,6 +451,21 @@ ZTEST(composition_root_suite, test_modular_subsystem_initialization_and_getters)
     (void) ao_storage_stop(&isolated_app.storage.ao);
     (void) ao_storage_wait_stopped(&isolated_app.storage.ao, K_MSEC(200));
     (void) ao_storage_deinit(&isolated_app.storage.ao);
+
+    /* Modbus must come up on a container that has no storage at all: nothing is
+     * loaded from EEPROM and nothing is persisted, so the old -EAGAIN gate is
+     * gone by design. */
+    (void) memset(&s_bare_app, 0, sizeof(s_bare_app));
+
+    zassert_equal(composition_root_init_modbus(&s_bare_app), 0,
+                  "Modbus must initialize without the storage subsystem");
+    zassert_true(s_bare_app.modbus.initialized, "modbus must be marked initialized");
+    zassert_true(i_slave_registry_is_bound(&s_bare_app.modbus.registry_port),
+                 "The registry port must be bound without storage");
+
+    /* Let the generic teardown stop the polling threads created above. */
+    s_bare_app.is_initialized = true;
+    (void) composition_root_deinit(&s_bare_app);
 }
 
 ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
@@ -475,52 +474,106 @@ ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
     (void)memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();
 
-    /* 1. Verify declarative initialization with default Hybrid 4-unit configuration */
     zassert_equal(composition_root_init(&s_app), 0, "Init failed");
 
+    /* The compiled table is the contract: every enabled row must be registered
+     * with exactly the compiled bus and unit address, and every row disabled at
+     * build time must be absent. */
+    size_t table_count = 0U;
+    const modbus_slave_descriptor_t *table = modbus_device_table_get_slaves(&table_count);
+
+    zassert_equal(table_count, MODBUS_STANDARD_SLAVES_COUNT, "Compiled table size mismatch");
+
+    size_t enabled_bus1 = 0U;
+    size_t enabled_bus2 = 0U;
+
+    for (size_t i = 0U; i < table_count; i++) {
+        modbus_slave_descriptor_t found;
+
+        int rc = modbus_registry_get(&s_app.modbus.registry_impl, table[i].device_id, &found);
+
+        if (!table[i].is_enabled) {
+            zassert_equal(rc, -ENOENT,
+                          "Device %u is disabled at build time and must not be registered",
+                          table[i].device_id);
+            continue;
+        }
+
+        zassert_equal(rc, 0, "Device %u is enabled at build time and must be registered",
+                      table[i].device_id);
+        zassert_equal(found.slave_addr, table[i].slave_addr, "Device %u address mismatch",
+                      table[i].device_id);
+        zassert_equal(found.bus_id, table[i].bus_id, "Device %u bus mismatch", table[i].device_id);
+        zassert_equal(found.device_id, found.slave_addr,
+                      "The device id must equal the unit address");
+
+        if (table[i].bus_id == (uint8_t)MODBUS_BUS_RS485_1) {
+            enabled_bus1++;
+        } else {
+            enabled_bus2++;
+        }
+    }
+
+    /* Kconfig, not EEPROM, decides the addresses. */
+    const i_slave_registry_t *registry = app_container_get_registry(&s_app);
+    zassert_not_null(registry, "Registry port must be bound");
+    zassert_true(i_slave_registry_is_bound(registry), "Registry port must be bound");
+
+    modbus_slave_snapshot_t snap[MODBUS_MAX_SLAVES_PER_BUS];
+    size_t count = 0U;
+
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_1, snap,
+                                            MODBUS_MAX_SLAVES_PER_BUS, &count),
+                  0, "Snapshot bus 1 failed");
+    zassert_equal(count, enabled_bus1, "Bus 1 must expose exactly the enabled slaves");
+
+    zassert_equal(i_slave_registry_snapshot(registry, MODBUS_BUS_RS485_2, snap,
+                                            MODBUS_MAX_SLAVES_PER_BUS, &count),
+                  0, "Snapshot bus 2 failed");
+    zassert_equal(count, enabled_bus2, "Bus 2 must expose exactly the enabled slaves");
+
     modbus_slave_descriptor_t desc;
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_JSY_MK339, &desc), 0, "JSY meter must exist");
+
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl,
+                                               MODBUS_DEV_TYPE_JSY_MK339, &desc),
+                  0, "JSY meter must exist");
     zassert_equal(desc.slave_addr, MODBUS_ADDR_JSY_MK339, "JSY address");
 
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_CWT_TM16PT, &desc), 0, "CWT concentrator must exist");
-    zassert_equal(desc.slave_addr, MODBUS_ADDR_CWT_TM16PT_1, "CWT address");
+    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl,
+                                               MODBUS_DEV_TYPE_CWT_TM16PT, &desc),
+                  0, "CWT concentrator #1 must exist");
+    zassert_equal(desc.slave_addr, MODBUS_ADDR_CWT_TM16PT_1, "CWT #1 address");
 
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_MBSL32DI, &desc), 0, "MBSL32DI must exist in hybrid mode");
-    zassert_equal(desc.slave_addr, MODBUS_ADDR_MBSL32DI, "MBSL32DI address");
+    if (MODBUS_ENABLE_MBSL32DI) {
+        zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl,
+                                                   MODBUS_DEV_TYPE_MBSL32DI, &desc),
+                      0, "MBSL32DI is enabled at build time and must exist");
+        zassert_equal(desc.slave_addr, MODBUS_ADDR_MBSL32DI, "MBSL32DI address");
+    }
 
-    /* In 4-unit hybrid mode, Waveshare 32CH relay is NOT registered (units 0..3 use internal relays) */
-    zassert_not_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0,
-                      "Waveshare relay must not be registered for <= 4 units");
-    zassert_false(i_relay_is_bound(&s_app.modbus.relay_ext_port), "External relay port must be unbound");
+    if (MODBUS_ENABLE_WAVESHARE_RELAY) {
+        zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl,
+                                                   MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc),
+                      0, "Waveshare relay is enabled at build time and must exist");
+        zassert_equal(desc.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare relay address");
+        zassert_equal(s_app.modbus.waveshare_relay.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY,
+                      "Relay adapter must target the compiled address");
+        zassert_true(i_relay_is_bound(&s_app.modbus.relay_ext_port),
+                     "External relay port must be bound");
+    } else {
+        zassert_false(i_relay_is_bound(&s_app.modbus.relay_ext_port),
+                      "External relay port must stay unbound");
+    }
 
     (void)composition_root_deinit(&s_app);
 
-    /* 2. Verify 8-unit Control-Only mode registers Waveshare 32CH relay */
+    /* The HVAC profile is not part of the Modbus topology: seeding the most
+     * different profile available must not change a single registered slave. */
     (void)memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();
 
     uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
     size_t packed_len = 0U;
-    const config_hvac_t *ctrl_cfg = default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, ctrl_cfg, sizeof(*ctrl_cfg),
-                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
-    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
-
-    zassert_equal(composition_root_init(&s_app), 0, "Init with 8 units failed");
-
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0,
-                  "Waveshare relay must exist for > 4 units");
-    zassert_equal(desc.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare relay address");
-    zassert_equal(s_app.modbus.waveshare_relay.slave_addr, MODBUS_ADDR_WAVESHARE_RELAY, "Waveshare addr must be 5");
-    zassert_equal(s_app.modbus.waveshare_relay.timeout_ms, 250, "Waveshare timeout must be 250");
-    zassert_true(i_relay_is_bound(&s_app.modbus.relay_ext_port), "External relay port must be bound");
-
-    (void)composition_root_deinit(&s_app);
-
-    /* 3. Verify Telemetry-Only mode registers neither MBSL32DI nor Waveshare relay */
-    (void)memset(&s_app, 0, sizeof(s_app));
-    fake_config_storage_reset();
-
     const config_hvac_t *telem_cfg = default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY);
     zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, telem_cfg, sizeof(*telem_cfg),
                                        hvac_buf, sizeof(hvac_buf), &packed_len), 0);
@@ -528,19 +581,23 @@ ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
 
     zassert_equal(composition_root_init(&s_app), 0, "Init with Telemetry-Only failed");
 
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_JSY_MK339, &desc), 0, "JSY meter must exist");
-    zassert_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_CWT_TM16PT, &desc), 0, "CWT concentrator must exist");
-    zassert_not_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_MBSL32DI, &desc), 0,
-                      "MBSL32DI must not be registered in Telemetry-Only");
-    zassert_not_equal(modbus_registry_find_by_type(&s_app.modbus.registry_impl, MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH, &desc), 0,
-                      "Waveshare relay must not be registered in Telemetry-Only");
+    for (size_t i = 0U; i < table_count; i++) {
+        modbus_slave_descriptor_t found;
+        int rc = modbus_registry_get(&s_app.modbus.registry_impl, table[i].device_id, &found);
+
+        zassert_equal(rc, table[i].is_enabled ? 0 : -ENOENT,
+                      "Device %u presence must not depend on the HVAC profile",
+                      table[i].device_id);
+    }
 
     (void)composition_root_deinit(&s_app);
 }
 
 ZTEST(composition_root_suite, test_all_config_domains_registered_and_persistable)
 {
-    /* P2-1: Verify all 8 configuration domains have registered providers and can persist */
+    /* Verify every remaining configuration domain has a registered provider and
+     * can persist. The Modbus topology no longer has a domain: it is compiled
+     * in, which is why only CONFIG_DOMAIN_MAX domains are exercised here. */
     (void)composition_root_deinit(&s_app);
     (void)memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();

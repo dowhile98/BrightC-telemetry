@@ -122,8 +122,8 @@ typedef enum {
  * @brief Electrical configuration of one physical bus.
  *
  * Natural alignment on purpose: this structure is used in RAM by the polling
- * threads. Persistence uses an explicit, versioned serialization instead of a
- * raw memcpy of this layout.
+ * threads. The authoritative values come from the devicetree; nothing is
+ * persisted and nothing is edited at runtime.
  */
 typedef struct {
     uint32_t baudrate;       /**< Bits per second (1200..921600) */
@@ -133,10 +133,26 @@ typedef struct {
 } modbus_bus_cfg_t;
 
 /**
+ * @brief Diagnostic line configuration used when a bus transport is absent.
+ *
+ * The registry validates the configuration of every bus, including the ones
+ * whose UART never came up. This placeholder keeps that contract satisfiable
+ * without inventing a second source of truth: it is never applied to hardware,
+ * because a bus without transport is never polled. 9600 8N1 is the documented
+ * bus default of the platform.
+ */
+#define MODBUS_BUS_CFG_UNAVAILABLE_INIT                                        \
+    {                                                                          \
+        .baudrate = 9600U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U,      \
+        .data_bits = 8U                                                        \
+    }
+
+/**
  * @brief Configuration of one slave device.
  *
- * Flat, pointer-free and fixed size so it can be serialized for microconf or
- * EEPROM storage.
+ * Flat, pointer-free and fixed size. The instances of this type live in a
+ * `const` table compiled into the binary; they are never serialized, imported
+ * or modified at runtime.
  */
 typedef struct {
     uint8_t device_id;         /**< Application-unique logical id (never 0) */

@@ -72,7 +72,6 @@ typedef struct {
 /**
  * @brief Physical Modbus bus configuration alias.
  */
-typedef modbus_bus_cfg_t modbus_bus_config_t;
 
 /* =========================================================================
  * Presentation View Data Structures (DTOs)
@@ -533,35 +532,16 @@ int app_facade_modbus_get_status(app_facade_modbus_view_t *out_view);
 int app_facade_modbus_tcp_get_stats(modbus_tcp_server_stats_t *out_stats);
 
 /**
- * @brief Register or update a remote Modbus slave device descriptor.
- *
- * Updates RAM registry and marks storage dirty for persistence to EEPROM.
- *
- * @param[in] slave Slave device descriptor.
- * @return 0 on success, negative errno on error.
- */
-int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave);
-
-/**
  * @brief Retrieve descriptor of a registered Modbus slave device.
+ *
+ * Read-only: the topology is compile-time, so there is no counterpart that
+ * registers, moves or reconfigures a slave at runtime.
  *
  * @param[in]  device_id Device identifier.
  * @param[out] out_desc  Destination descriptor pointer.
  * @return 0 on success, negative errno on error.
  */
 int app_facade_modbus_get_slave(uint8_t device_id, modbus_slave_descriptor_t *out_desc);
-
-/**
- * @brief Reconfigure electrical line parameters of a physical RS-485 bus.
- *
- * Reconfigures hardware transceiver on the wire, updates RAM registry,
- * and marks storage dirty for EEPROM persistence.
- *
- * @param[in] bus_id Physical bus ID (0 .. MODBUS_BUS_MAX - 1).
- * @param[in] cfg    Line configuration (baud rate, parity, stop bits).
- * @return 0 on success, negative errno on error.
- */
-int app_facade_modbus_configure_bus(uint8_t bus_id, const modbus_bus_config_t *cfg);
 
 /* =========================================================================
  * Storage / Persistence Service APIs

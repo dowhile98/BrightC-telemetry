@@ -121,6 +121,7 @@ struct app_container {
         struct k_msgq ao_queue[MODBUS_BUS_MAX];        /**< Command queues */
         uint8_t ao_queue_buf[MODBUS_BUS_MAX][AO_MODBUS_QUEUE_DEPTH * sizeof(modbus_event_t)];
         modbus_bus_cfg_t bus_cfg[MODBUS_BUS_MAX];      /**< Physical bus configurations */
+        bool available[MODBUS_BUS_MAX];                /**< Transport availability */
         bool initialized;                              /**< Subsystem initialization status */
     } modbus;
 

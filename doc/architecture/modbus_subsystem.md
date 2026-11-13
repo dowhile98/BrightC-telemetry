@@ -16,9 +16,13 @@ The BrightC Controller V3 Modbus subsystem is designed for field telemetry acqui
    - RS-485 is a physical **half-duplex** medium.
    - Each port (`RS485-1` and `RS485-2`) is owned exclusively by its own execution thread (`ao_modbus`).
    - A catastrophic wiring failure, short circuit, or hung slave on one bus never degrades bandwidth nor blocks the other bus.
-2. **Hardware Independence (Hot Reassignment / Failover)**:
-   - Field devices are not rigidly coupled to a physical port in code.
-   - It is possible to transfer a device from Bus 1 to Bus 2 at runtime (`set_bus`), notifying threads and saving the new topology to EEPROM.
+2. **Static, Compile-Time Topology**:
+   - Which slaves exist, on which bus, at which unit address and with which device type is
+     fixed at build time by `app/Kconfig.modbus` and instantiated in one immutable table
+     (`modbus_device_table.c`). A given binary always polls exactly the same devices.
+   - The electrical parameters of each line (baudrate, parity, stop bits) are owned by the
+     devicetree. Nothing is loaded from EEPROM and nothing is changed at runtime, so a
+     firmware image is fully described by its Kconfig + devicetree pair.
 3. **Pure Planning and Fault Tolerance (Offline Backoff)**:
    - The logic that decides which slave is ready for polling and its health classification is **100% pure C code** (`slave_scheduler.c`), fully decoupled from Zephyr and testable on host PC (`native_sim`).
 4. **Protection Against Disconnected Slaves**:
@@ -38,7 +42,7 @@ The BrightC Controller V3 Modbus subsystem is designed for field telemetry acqui
  │        - RAM table of modbus_slave_snapshot_t (up to 32 devices)                       │
  │        - Round-robin cursor per bus and stale claim recovery                           │
  │        - Internal mutual exclusion via k_mutex (transparent to threads)                │
- │        - Versioned export/import serializer for EEPROM storage                         │
+ │        - Read-only port: no insert / move / reconfigure operation is exposed           │
  │                                                                                        │
  └──────────────────────┬──────────────────────────────────────────┬──────────────────────┘
                         │                                          │
@@ -84,9 +88,9 @@ The BrightC Controller V3 Modbus subsystem is designed for field telemetry acqui
 - **Atomic `claim_next_due` / `record` cycle**:
   - To avoid two concurrent calls taking the same slave, the claim marks the slave as `in_flight = true`.
   - If a thread hangs or dies before reporting, the slave is automatically recovered after `MODBUS_CLAIM_STALE_MS` (5 seconds).
-- **Portable Serialization (`export` / `import`)**:
-  - `modbus_registry_export()` packages configuration into a flat little-endian buffer independent of the CPU.
-  - `modbus_registry_import()` validates the consistency of the entire buffer before writing the table to RAM.
+- **Read-only port**: `i_slave_registry_t` exposes claim/report/read operations only. The
+  concrete `modbus_registry_register()` is used by the composition root to seed the compiled
+  table at boot and by the factory-reset path; no other component can alter the topology.
 
 ### 3.3 Polling Active Objects (`application/active_objects/ao_modbus.c`)
 - Each instance runs an event loop:
@@ -97,20 +101,68 @@ The BrightC Controller V3 Modbus subsystem is designed for field telemetry acqui
 
 ---
 
-## 4. Hot Bus Reassignment (Runtime Failover)
+## 4. Static Topology: Compile-Time Configuration
 
-If the physical wiring or the `RS485-1` transceiver is damaged, the operator can move the cables to `RS485-2` and reassign the device through the port:
+The topology is data, not state: it is compiled into the image and is never mutated.
 
-```c
-int err = i_slave_registry_set_bus(&app->registry, device_id, MODBUS_BUS_RS485_2);
+| Element | Source of truth | Changed by |
+| :--- | :--- | :--- |
+| Slave set, bus, unit address, device type, poll interval, timeout | `app/Kconfig.modbus` → `k_brightc_modbus_slave_table` | Rebuilding the firmware |
+| UART instance, DE pin, baudrate, parity, stop bits | `app/boards/brightc-controllerv3.overlay` (devicetree) | Rebuilding the firmware |
+| Health, round-robin cursor, `in_flight` claim | RAM, `modbus_registry.c` | Polling runtime only |
+
+### 4.1 Compile-Time Enablement
+
+Each device has a Kconfig switch plus its unit address:
+
+```text
+CONFIG_BRIGHTC_MODBUS_ENABLE_JSY_MK339=y      CONFIG_BRIGHTC_MODBUS_ADDR_JSY_MK339=2
+CONFIG_BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_1=y   CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_1=1
+CONFIG_BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_2=n   CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_2=5
+CONFIG_BRIGHTC_MODBUS_ENABLE_MBSL32DI=y       CONFIG_BRIGHTC_MODBUS_ADDR_MBSL32DI=3
+CONFIG_BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY=y CONFIG_BRIGHTC_MODBUS_ADDR_WAVESHARE_RELAY=4
 ```
 
-### 4.1 Internal Execution Sequence:
-1. **Atomic Validation**: The registry checks that Bus 2 is not full (`MODBUS_MAX_SLAVES_PER_BUS = 16`) and that the slave address is not duplicated on the destination bus (`-EADDRINUSE`).
-2. **Switching**: The `bus_id` field is updated inside the descriptor.
-3. **Zbus Notification**: The event is emitted on `chan_system_config`.
-4. **Destination Bus Wake**: `AO_MODBUS_EVENT_POLL_NOW` is sent to the Bus 2 thread so it does not wait idly and takes the slave instantly.
-5. **EEPROM Persistence**: The `ao_storage` coordinator receives the Zbus event and stores the new assignment in EEPROM via `microconf`.
+`modbus_device_table.h` turns each `CONFIG_*_ENABLE_*` into a `MODBUS_ENABLE_*` constant and
+`_Static_assert`s the address plan at compile time:
+
+- every address is inside `MODBUS_SLAVE_ADDR_MIN .. MODBUS_SLAVE_ADDR_MAX`;
+- no two devices share an address **within a bus** (a duplicate would fail `-EADDRINUSE` at boot);
+- no two devices share an address **across the plant**, because `device_id == slave_addr` is the
+  registry key (`hardware_pin_map.h` uses `MODBUS_ADDR_MBSL32DI` as the source device id of the
+  remote digital inputs).
+
+A duplicated address, or a topology larger than `MODBUS_MAX_TOTAL_SLAVES`, is therefore a build
+error instead of a field failure.
+
+### 4.2 Boot Sequence
+
+1. `composition_root_init_modbus()` fills every bus slot with `MODBUS_BUS_CFG_UNAVAILABLE_INIT`
+   and brings up one `adapter_modbus_nmbs` per bus from its devicetree configuration.
+2. Each adapter reports the line parameters the devicetree applied
+   (`i_modbus_client_get_bus_cfg()`); the registry stores them read-only.
+3. The compiled table is walked once: rows with `is_enabled == false` are skipped, enabled rows
+   are inserted with `modbus_registry_register()`. A slave whose bus transport never came up is
+   not registered at all, so it cannot be reported as ONLINE while nothing polls it.
+4. One `ao_modbus` thread is created per available bus.
+
+The storage subsystem is **not** a boot dependency of Modbus: no configuration is read from or
+written to EEPROM. `composition_root_init_modbus()` therefore succeeds on a container whose
+storage was never initialised.
+
+### 4.3 Consequences
+
+- **No runtime mutation API**: `app_facade_modbus_configure_slave()`, `configure_bus()`,
+  `i_slave_registry_register_device()`, `i_slave_registry_set_bus()` and
+  `i_modbus_client_set_bus_cfg()` no longer exist. The previous `set_bus` failover path
+  (moving a device to the other RS-485 pair by rewriting EEPROM) is replaced by changing the
+  Kconfig address/bus and rebuilding.
+- **Factory reset** only drops the accumulated health statistics and the round-robin cursors;
+  the UART is never reconfigured and the slave table cannot change.
+- **`CONFIG_DOMAIN_MODBUS` is gone**: `config_domain_t` now has 7 domains and the 0x1400 EEPROM
+  window is reserved. Orphaned envelopes written by older firmware are ignored harmlessly.
+- **Shell**: `modbus slave <device_id>` is a read-only query; it prints the compiled descriptor
+  and states that the topology is fixed at build time.
 
 ---
 
@@ -140,8 +192,8 @@ To incorporate a new field device (e.g., an **8-Channel Relay Expander via Modbu
                └───────────────────────────┬────────────────────────────┘
                                            │
                ┌───────────────────────────▼────────────────────────────┐
-               │ 5. Registry & EEPROM Persistence                       │
-               │    (Registers in registry and saves only)              │
+               │ 5. Compile-Time Registration                           │
+               │    (Kconfig switch + address, immutable table entry)   │
                └────────────────────────────────────────────────────────┘
 ```
 
@@ -192,18 +244,38 @@ A relay module actuator has two types of interaction:
 - `adapter_relay_modbus.c` is implemented implementing the `i_relay_api_t` v-table, translating the call into a message to the `ao_modbus` queue.
 - The domain layer does not know whether the relay is an STM32 physical pin, an MCP23S17 SPI expander, or a Modbus slave.
 
-### Step 5: Registration and Automatic Persistence
-Upon initialization or via configuration command, the descriptor is registered:
-```c
-modbus_slave_descriptor_t desc = {
-    .device_id = 2U,
-    .bus_id = MODBUS_BUS_RS485_1,
-    .slave_addr = 5U,
-    .dev_type = MODBUS_DEV_TYPE_RELAY_EXPANDER,
-    .poll_interval_ms = 500U,
-    .timeout_ms = 200U,
-    .is_enabled = true,
-};
-i_slave_registry_register_device(&app->registry, &desc);
+### Step 5: Compile-Time Registration
+There is no runtime registration call. Add a Kconfig switch and its unit address to
+`app/Kconfig.modbus`:
+
+```text
+menuconfig BRIGHTC_MODBUS_ENABLE_RELAY_EXPANDER
+	bool "8-channel Modbus relay expander"
+	default n
+
+config BRIGHTC_MODBUS_ADDR_RELAY_EXPANDER
+	int "Modbus slave address for the relay expander"
+	default 6
+	range 1 247
 ```
-The storage coordinator (`ao_storage`) detects the insertion and automatically saves the new slave to EEPROM.
+
+Then add one row to `k_brightc_modbus_slave_table` in
+`app/src/application/modbus/modbus_device_table.c`:
+
+```c
+{
+    .device_id        = MODBUS_ADDR_RELAY_EXPANDER,
+    .bus_id           = (uint8_t) MODBUS_BUS_RS485_1,
+    .slave_addr       = MODBUS_ADDR_RELAY_EXPANDER,
+    .dev_type         = (uint8_t) MODBUS_DEV_TYPE_RELAY_EXPANDER,
+    .poll_interval_ms = 500U,
+    .timeout_ms       = 200U,
+    .is_enabled       = MODBUS_ENABLE_RELAY_EXPANDER,
+},
+```
+
+`device_id` must stay equal to `slave_addr`: the registry keys devices by that value and
+`hardware_pin_map.h` derives the source device id of the mapped channels from it. The address
+must be unique across the whole plant — the `_Static_assert`s in `modbus_device_table.h` enforce
+it. Nothing is written to EEPROM and no command is needed at the bench: flashing the new image is
+the whole commissioning step.

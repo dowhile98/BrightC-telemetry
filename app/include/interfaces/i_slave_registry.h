@@ -2,10 +2,15 @@
  * Copyright (c) 2026 DAECGE
  * SPDX-License-Identifier: Apache-2.0
  *
- * Port: Modbus slave registry.
+ * Port: Modbus slave registry (read-only view).
  * Contract for the component that owns the slave table, the per-bus polling
  * schedule and the health bookkeeping. Implemented by modbus_registry (runtime)
  * and by an in-memory fake in tests/fakes.
+ *
+ * The topology is compile-time: this port lets the polling threads claim work
+ * and report outcomes, and lets the presentation layer read status. It
+ * deliberately exposes no operation that inserts, moves or reconfigures a
+ * slave, so nothing outside the composition root can alter the bus map.
  */
 
 #ifndef APP_INTERFACES_I_SLAVE_REGISTRY_H_
@@ -34,16 +39,6 @@ extern "C" {
  * binding one) refers to this table.
  */
 typedef struct {
-    /**
-     * @brief Insert a new slave or update an existing one by device_id.
-     *
-     * @return 0 on success, -EINVAL on invalid descriptor, -ENOSPC when the bus
-     *         or the global table is full, -EADDRINUSE when another device
-     *         already uses the same address on the same bus, -ENOENT when the
-     *         device exists but cannot be updated.
-     */
-    int (*register_device)(void *impl, const modbus_slave_descriptor_t *desc);
-
     /**
      * @brief Atomically claim the next slave of a bus that is due for polling.
      *
@@ -79,17 +74,6 @@ typedef struct {
      *         no enabled slave.
      */
     int (*next_due_in)(void *impl, uint8_t bus_id, uint64_t now_ms, uint32_t *out_ms);
-
-    /**
-     * @brief Reassign a device to another bus (field failover).
-     *
-     * Fails when the target bus is full or already contains the same slave
-     * address, so a failover can never create an address collision.
-     *
-     * @return 0 on success, -ENOENT unknown device, -EINVAL invalid bus,
-     *         -ENOSPC target bus full, -EADDRINUSE address already present.
-     */
-    int (*set_bus)(void *impl, uint8_t device_id, uint8_t new_bus_id);
 
     /**
      * @brief Read the electrical configuration of a bus.
@@ -144,25 +128,6 @@ static inline bool i_slave_registry_is_bound(const i_slave_registry_t *registry)
  * the device exist, is it already claimed) stays in the implementation, which
  * is the only layer that can answer it.
  *============================================================================*/
-
-/**
- * @brief Insert or update a slave device.
- *
- * @param[in] registry Bound registry handle.
- * @param[in] desc     Descriptor to register; validated before dispatch.
- *
- * @return 0 on success, -EINVAL on an unbound handle or an inconsistent
- *         descriptor, or the implementation error (-ENOSPC, -EADDRINUSE...).
- */
-static inline int i_slave_registry_register_device(const i_slave_registry_t *registry,
-                                                   const modbus_slave_descriptor_t *desc)
-{
-    if (!i_slave_registry_is_bound(registry) || !modbus_slave_descriptor_is_valid(desc)) {
-        return -EINVAL;
-    }
-
-    return registry->api->register_device(registry->impl, desc);
-}
 
 /**
  * @brief Claim the next slave of a bus that is due for polling.
@@ -227,28 +192,6 @@ static inline int i_slave_registry_next_due_in(const i_slave_registry_t *registr
     }
 
     return registry->api->next_due_in(registry->impl, bus_id, now_ms, out_ms);
-}
-
-/**
- * @brief Reassign a device to another bus (field failover).
- *
- * @param[in] registry    Bound registry handle.
- * @param[in] device_id   Device to move.
- * @param[in] new_bus_id  Destination bus.
- *
- * @return 0 on success, -EINVAL on bad arguments, -ENOENT for an unknown
- *         device, -ENOSPC when the target bus is full, -EADDRINUSE when the
- *         target bus already carries that slave address.
- */
-static inline int i_slave_registry_set_bus(const i_slave_registry_t *registry, uint8_t device_id,
-                                           uint8_t new_bus_id)
-{
-    if (!i_slave_registry_is_bound(registry) || device_id == 0U ||
-        !modbus_bus_id_is_valid(new_bus_id)) {
-        return -EINVAL;
-    }
-
-    return registry->api->set_bus(registry->impl, device_id, new_bus_id);
 }
 
 /**

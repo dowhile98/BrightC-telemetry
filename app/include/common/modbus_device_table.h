@@ -3,10 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * @file modbus_device_table.h
- * @brief Declarative compile-time Modbus bus and slave topology for BrightC V3.
+ * @brief Declarative compile-time Modbus slave topology for BrightC V3.
  *
- * Replaces dynamic runtime EEPROM slave configuration with immutable,
- * deterministic hardware topology definitions adhering to Clean Architecture (§4.1.D).
+ * The topology is fixed at build time: the slaves, their buses, their unit
+ * addresses and their device types come from `app/Kconfig.modbus` and are
+ * instantiated in one immutable table. Nothing is loaded from EEPROM and
+ * nothing is edited at runtime, so a given binary always polls the same
+ * devices.
+ *
+ * The electrical configuration of each bus is *not* here: the devicetree is
+ * the single source of truth for baudrate, parity and stop bits
+ * (app/boards/brightc-controllerv3.overlay).
+ *
  * Pure ISO C99/C11: zero Zephyr headers, zero dynamic memory allocations.
  */
 
@@ -24,55 +32,35 @@ extern "C" {
 #endif
 
 /* ========================================================================= */
-/* Standard Physical Bus Configurations                                      */
-/* ========================================================================= */
-
-/** Default baud rate for Bus 1 (Telemetry & Instrumentation). */
-#define MODBUS_BUS_1_DEFAULT_BAUDRATE 9600U
-
-/** Default baud rate for Bus 2 (HVAC Actuation & Remote I/O). */
-#define MODBUS_BUS_2_DEFAULT_BAUDRATE 19200U
-
-/**
- * @brief Immutable electrical bus configuration for RS485-1 and RS485-2.
- */
-static const modbus_bus_cfg_t k_brightc_modbus_bus_table[MODBUS_BUS_MAX] = {
-    [MODBUS_BUS_RS485_1] = {
-        .baudrate  = MODBUS_BUS_1_DEFAULT_BAUDRATE,
-        .parity    = MODBUS_PARITY_NONE,
-        .stop_bits = 1U,
-        .data_bits = 8U,
-    },
-    [MODBUS_BUS_RS485_2] = {
-        .baudrate  = MODBUS_BUS_2_DEFAULT_BAUDRATE,
-        .parity    = MODBUS_PARITY_NONE,
-        .stop_bits = 1U,
-        .data_bits = 8U,
-    },
-};
-
-/* ========================================================================= */
 /* Standard Field Device Slave Addresses & Identifiers                       */
 /* ========================================================================= */
 
+/*
+ * In a production build every symbol below comes from app/Kconfig.modbus.
+ * The fallbacks exist only for host unit tests that do not source that
+ * fragment (any test that includes app_defaults.h/hardware_pin_map.h pulls
+ * this header in transitively). They MUST stay identical to the Kconfig
+ * defaults; the modbus unit-test build sources app/Kconfig.modbus instead of
+ * relying on them.
+ */
 #ifndef CONFIG_BRIGHTC_MODBUS_ADDR_JSY_MK339
-#define CONFIG_BRIGHTC_MODBUS_ADDR_JSY_MK339 1U
+#define CONFIG_BRIGHTC_MODBUS_ADDR_JSY_MK339 2U
 #endif
 
 #ifndef CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_1
-#define CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_1 2U
+#define CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_1 1U
 #endif
 
 #ifndef CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_2
-#define CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_2 3U
+#define CONFIG_BRIGHTC_MODBUS_ADDR_CWT_TM16PT_2 5U
 #endif
 
 #ifndef CONFIG_BRIGHTC_MODBUS_ADDR_MBSL32DI
-#define CONFIG_BRIGHTC_MODBUS_ADDR_MBSL32DI 4U
+#define CONFIG_BRIGHTC_MODBUS_ADDR_MBSL32DI 3U
 #endif
 
 #ifndef CONFIG_BRIGHTC_MODBUS_ADDR_WAVESHARE_RELAY
-#define CONFIG_BRIGHTC_MODBUS_ADDR_WAVESHARE_RELAY 5U
+#define CONFIG_BRIGHTC_MODBUS_ADDR_WAVESHARE_RELAY 4U
 #endif
 
 #define MODBUS_ADDR_JSY_MK339         CONFIG_BRIGHTC_MODBUS_ADDR_JSY_MK339
@@ -81,27 +69,24 @@ static const modbus_bus_cfg_t k_brightc_modbus_bus_table[MODBUS_BUS_MAX] = {
 #define MODBUS_ADDR_MBSL32DI          CONFIG_BRIGHTC_MODBUS_ADDR_MBSL32DI
 #define MODBUS_ADDR_WAVESHARE_RELAY   CONFIG_BRIGHTC_MODBUS_ADDR_WAVESHARE_RELAY
 
+/*
+ * Enable flags: a device exists if and only if Kconfig enabled it. There is no
+ * implicit "enabled because Kconfig is missing" branch, so the table compiled
+ * into the binary and the one compiled into the unit tests cannot disagree.
+ */
 #if defined(CONFIG_BRIGHTC_MODBUS_ENABLE_JSY_MK339)
 #define MODBUS_ENABLE_JSY_MK339 true
-#elif defined(CONFIG_BRIGHTC_MODBUS_KCONFIG_PRESENT)
-#define MODBUS_ENABLE_JSY_MK339 false
 #else
-#define MODBUS_ENABLE_JSY_MK339 true
+#define MODBUS_ENABLE_JSY_MK339 false
 #endif
 
 #if defined(CONFIG_BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_1)
 #define MODBUS_ENABLE_CWT_TM16PT_1 true
-#elif defined(CONFIG_BRIGHTC_MODBUS_KCONFIG_PRESENT)
-#define MODBUS_ENABLE_CWT_TM16PT_1 false
 #else
-#define MODBUS_ENABLE_CWT_TM16PT_1 true
+#define MODBUS_ENABLE_CWT_TM16PT_1 false
 #endif
 
 #if defined(CONFIG_BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_2)
-#define MODBUS_ENABLE_CWT_TM16PT_2 true
-#elif defined(CONFIG_BRIGHTC_MODBUS_KCONFIG_PRESENT)
-#define MODBUS_ENABLE_CWT_TM16PT_2 false
-#elif defined(CONFIG_ZTEST)
 #define MODBUS_ENABLE_CWT_TM16PT_2 true
 #else
 #define MODBUS_ENABLE_CWT_TM16PT_2 false
@@ -109,18 +94,14 @@ static const modbus_bus_cfg_t k_brightc_modbus_bus_table[MODBUS_BUS_MAX] = {
 
 #if defined(CONFIG_BRIGHTC_MODBUS_ENABLE_MBSL32DI)
 #define MODBUS_ENABLE_MBSL32DI true
-#elif defined(CONFIG_BRIGHTC_MODBUS_KCONFIG_PRESENT)
-#define MODBUS_ENABLE_MBSL32DI false
 #else
-#define MODBUS_ENABLE_MBSL32DI true
+#define MODBUS_ENABLE_MBSL32DI false
 #endif
 
 #if defined(CONFIG_BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY)
 #define MODBUS_ENABLE_WAVESHARE_RELAY true
-#elif defined(CONFIG_BRIGHTC_MODBUS_KCONFIG_PRESENT)
-#define MODBUS_ENABLE_WAVESHARE_RELAY false
 #else
-#define MODBUS_ENABLE_WAVESHARE_RELAY true
+#define MODBUS_ENABLE_WAVESHARE_RELAY false
 #endif
 
 /* Backward compatibility aliases */
@@ -129,86 +110,89 @@ static const modbus_bus_cfg_t k_brightc_modbus_bus_table[MODBUS_BUS_MAX] = {
 
 /**
  * @brief Total number of standard field slaves in the BrightC topology.
+ *
+ * Every standard device keeps a row even when Kconfig disables it; the row is
+ * then compiled with `is_enabled = false` and the registry never schedules it.
  */
 #define MODBUS_STANDARD_SLAVES_COUNT 5U
 
 /**
  * @brief Immutable standard Modbus slave descriptors table.
+ *
+ * Defined once in modbus_device_table.c so every translation unit shares the
+ * same copy.
  */
-static const modbus_slave_descriptor_t k_brightc_modbus_slave_table[MODBUS_STANDARD_SLAVES_COUNT] = {
-    /* RS485-1: Telemetry & Environmental Instrumentation */
-    {
-        .device_id         = MODBUS_ADDR_JSY_MK339,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_1,
-        .slave_addr        = MODBUS_ADDR_JSY_MK339,
-        .dev_type          = (uint8_t)MODBUS_DEV_TYPE_JSY_MK339,
-        .poll_interval_ms  = 1000U,
-        .timeout_ms        = 250U,
-        .is_enabled        = MODBUS_ENABLE_JSY_MK339,
-    },
-    {
-        .device_id         = MODBUS_ADDR_CWT_TM16PT_1,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_1,
-        .slave_addr        = MODBUS_ADDR_CWT_TM16PT_1,
-        .dev_type          = (uint8_t)MODBUS_DEV_TYPE_CWT_TM16PT,
-        .poll_interval_ms  = 1000U,
-        .timeout_ms        = 300U,
-        .is_enabled        = MODBUS_ENABLE_CWT_TM16PT_1,
-    },
-    {
-        .device_id         = MODBUS_ADDR_CWT_TM16PT_2,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_1,
-        .slave_addr        = MODBUS_ADDR_CWT_TM16PT_2,
-        .dev_type          = (uint8_t)MODBUS_DEV_TYPE_CWT_TM16PT,
-        .poll_interval_ms  = 1000U,
-        .timeout_ms        = 300U,
-        .is_enabled        = MODBUS_ENABLE_CWT_TM16PT_2,
-    },
+extern const modbus_slave_descriptor_t k_brightc_modbus_slave_table[
+    MODBUS_STANDARD_SLAVES_COUNT];
 
-    /* RS485-2: Critical HVAC Actuation & Remote I/O */
-    {
-        .device_id         = MODBUS_ADDR_MBSL32DI,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_2,
-        .slave_addr        = MODBUS_ADDR_MBSL32DI,
-        .dev_type          = (uint8_t)MODBUS_DEV_TYPE_MBSL32DI,
-        .poll_interval_ms  = 200U,  /* Rapid sampling for contactors & interlocks */
-        .timeout_ms        = 150U,
-        .is_enabled        = MODBUS_ENABLE_MBSL32DI,
-    },
-    {
-        .device_id         = MODBUS_ADDR_WAVESHARE_RELAY,
-        .bus_id            = (uint8_t)MODBUS_BUS_RS485_2,
-        .slave_addr        = MODBUS_ADDR_WAVESHARE_RELAY,
-        .dev_type          = (uint8_t)MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
-        .poll_interval_ms  = 1000U,
-        .timeout_ms        = 250U,
-        .is_enabled        = MODBUS_ENABLE_WAVESHARE_RELAY,
-    },
-};
+/* ========================================================================= */
+/* Compile-time topology validation                                          */
+/* ========================================================================= */
+
+/*
+ * A duplicated unit address on the same bus is a wiring/configuration error
+ * that must fail the build, not the boot: `modbus_registry_register()` would
+ * return -EADDRINUSE at run time, after the board is already deployed.
+ */
+_Static_assert(MODBUS_ADDR_JSY_MK339 >= MODBUS_SLAVE_ADDR_MIN &&
+                   MODBUS_ADDR_JSY_MK339 <= MODBUS_SLAVE_ADDR_MAX,
+               "JSY-MK-339 address out of the Modbus unit-identifier range");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_1 >= MODBUS_SLAVE_ADDR_MIN &&
+                   MODBUS_ADDR_CWT_TM16PT_1 <= MODBUS_SLAVE_ADDR_MAX,
+               "CWT-TM-16PT #1 address out of the Modbus unit-identifier range");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_2 >= MODBUS_SLAVE_ADDR_MIN &&
+                   MODBUS_ADDR_CWT_TM16PT_2 <= MODBUS_SLAVE_ADDR_MAX,
+               "CWT-TM-16PT #2 address out of the Modbus unit-identifier range");
+_Static_assert(MODBUS_ADDR_MBSL32DI >= MODBUS_SLAVE_ADDR_MIN &&
+                   MODBUS_ADDR_MBSL32DI <= MODBUS_SLAVE_ADDR_MAX,
+               "MBSL32DI address out of the Modbus unit-identifier range");
+_Static_assert(MODBUS_ADDR_WAVESHARE_RELAY >= MODBUS_SLAVE_ADDR_MIN &&
+                   MODBUS_ADDR_WAVESHARE_RELAY <= MODBUS_SLAVE_ADDR_MAX,
+               "Waveshare relay address out of the Modbus unit-identifier range");
+
+/* RS485-1: JSY-MK-339, CWT-TM-16PT #1, CWT-TM-16PT #2 */
+_Static_assert(MODBUS_ADDR_JSY_MK339 != MODBUS_ADDR_CWT_TM16PT_1,
+               "RS485-1: JSY-MK-339 and CWT-TM-16PT #1 share the same unit address");
+_Static_assert(MODBUS_ADDR_JSY_MK339 != MODBUS_ADDR_CWT_TM16PT_2,
+               "RS485-1: JSY-MK-339 and CWT-TM-16PT #2 share the same unit address");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_1 != MODBUS_ADDR_CWT_TM16PT_2,
+               "RS485-1: the two CWT-TM-16PT concentrators share the same unit address");
+
+/* RS485-2: MBSL32DI, Waveshare relay */
+_Static_assert(MODBUS_ADDR_MBSL32DI != MODBUS_ADDR_WAVESHARE_RELAY,
+               "RS485-2: MBSL32DI and the Waveshare relay share the same unit address");
+
+/*
+ * The address is also the registry key (device_id == slave_addr), so it must be
+ * unique across the whole plant and not only within one bus. A collision here
+ * would make two devices alias each other in the registry, and the failure would
+ * only surface at run time on a deployed unit.
+ */
+_Static_assert(MODBUS_ADDR_JSY_MK339 != MODBUS_ADDR_MBSL32DI,
+               "JSY-MK-339 and MBSL32DI share the same unit address");
+_Static_assert(MODBUS_ADDR_JSY_MK339 != MODBUS_ADDR_WAVESHARE_RELAY,
+               "JSY-MK-339 and the Waveshare relay share the same unit address");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_1 != MODBUS_ADDR_MBSL32DI,
+               "CWT-TM-16PT #1 and MBSL32DI share the same unit address");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_1 != MODBUS_ADDR_WAVESHARE_RELAY,
+               "CWT-TM-16PT #1 and the Waveshare relay share the same unit address");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_2 != MODBUS_ADDR_MBSL32DI,
+               "CWT-TM-16PT #2 and MBSL32DI share the same unit address");
+_Static_assert(MODBUS_ADDR_CWT_TM16PT_2 != MODBUS_ADDR_WAVESHARE_RELAY,
+               "CWT-TM-16PT #2 and the Waveshare relay share the same unit address");
+
+_Static_assert(MODBUS_STANDARD_SLAVES_COUNT <= MODBUS_MAX_TOTAL_SLAVES,
+               "The compiled topology exceeds MODBUS_MAX_TOTAL_SLAVES");
 
 /* ========================================================================= */
 /* Helper Functions                                                          */
 /* ========================================================================= */
 
 /**
- * @brief Retrieve default electrical configuration for a Modbus bus.
+ * @brief Retrieve the compiled Modbus slave descriptors table.
  *
- * @param[in] bus_id Logical bus ID (MODBUS_BUS_RS485_1 or MODBUS_BUS_RS485_2).
- * @return Pointer to immutable bus configuration, or NULL if bus_id invalid.
- */
-static inline const modbus_bus_cfg_t *modbus_device_table_get_bus_cfg(modbus_bus_id_t bus_id)
-{
-    if ((uint8_t)bus_id >= (uint8_t)MODBUS_BUS_MAX) {
-        return NULL;
-    }
-    return &k_brightc_modbus_bus_table[bus_id];
-}
-
-/**
- * @brief Retrieve standard Modbus slave descriptors table.
- *
- * @param[out] out_count Optional pointer receiving number of descriptors.
- * @return Pointer to immutable descriptor array.
+ * @param[out] out_count Optional pointer receiving the number of descriptors.
+ * @return Pointer to the immutable descriptor array.
  */
 static inline const modbus_slave_descriptor_t *modbus_device_table_get_slaves(size_t *out_count)
 {

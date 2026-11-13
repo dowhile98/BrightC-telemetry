@@ -26,8 +26,9 @@ extern "C" {
  * @brief Logical configuration categories persisted in non-volatile storage.
  *
  * Persistence domains per Architectural Decision Records (ADR-6 & REVF Baseline).
- * Hardware pinouts, Modbus topologies, and sensor channels are declared
- * compile-time in firmware.
+ * Hardware pinouts, sensor channels and the Modbus bus/slave topology are
+ * compile-time declarations: they have no persistence domain and cannot be
+ * changed at runtime.
  */
 typedef enum {
     CONFIG_DOMAIN_DEVICE = 0,       /**< Device serial number, hardware rev, station alias */
@@ -168,7 +169,9 @@ static inline bool config_event_type_is_valid(config_event_type_t type)
  * - CONFIG_DOMAIN_CALIBRATION:      0x0880, 384 B (2 ping-pong slots of 192 B, 3 pages)
  * - CONFIG_DOMAIN_THERMAL_SITE:     0x0A00, 1536 B (2 ping-pong slots of 768 B, 12 pages)
  * - CONFIG_DOMAIN_THERMAL_BASELINE: 0x1000, 1024 B (2 ping-pong slots of 512 B, 8 pages)
- * - RESERVED / EVENT LOG:           0x1400 .. 0x7FFF (27.5 KB available)
+ * - RESERVED (ex-MODBUS):           0x1400, 1024 B (freed when the Modbus topology
+ *                                             became compile-time)
+ * - RESERVED / EVENT LOG:           0x1800 .. 0x7FFF (26 KB available)
  *
  * @param domain           Target domain.
  * @param out_base_offset  Output pointer for starting offset in bytes.

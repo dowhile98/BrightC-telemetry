@@ -29,6 +29,7 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-13**: Updated the composition root Modbus lifecycle: storage is loaded before topology registration, unavailable buses are degraded without starting polling AOs, and runtime reconfiguration is serialized with AO stop/restart sequencing.
 - **2026-11-12**: Standardized boot and composition-root observability:
   - Added structured `[BOOT]`, `[CFG]`, `[DI]`, and `[RUN]` prefixes in `app/src/main.c` and `app/src/infrastructure/di/composition_root.c`.
   - Added numbered initialization phases, dependency-wiring status, runtime start summary, and explicit degraded-storage reporting.

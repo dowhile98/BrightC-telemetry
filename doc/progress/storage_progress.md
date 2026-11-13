@@ -25,6 +25,14 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-13**: Dropped the Modbus topology domain. The RS-485 plant is now compile-time
+  configuration (`app/Kconfig.modbus` + devicetree), so `CONFIG_DOMAIN_MODBUS` was removed from
+  `config_domain_t` (now 7 domains, `CONFIG_DOMAIN_MAX == 7`), together with its
+  `adapter_storage_microconf` key (`"modbus"`), its `composition_root` provider, its capacity
+  assertion and its `-EAGAIN` boot gate. The `0x1400` window is reserved: envelopes written by
+  older firmware are never read, so an upgraded unit boots with the compiled topology.
+  `composition_root_init_modbus()` now succeeds with storage uninitialised.
+- **2026-11-13**: (superseded) Restored Modbus topology as an explicit persisted domain (`CONFIG_DOMAIN_MODBUS`, `0x1400`, 1024 B) with a live registry provider.
 - **2026-11-11**: Expanded Storage Domains for Thermal and Energy System (REVF Baseline):
   - Added `CONFIG_DOMAIN_THERMAL_SITE` (domain 5, 0x0A00, 1536 B, slot 768 B) and `CONFIG_DOMAIN_THERMAL_BASELINE` (domain 6, 0x1000, 1024 B, slot 512 B), bringing `CONFIG_DOMAIN_MAX` to 7.
   - Sized and validated payload structures `config_thermal_site_t` (184 B) and `config_thermal_baseline_t` (216 B, 8-byte aligned).

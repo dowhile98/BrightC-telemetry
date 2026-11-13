@@ -253,7 +253,7 @@ typedef struct {
 
 ## 4. EEPROM Partitioning & Storage Subsystem Extension
 
-To persist the sensor configuration and baseline signatures without risking corruption of existing Modbus or Network parameters, the memory map in `doc/architecture/storage_subsystem.md` is updated.
+To persist the sensor configuration and baseline signatures without risking corruption of the other configuration domains, the memory map in `doc/architecture/storage_subsystem.md` is authoritative. (The Modbus bus/slave topology no longer has a region: it is compile-time configuration.)
 
 ### 4.1 Updated AT24C256C Memory Map (32 KB)
 
@@ -261,7 +261,7 @@ To persist the sensor configuration and baseline signatures without risking corr
 Base Offset   Total Size    Logical Domain             Structure and Purpose
 ───────────────────────────────────────────────────────────────────────────────────────────
 0x0000        1024 B (1 KB)  CONFIG_DOMAIN_DEVICE       2 slots of 512 B (Serial, HW Ver, Alias)
-0x0400        2048 B (2 KB)  CONFIG_DOMAIN_MODBUS       2 slots of 1 KB (Buses + 32 Slaves)
+0x0400        2048 B (2 KB)  RESERVED (ex-MODBUS)       Modbus topology is now compile-time
 0x0C00        1024 B (1 KB)  CONFIG_DOMAIN_NET_ETH      2 slots of 512 B (Static IP/DHCP, MAC, Gateway)
 0x1000        1024 B (1 KB)  CONFIG_DOMAIN_NET_WIFI     2 slots of 512 B (STA/AP mode, SSID, Credentials)
 0x1400        1024 B (1 KB)  CONFIG_DOMAIN_CALIBRATION  2 slots of 512 B (Raw ADC Offsets and Factors)

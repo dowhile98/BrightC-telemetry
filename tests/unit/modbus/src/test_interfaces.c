@@ -31,14 +31,6 @@ typedef struct {
 
 static spy_registry_t s_spy;
 
-static int spy_register(void *impl, const modbus_slave_descriptor_t *desc)
-{
-    ((spy_registry_t *) impl)->calls++;
-    ((spy_registry_t *) impl)->last_device_id = desc->device_id;
-
-    return 0;
-}
-
 static int spy_claim(void *impl, uint8_t bus_id, uint64_t now_ms, modbus_poll_target_t *out)
 {
     spy_registry_t *spy = (spy_registry_t *) impl;
@@ -77,17 +69,6 @@ static int spy_next_due_in(void *impl, uint8_t bus_id, uint64_t now_ms, uint32_t
     return 0;
 }
 
-static int spy_set_bus(void *impl, uint8_t device_id, uint8_t new_bus_id)
-{
-    spy_registry_t *spy = (spy_registry_t *) impl;
-
-    spy->calls++;
-    spy->last_device_id = device_id;
-    spy->last_bus_id = new_bus_id;
-
-    return 0;
-}
-
 static int spy_get_bus_cfg(void *impl, uint8_t bus_id, modbus_bus_cfg_t *out)
 {
     spy_registry_t *spy = (spy_registry_t *) impl;
@@ -114,11 +95,9 @@ static int spy_snapshot(void *impl, uint8_t bus_id, modbus_slave_snapshot_t *out
 }
 
 static const i_slave_registry_api_t s_spy_registry_api = {
-    .register_device = spy_register,
     .claim_next_due = spy_claim,
     .record = spy_record,
     .next_due_in = spy_next_due_in,
-    .set_bus = spy_set_bus,
     .get_bus_cfg = spy_get_bus_cfg,
     .snapshot = spy_snapshot,
 };
@@ -167,14 +146,6 @@ static modbus_transaction_result_t spy_write(void *impl, uint8_t slave_addr, uin
     return MODBUS_RESULT_OK;
 }
 
-static int spy_set_cfg(void *impl, const modbus_bus_cfg_t *cfg)
-{
-    ((spy_client_t *) impl)->calls++;
-    ((spy_client_t *) impl)->last_value = (uint16_t) cfg->baudrate;
-
-    return 0;
-}
-
 static int spy_get_cfg(void *impl, modbus_bus_cfg_t *out)
 {
     ((spy_client_t *) impl)->calls++;
@@ -186,7 +157,6 @@ static int spy_get_cfg(void *impl, modbus_bus_cfg_t *out)
 static const i_modbus_client_api_t s_spy_client_api = {
     .read_holding_registers = spy_read,
     .write_single_register = spy_write,
-    .set_bus_cfg = spy_set_cfg,
     .get_bus_cfg = spy_get_cfg,
 };
 
@@ -227,9 +197,6 @@ ZTEST_SUITE(interfaces_suite, NULL, NULL, NULL, NULL, NULL);
 ZTEST(interfaces_suite, test_unbound_registry_never_dispatches)
 {
     const i_slave_registry_t unbound = {0};
-    const modbus_slave_descriptor_t desc = {.device_id = 1U, .bus_id = 0U, .slave_addr = 1U,
-                                            .poll_interval_ms = 1000U, .timeout_ms = 300U,
-                                            .is_enabled = true};
     modbus_poll_target_t target;    modbus_slave_snapshot_t snap[1];
     modbus_bus_cfg_t cfg;
     size_t count = 0U;
@@ -240,13 +207,11 @@ ZTEST(interfaces_suite, test_unbound_registry_never_dispatches)
     zassert_false(i_slave_registry_is_bound(&unbound), "A zeroed handle is not bound");
     zassert_false(i_slave_registry_is_bound(NULL), "NULL is not bound");
 
-    zassert_equal(i_slave_registry_register_device(&unbound, &desc), -EINVAL, "register");
     zassert_equal(i_slave_registry_claim_next_due(&unbound, MODBUS_BUS_RS485_1, 0U, &target),
                   -EINVAL, "claim");
     zassert_equal(i_slave_registry_record(&unbound, 1U, MODBUS_RESULT_OK, 0U), -EINVAL, "record");
     zassert_equal(i_slave_registry_next_due_in(&unbound, MODBUS_BUS_RS485_1, 0U, &wait_ms),
                   -EINVAL, "next_due_in");
-    zassert_equal(i_slave_registry_set_bus(&unbound, 1U, MODBUS_BUS_RS485_2), -EINVAL, "set_bus");
     zassert_equal(i_slave_registry_get_bus_cfg(&unbound, MODBUS_BUS_RS485_1, &cfg), -EINVAL,
                   "get_bus_cfg");
     zassert_equal(i_slave_registry_snapshot(&unbound, MODBUS_BUS_RS485_1, snap, 1U, &count),
@@ -258,8 +223,6 @@ ZTEST(interfaces_suite, test_registry_wrappers_reject_bad_arguments)
 {
     i_slave_registry_t registry = make_registry();
 
-    modbus_slave_descriptor_t invalid = {.device_id = 0U, .bus_id = 0U, .slave_addr = 1U,
-                                         .poll_interval_ms = 1000U, .timeout_ms = 300U};
     modbus_poll_target_t target;
     modbus_slave_snapshot_t snap[2];
     modbus_bus_cfg_t cfg;
@@ -267,23 +230,17 @@ ZTEST(interfaces_suite, test_registry_wrappers_reject_bad_arguments)
     uint32_t wait_ms = 0U;
 
     /* NULL handle on every operation. */
-    zassert_equal(i_slave_registry_register_device(NULL, &invalid), -EINVAL, "NULL handle");
     zassert_equal(i_slave_registry_claim_next_due(NULL, MODBUS_BUS_RS485_1, 0U, &target), -EINVAL,
                   "NULL handle");
     zassert_equal(i_slave_registry_record(NULL, 1U, MODBUS_RESULT_OK, 0U), -EINVAL, "NULL handle");
     zassert_equal(i_slave_registry_next_due_in(NULL, MODBUS_BUS_RS485_1, 0U, &wait_ms), -EINVAL,
                   "NULL handle");
-    zassert_equal(i_slave_registry_set_bus(NULL, 1U, MODBUS_BUS_RS485_2), -EINVAL, "NULL handle");
     zassert_equal(i_slave_registry_get_bus_cfg(NULL, MODBUS_BUS_RS485_1, &cfg), -EINVAL,
                   "NULL handle");
     zassert_equal(i_slave_registry_snapshot(NULL, MODBUS_BUS_RS485_1, snap, 2U, &count), -EINVAL,
                   "NULL handle");
 
     zassert_equal(s_spy.calls, 0U, "A NULL handle must not reach the implementation");
-
-    zassert_equal(i_slave_registry_register_device(&registry, NULL), -EINVAL, "NULL descriptor");
-    zassert_equal(i_slave_registry_register_device(&registry, &invalid), -EINVAL,
-                  "An inconsistent descriptor must be rejected before dispatch");
 
     zassert_equal(i_slave_registry_claim_next_due(&registry, MODBUS_BUS_RS485_1, 0U, NULL),
                   -EINVAL, "NULL target");
@@ -301,11 +258,6 @@ ZTEST(interfaces_suite, test_registry_wrappers_reject_bad_arguments)
                   "NULL output");
     zassert_equal(i_slave_registry_next_due_in(&registry, (uint8_t) MODBUS_BUS_MAX, 0U, &wait_ms),
                   -EINVAL, "Bus id out of range");
-
-    zassert_equal(i_slave_registry_set_bus(&registry, 0U, MODBUS_BUS_RS485_2), -EINVAL,
-                  "Device id 0 does not exist");
-    zassert_equal(i_slave_registry_set_bus(&registry, 1U, (uint8_t) MODBUS_BUS_MAX), -EINVAL,
-                  "Bus id out of range");
 
     zassert_equal(i_slave_registry_get_bus_cfg(&registry, MODBUS_BUS_RS485_1, NULL), -EINVAL,
                   "NULL output");
@@ -328,17 +280,11 @@ ZTEST(interfaces_suite, test_registry_wrappers_forward_valid_calls)
 {
     i_slave_registry_t registry = make_registry();
 
-    const modbus_slave_descriptor_t desc = {.device_id = 5U, .bus_id = 0U, .slave_addr = 3U,
-                                           .poll_interval_ms = 1000U, .timeout_ms = 300U,
-                                           .is_enabled = true};
     modbus_poll_target_t target;
     modbus_slave_snapshot_t snap[2];
     modbus_bus_cfg_t cfg;
     size_t count = 0U;
     uint32_t wait_ms = 0U;
-
-    zassert_equal(i_slave_registry_register_device(&registry, &desc), 0, "register");
-    zassert_equal(s_spy.last_device_id, 5U, "Descriptor not forwarded");
 
     zassert_equal(i_slave_registry_claim_next_due(&registry, MODBUS_BUS_RS485_2, 1234U, &target), 0,
                   "claim");
@@ -354,9 +300,6 @@ ZTEST(interfaces_suite, test_registry_wrappers_forward_valid_calls)
                   "next_due_in");
     zassert_equal(wait_ms, 42U, "Wait not forwarded");
 
-    zassert_equal(i_slave_registry_set_bus(&registry, 7U, MODBUS_BUS_RS485_1), 0, "set_bus");
-    zassert_equal(s_spy.last_bus_id, (uint8_t) MODBUS_BUS_RS485_1, "Target bus not forwarded");
-
     zassert_equal(i_slave_registry_get_bus_cfg(&registry, MODBUS_BUS_RS485_2, &cfg), 0,
                   "get_bus_cfg");
     zassert_equal(cfg.baudrate, 19200U, "Line configuration not forwarded");
@@ -365,7 +308,7 @@ ZTEST(interfaces_suite, test_registry_wrappers_forward_valid_calls)
                   "snapshot");
     zassert_equal(s_spy.last_max, 2U, "Capacity not forwarded");
 
-    zassert_equal(s_spy.calls, 7U, "Every valid call must be dispatched exactly once");
+    zassert_equal(s_spy.calls, 5U, "Every valid call must be dispatched exactly once");
 }
 
 /*============================================================================*
@@ -387,7 +330,6 @@ ZTEST(interfaces_suite, test_unbound_client_never_dispatches)
                   MODBUS_RESULT_INVALID, "read");
     zassert_equal(i_modbus_client_write_single_register(&unbound, 1U, 0U, 1U, 300),
                   MODBUS_RESULT_INVALID, "write");
-    zassert_equal(i_modbus_client_set_bus_cfg(&unbound, &cfg), -EINVAL, "set_bus_cfg");
     zassert_equal(i_modbus_client_get_bus_cfg(&unbound, &cfg), -EINVAL, "get_bus_cfg");
     zassert_equal(s_client_spy.calls, 0U, "An unbound port must not reach any implementation");
 }
@@ -397,10 +339,6 @@ ZTEST(interfaces_suite, test_client_wrappers_reject_bad_arguments)
     i_modbus_client_t client = make_client();
 
     uint16_t regs[2];
-    modbus_bus_cfg_t cfg = {.baudrate = 9600U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U,
-                            .data_bits = 8U};
-    modbus_bus_cfg_t bad_cfg = {.baudrate = 100U, .parity = MODBUS_PARITY_NONE, .stop_bits = 1U,
-                                .data_bits = 8U};
 
     zassert_equal(i_modbus_client_read_holding_registers(&client, 1U, 0U, 2U, NULL, 300),
                   MODBUS_RESULT_INVALID, "NULL destination");
@@ -428,12 +366,8 @@ ZTEST(interfaces_suite, test_client_wrappers_reject_bad_arguments)
 
     (void) memset(&s_client_spy, 0, sizeof(s_client_spy));
 
-    zassert_equal(i_modbus_client_set_bus_cfg(&client, NULL), -EINVAL, "NULL config");
-    zassert_equal(i_modbus_client_set_bus_cfg(&client, &bad_cfg), -EINVAL,
-                  "Unsupported line speed");
-    zassert_equal(i_modbus_client_set_bus_cfg(&client, &cfg), 0, "valid");
     zassert_equal(i_modbus_client_get_bus_cfg(&client, NULL), -EINVAL, "NULL output");
-    zassert_equal(s_client_spy.calls, 1U, "Only the valid configuration may be dispatched");
+    zassert_equal(s_client_spy.calls, 0U, "A NULL output must not reach the implementation");
 }
 
 ZTEST(interfaces_suite, test_client_wrappers_forward_valid_calls)
@@ -441,8 +375,6 @@ ZTEST(interfaces_suite, test_client_wrappers_forward_valid_calls)
     i_modbus_client_t client = make_client();
 
     uint16_t regs[2];
-    modbus_bus_cfg_t cfg = {.baudrate = 9600U, .parity = MODBUS_PARITY_EVEN, .stop_bits = 2U,
-                            .data_bits = 8U};
     modbus_bus_cfg_t readback;
 
     zassert_equal(i_modbus_client_read_holding_registers(&client, 1U, 0x0020U, 2U, regs, 300),
@@ -456,9 +388,8 @@ ZTEST(interfaces_suite, test_client_wrappers_forward_valid_calls)
                   MODBUS_RESULT_OK, "write");
     zassert_equal(s_client_spy.last_value, 0x0102U, "Value not forwarded");
 
-    zassert_equal(i_modbus_client_set_bus_cfg(&client, &cfg), 0, "set_bus_cfg");
     zassert_equal(i_modbus_client_get_bus_cfg(&client, &readback), 0, "get_bus_cfg");
     zassert_equal(readback.baudrate, 9600U, "Line configuration not forwarded");
 
-    zassert_equal(s_client_spy.calls, 4U, "Every valid call must be dispatched exactly once");
+    zassert_equal(s_client_spy.calls, 3U, "Every valid call must be dispatched exactly once");
 }

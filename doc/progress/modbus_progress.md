@@ -13,12 +13,13 @@
 | :--- | :--- | :---: | :--- |
 | **Codecs** | `app/src/domain/services/*_codec.c` | 100% | JSY-MK-339, CWT-TM-16PT, MBSL32DI, Waveshare Relay codecs |
 | **Scheduler** | `app/src/domain/services/slave_scheduler.c` | 100% | Dynamic poll rate, error backoff, channel scheduling |
-| **Registry** | `app/src/application/modbus/modbus_registry.c` | 100% | Slave registry, bus assignment, failover hook |
+| **Registry** | `app/src/application/modbus/modbus_registry.c` | 100% | Slave registry: read-only port, round-robin claim/record, health bookkeeping |
+| **Topology Table** | `app/src/application/modbus/modbus_device_table.c` | 100% | Immutable compile-time slave table (`app/Kconfig.modbus` + devicetree line params) |
 | **Client Adapter** | `app/src/infrastructure/adapters/adapter_modbus_nmbs.c` | 100% | nanoMODBUS client over Zephyr UART (USART2, USART6) with DE hardware control |
 | **Relay Adapter** | `app/src/infrastructure/adapters/adapter_relay_modbus.c` | 100% | Implements `i_relay.h` (FC05 coil writes, cycle count & timing tracking) |
 | **Diagnostics** | `app/src/application/diagnostics/modbus_bus_probe.c` | 100% | Bus communication probing and error classification |
 | **Active Object (RTU)** | `app/src/application/active_objects/ao_modbus.c` | 100% | Dedicated thread, message queue, periodic polling loop, event publishing |
-| **Unit Tests (RTU)** | `tests/unit/modbus/` | 100% | 10 test suites, 99 tests passing on `native_sim` |
+| **Unit Tests (RTU)** | `tests/unit/modbus/` | 100% | 10 test suites, 94 tests passing on `native_sim` |
 | **Modbus TCP Types** | `app/include/common/modbus_tcp_types.h` | 100% | Pure C99/C11 register address definitions, diagnostics counters, and DTOs |
 | **Modbus TCP Port** | `app/include/interfaces/i_modbus_tcp_server.h` | 100% | Abstract port contract (§4.1.D fat-pointer handle, v-table, inline wrappers) |
 | **Modbus TCP Adapter** | `app/src/infrastructure/adapters/adapter_modbus_tcp_server.c/.h` | 100% | Complete register mapping delegating exclusively via `app_facade` APIs |
@@ -29,12 +30,32 @@
 ---
 
 ## 2. Pending Work
-- [ ] Automatic runtime slave auto-discovery and scanning tool.
-- [ ] Automated bus failover supervisor (consecutive failure threshold triggering automatic switch from RS485-1 to RS485-2).
+- [ ] Diagnostic Modbus slave scanner (`CONFIG_APP_MODBUS_BUS_PROBE` build only): sweeps the
+      unit-address range and logs what answers. Read-only, it must never alter the compiled table.
 
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-13**: Converted the RS-485 plant to a static, compile-time topology (supersedes the
+  persistence work of the same date):
+  - Added `app/Kconfig.modbus` as the single source of truth (`BRIGHTC_MODBUS_ENABLE_*` +
+    `BRIGHTC_MODBUS_ADDR_*`) and sourced it from both `app/Kconfig` and `tests/unit/modbus/Kconfig`,
+    so firmware and unit tests compile the same slave set (JSY=2, CWT#1=1, MBSL32DI=3, Waveshare=4).
+  - Replaced the per-TU `static const` tables with one `extern const` definition in
+    `app/src/application/modbus/modbus_device_table.c`, plus `_Static_assert`s for the address
+    range, per-bus uniqueness and plant-wide uniqueness (address == registry key).
+  - Removed EEPROM persistence of the topology: `CONFIG_DOMAIN_MODBUS`, `modbus_registry_export()`,
+    `modbus_registry_import()`, `storage_provider_modbus` and the boot `-EAGAIN` gate on storage.
+  - Removed every runtime mutation path: `app_facade_modbus_configure_slave()`,
+    `app_facade_modbus_configure_bus()`, `modbus_registry_set_bus()`, `set_bus_cfg()`,
+    `i_slave_registry_register_device()`, `i_slave_registry_set_bus()` and
+    `i_modbus_client_set_bus_cfg()`; `i_slave_registry_t` is now a read-only view.
+  - Composition root seeds the registry from the compiled table (skipping rows disabled by Kconfig
+    and slaves whose bus transport never came up) and reads each bus' line parameters from the
+    devicetree; `modbus slave <id>` is now a read-only query.
+  - Renamed CWT-TM-16PT #2 default address 3 → 5 to keep the plant address plan collision-free.
+  - Updated `doc/architecture/modbus_subsystem.md`, `doc/architecture/storage_subsystem.md`,
+    `doc/STRUCTURE.md`; 94/94 modbus unit tests pass and the target build is clean.
 - **2026-11-12**: Added a startup log in `composition_root_init_modbus()` reporting each initialized RS-485 bus's effective UART baud rate, data bits, parity, and stop bits from the transport configuration.
 - **2026-11-12**: Documented the implemented Modbus TCP register map in [`doc/modbus/modbus_tcp_register_map.md`](../modbus/modbus_tcp_register_map.md), including function codes, PDU/reference addresses, scales, writable commands, reserved ranges, and implementation limitations. The document follows the current callback code where it differs from the architectural specification.
 - **2026-11-12**: Native Zephyr nanoMODBUS TCP Integration Refactoring:

@@ -137,6 +137,22 @@ int adapter_relay_modbus_init(adapter_relay_modbus_t *self,
     return 0;
 }
 
+int adapter_relay_modbus_rebind(adapter_relay_modbus_t *self,
+                                ao_modbus_t *ao,
+                                uint8_t slave_addr,
+                                int32_t timeout_ms)
+{
+    if (self == NULL || ao == NULL || ao->queue == NULL ||
+        !modbus_slave_addr_is_valid(slave_addr) || timeout_ms <= 0) {
+        return -EINVAL;
+    }
+
+    self->ao = ao;
+    self->slave_addr = slave_addr;
+    self->timeout_ms = timeout_ms;
+    return 0;
+}
+
 int adapter_relay_modbus_port(adapter_relay_modbus_t *self, i_relay_t *out)
 {
     if (self == NULL || out == NULL) {

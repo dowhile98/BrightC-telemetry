@@ -57,6 +57,12 @@ int adapter_relay_modbus_init(adapter_relay_modbus_t *self,
                               uint8_t slave_addr,
                               int32_t timeout_ms);
 
+/** Update the owning bus, address and timeout after runtime topology changes. */
+int adapter_relay_modbus_rebind(adapter_relay_modbus_t *self,
+                                ao_modbus_t *ao,
+                                uint8_t slave_addr,
+                                int32_t timeout_ms);
+
 /**
  * @brief Expose the adapter through the relay port.
  *

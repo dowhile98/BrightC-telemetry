@@ -318,140 +318,6 @@ ZTEST(modbus_registry_suite, test_record_updates_health_and_rejects_unknown_devi
                   "Unknown device must be rejected");
 }
 
-ZTEST(modbus_registry_suite, test_set_bus_moves_device)
-{
-    reset_registry();
-
-    modbus_slave_descriptor_t desc = make_desc(1U, MODBUS_BUS_RS485_1, 1U);
-    zassert_equal(modbus_registry_register(&s_registry, &desc), 0, "Register failed");
-
-    zassert_equal(modbus_registry_set_bus(&s_registry, 1U, MODBUS_BUS_RS485_2), 0, "Move failed");
-
-    modbus_slave_snapshot_t snap[4];
-    size_t count = 0U;
-
-    zassert_equal(modbus_registry_snapshot(&s_registry, MODBUS_BUS_RS485_1, snap, 4U, &count), 0,
-                  "Snapshot failed");
-    zassert_equal(count, 0U, "Source bus must be empty");
-
-    zassert_equal(modbus_registry_snapshot(&s_registry, MODBUS_BUS_RS485_2, snap, 4U, &count), 0,
-                  "Snapshot failed");
-    zassert_equal(count, 1U, "Target bus must hold the device");
-
-    zassert_equal(modbus_registry_set_bus(&s_registry, 99U, MODBUS_BUS_RS485_2), -ENOENT,
-                  "Unknown device must be rejected");
-    zassert_equal(modbus_registry_set_bus(&s_registry, 1U, (uint8_t) MODBUS_BUS_MAX), -EINVAL,
-                  "Unknown bus must be rejected");
-}
-
-ZTEST(modbus_registry_suite, test_set_bus_rejects_address_collision)
-{
-    reset_registry();
-
-    modbus_slave_descriptor_t moving = make_desc(1U, MODBUS_BUS_RS485_1, 5U);
-    modbus_slave_descriptor_t resident = make_desc(2U, MODBUS_BUS_RS485_2, 5U);
-
-    zassert_equal(modbus_registry_register(&s_registry, &moving), 0, "Register failed");
-    zassert_equal(modbus_registry_register(&s_registry, &resident), 0, "Register failed");
-
-    zassert_equal(modbus_registry_set_bus(&s_registry, 1U, MODBUS_BUS_RS485_2), -EADDRINUSE,
-                  "Failover must not create an address collision");
-
-    modbus_slave_snapshot_t snap[4];
-    size_t count = 0U;
-
-    zassert_equal(modbus_registry_snapshot(&s_registry, MODBUS_BUS_RS485_1, snap, 4U, &count), 0,
-                  "Snapshot failed");
-    zassert_equal(count, 1U, "Rejected failover must leave the device in place");
-}
-
-ZTEST(modbus_registry_suite, test_export_import_roundtrip)
-{
-    reset_registry();
-
-    modbus_slave_descriptor_t first = make_desc(1U, MODBUS_BUS_RS485_1, 1U);
-    modbus_slave_descriptor_t second = make_desc(2U, MODBUS_BUS_RS485_2, 5U);
-
-    zassert_equal(modbus_registry_register(&s_registry, &first), 0, "Register failed");
-    zassert_equal(modbus_registry_register(&s_registry, &second), 0, "Register failed");
-
-    uint8_t blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
-    size_t size = 0U;
-
-    zassert_equal(modbus_registry_export(&s_registry, blob, sizeof(blob), &size), 0, "Export failed");
-    zassert_equal(size, MODBUS_REGISTRY_EXPORT_HEADER_SIZE + (2U * 9U), "Exported size mismatch");
-
-    uint8_t too_small[4];
-    size_t unused = 0U;
-    zassert_equal(modbus_registry_export(&s_registry, too_small, sizeof(too_small), &unused),
-                  -ENOSPC, "A short buffer must be reported");
-
-    /* Wipe the table, then restore it from the blob. */
-    zassert_equal(modbus_registry_init(&s_registry, k_bus_cfg), 0, "Re-init failed");
-    zassert_equal(modbus_registry_import(&s_registry, blob, size), 0, "Import failed");
-
-    modbus_slave_snapshot_t snap[4];
-    size_t count = 0U;
-
-    zassert_equal(modbus_registry_snapshot(&s_registry, MODBUS_BUS_RS485_1, snap, 4U, &count), 0,
-                  "Snapshot failed");
-    zassert_equal(count, 1U, "Bus 1 device lost in roundtrip");
-    zassert_equal(snap[0].descriptor.slave_addr, 1U, "Address mismatch");
-
-    zassert_equal(modbus_registry_snapshot(&s_registry, MODBUS_BUS_RS485_2, snap, 4U, &count), 0,
-                  "Snapshot failed");
-    zassert_equal(count, 1U, "Bus 2 device lost in roundtrip");
-    zassert_equal(snap[0].descriptor.device_id, 2U, "Device id mismatch");
-    zassert_equal(snap[0].descriptor.dev_type, MODBUS_DEV_TYPE_CWT_TM16PT, "Type mismatch");
-}
-
-ZTEST(modbus_registry_suite, test_import_rejects_corrupt_blob_without_mutating)
-{
-    reset_registry();
-
-    modbus_slave_descriptor_t first = make_desc(1U, MODBUS_BUS_RS485_1, 10U);
-    modbus_slave_descriptor_t second = make_desc(2U, MODBUS_BUS_RS485_1, 11U);
-
-    zassert_equal(modbus_registry_register(&s_registry, &first), 0, "Register failed");
-    zassert_equal(modbus_registry_register(&s_registry, &second), 0, "Register failed");
-
-    uint8_t blob[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
-    size_t size = 0U;
-
-    zassert_equal(modbus_registry_export(&s_registry, blob, sizeof(blob), &size), 0, "Export failed");
-    zassert_equal(size, MODBUS_REGISTRY_EXPORT_HEADER_SIZE + (2U * 9U), "Exported size mismatch");
-
-    /* Unknown format version. */
-    uint8_t corrupted[MODBUS_REGISTRY_EXPORT_SIZE_MAX];
-
-    (void) memcpy(corrupted, blob, size);
-    corrupted[0] = (uint8_t) (MODBUS_REGISTRY_EXPORT_VERSION + 1U);
-    zassert_equal(modbus_registry_import(&s_registry, corrupted, size), -EINVAL,
-                  "Unknown version must be rejected");
-
-    /* Truncated blob. */
-    zassert_equal(modbus_registry_import(&s_registry, blob, size - 1U), -EINVAL,
-                  "Truncated blob must be rejected");
-
-    /* Duplicate slave address on the same bus inside the blob: record 1 is the
-     * one at HEADER + record size, and its slave address is its third byte. */
-    (void) memcpy(corrupted, blob, size);
-    corrupted[MODBUS_REGISTRY_EXPORT_HEADER_SIZE + MODBUS_REGISTRY_EXPORT_RECORD_SIZE + 2U] =
-        corrupted[MODBUS_REGISTRY_EXPORT_HEADER_SIZE + 2U];
-
-    zassert_equal(modbus_registry_import(&s_registry, corrupted, size), -EINVAL,
-                  "Duplicate address inside the blob must be rejected");
-
-    modbus_slave_snapshot_t snap[4];
-    size_t count = 0U;
-
-    zassert_equal(modbus_registry_snapshot(&s_registry, MODBUS_BUS_RS485_1, snap, 4U, &count), 0,
-                  "Snapshot failed");
-    zassert_equal(count, 2U, "A rejected import must leave the table untouched");
-    zassert_equal(snap[0].descriptor.device_id, 1U, "Table was mutated by a rejected import");
-    zassert_equal(snap[1].descriptor.slave_addr, 11U, "Table was mutated by a rejected import");
-}
-
 ZTEST(modbus_registry_suite, test_port_forwards_calls)
 {
     reset_registry();
@@ -462,9 +328,11 @@ ZTEST(modbus_registry_suite, test_port_forwards_calls)
     zassert_true(i_slave_registry_is_bound(&port), "Port must be bound");
     zassert_equal(modbus_registry_port(NULL, &port), -EINVAL, "NULL registry must be rejected");
 
+    /* The port is a read-only view of the compiled table: seed through the
+     * concrete API, which is what the composition root does at boot. */
     modbus_slave_descriptor_t desc = make_desc(1U, MODBUS_BUS_RS485_1, 1U);
 
-    zassert_equal(i_slave_registry_register_device(&port, &desc), 0, "Port register failed");
+    zassert_equal(modbus_registry_register(&s_registry, &desc), 0, "Register failed");
 
     modbus_poll_target_t target;
     zassert_equal(i_slave_registry_claim_next_due(&port, MODBUS_BUS_RS485_1, 0U, &target), 0,
@@ -482,8 +350,6 @@ ZTEST(modbus_registry_suite, test_port_forwards_calls)
     zassert_equal(i_slave_registry_get_bus_cfg(&port, MODBUS_BUS_RS485_2, &cfg), 0,
                   "Port get_bus_cfg failed");
     zassert_equal(cfg.baudrate, 19200U, "Port bus config mismatch");
-
-    zassert_equal(i_slave_registry_set_bus(&port, 1U, MODBUS_BUS_RS485_2), 0, "Port set_bus failed");
 }
 
 ZTEST(modbus_registry_suite, test_next_due_in_reports_wait)
@@ -578,23 +444,6 @@ ZTEST(modbus_registry_suite, test_update_to_a_full_bus_is_rejected)
     zassert_equal(snap[0].descriptor.slave_addr, 200U, "Descriptor was mutated");
 }
 
-ZTEST(modbus_registry_suite, test_set_bus_to_a_full_bus_is_rejected)
-{
-    reset_registry();
-    fill_second_bus();
-
-    modbus_slave_descriptor_t moving = make_desc(100U, MODBUS_BUS_RS485_1, 200U);
-
-    zassert_equal(modbus_registry_register(&s_registry, &moving), 0, "Register failed");
-    zassert_equal(modbus_registry_set_bus(&s_registry, 100U, MODBUS_BUS_RS485_2), -ENOSPC,
-                  "Failover onto a full bus must be rejected");
-
-    modbus_slave_descriptor_t out;
-
-    zassert_equal(modbus_registry_get(&s_registry, 100U, &out), 0, "Get failed");
-    zassert_equal(out.bus_id, MODBUS_BUS_RS485_1, "A rejected failover must not move the device");
-}
-
 ZTEST(modbus_registry_suite, test_snapshot_truncates_at_max)
 {
     reset_registry();
@@ -626,84 +475,6 @@ ZTEST(modbus_registry_suite, test_next_due_in_ignores_disabled_slaves)
 
     zassert_equal(modbus_registry_next_due_in(&s_registry, MODBUS_BUS_RS485_2, 0U, &wait_ms),
                   -ENOENT, "A bus with no enabled slave has nothing to wait for");
-}
-
-/* =========================================================================
- * Import capacity rejections.
- * ========================================================================= */
-
-#define TEST_EXPORT_HEADER 18U
-#define TEST_EXPORT_RECORD 9U
-
-/** Write the fixed part of an export blob: version, buses and record count. */
-static void write_blob_header(uint8_t *blob, uint16_t record_count)
-{
-    blob[0] = (uint8_t) MODBUS_REGISTRY_EXPORT_VERSION;
-    blob[1] = (uint8_t) MODBUS_BUS_MAX;
-
-    size_t offset = 2U;
-
-    for (uint8_t bus = 0U; bus < (uint8_t) MODBUS_BUS_MAX; bus++) {
-        blob[offset++] = 0x80U; /* 9600 = 0x2580, little-endian */
-        blob[offset++] = 0x25U;
-        blob[offset++] = 0x00U;
-        blob[offset++] = 0x00U;
-        blob[offset++] = (uint8_t) MODBUS_PARITY_NONE;
-        blob[offset++] = 1U;
-        blob[offset++] = 8U;
-    }
-
-    blob[offset++] = (uint8_t) (record_count & 0xFFU);
-    blob[offset++] = (uint8_t) (record_count >> 8);
-}
-
-/** Write one record in the layout the import expects. */
-static void write_blob_record(uint8_t *blob, size_t index, uint8_t device_id, uint8_t bus_id,
-                             uint8_t slave_addr)
-{
-    uint8_t *record = &blob[TEST_EXPORT_HEADER + (index * TEST_EXPORT_RECORD)];
-
-    record[0] = device_id;
-    record[1] = bus_id;
-    record[2] = slave_addr;
-    record[3] = (uint8_t) MODBUS_DEV_TYPE_CWT_TM16PT;
-    record[4] = 0xE8U; /* 1000 ms */
-    record[5] = 0x03U;
-    record[6] = 0x2CU; /* 300 ms */
-    record[7] = 0x01U;
-    record[8] = 1U;
-}
-
-ZTEST(modbus_registry_suite, test_import_rejects_more_records_than_the_table_holds)
-{
-    reset_registry();
-
-    const uint16_t records = (uint16_t) (MODBUS_MAX_TOTAL_SLAVES + 1U);
-    uint8_t blob[TEST_EXPORT_HEADER + ((MODBUS_MAX_TOTAL_SLAVES + 1U) * TEST_EXPORT_RECORD)];
-
-    (void) memset(blob, 0, sizeof(blob));
-    write_blob_header(blob, records);
-
-    zassert_equal(modbus_registry_import(&s_registry, blob, sizeof(blob)), -EINVAL,
-                  "A blob with more records than slots must be rejected");
-}
-
-ZTEST(modbus_registry_suite, test_import_rejects_a_bus_over_its_capacity)
-{
-    reset_registry();
-
-    const uint16_t records = (uint16_t) (MODBUS_MAX_SLAVES_PER_BUS + 1U);
-    uint8_t blob[TEST_EXPORT_HEADER + ((MODBUS_MAX_SLAVES_PER_BUS + 1U) * TEST_EXPORT_RECORD)];
-
-    (void) memset(blob, 0, sizeof(blob));
-    write_blob_header(blob, records);
-
-    for (uint16_t i = 0U; i < records; i++) {
-        write_blob_record(blob, i, (uint8_t) (i + 1U), MODBUS_BUS_RS485_1, (uint8_t) (i + 1U));
-    }
-
-    zassert_equal(modbus_registry_import(&s_registry, blob, sizeof(blob)), -EINVAL,
-                  "A blob that overfills one bus must be rejected");
 }
 
 /* =========================================================================

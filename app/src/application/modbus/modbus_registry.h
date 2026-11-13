@@ -23,21 +23,6 @@
 extern "C" {
 #endif
 
-/** Format version of the exported configuration blob. */
-#define MODBUS_REGISTRY_EXPORT_VERSION 1U
-
-/** Fixed part of the exported blob: version, bus count and bus configurations. */
-#define MODBUS_REGISTRY_EXPORT_HEADER_SIZE \
-    (2U + (size_t) MODBUS_BUS_MAX * 7U + 2U)
-
-/** Per-record size in the exported blob. */
-#define MODBUS_REGISTRY_EXPORT_RECORD_SIZE 9U
-
-/** Worst-case size of the exported blob for a full table. */
-#define MODBUS_REGISTRY_EXPORT_SIZE_MAX \
-    (MODBUS_REGISTRY_EXPORT_HEADER_SIZE + (size_t) MODBUS_MAX_TOTAL_SLAVES * \
-         MODBUS_REGISTRY_EXPORT_RECORD_SIZE)
-
 /**
  * @brief Registry instance. Allocated by the composition root, never static.
  */
@@ -61,6 +46,11 @@ int modbus_registry_init(modbus_registry_t *self, const modbus_bus_cfg_t cfg[MOD
 
 /**
  * @brief Insert a new slave or update an existing one by device id.
+ *
+ * Seeding only: called once by the composition root with the entries of the
+ * compile-time topology table, and again by the factory-reset path. The port
+ * exposed to the rest of the application does not offer this operation, so no
+ * runtime component can change the topology.
  *
  * An update that keeps the same bus and slave address preserves the runtime
  * statistics; changing either of them resets the record because it now
@@ -87,27 +77,12 @@ int modbus_registry_record(modbus_registry_t *self, uint8_t device_id,
                            modbus_transaction_result_t result, uint64_t now_ms);
 
 /**
- * @brief Reassign a device to another bus (field failover).
- *
- * @return 0 on success, -ENOENT, -EINVAL, -ENOSPC, -EADDRINUSE.
- */
-int modbus_registry_set_bus(modbus_registry_t *self, uint8_t device_id, uint8_t new_bus_id);
-
-/**
  * @brief Read the electrical configuration applied to a bus.
  *
  * @return 0 on success, -EINVAL on bad arguments.
  */
 int modbus_registry_get_bus_cfg(const modbus_registry_t *self, uint8_t bus_id,
                                 modbus_bus_cfg_t *out);
-
-/**
- * @brief Set the electrical configuration applied to a bus.
- *
- * @return 0 on success, -EINVAL on bad arguments.
- */
-int modbus_registry_set_bus_cfg(modbus_registry_t *self, uint8_t bus_id,
-                                const modbus_bus_cfg_t *cfg);
 
 /**
  * @brief Copy one descriptor by device id.
@@ -136,27 +111,6 @@ int modbus_registry_find_by_type(const modbus_registry_t *self, modbus_device_ty
  */
 int modbus_registry_snapshot(modbus_registry_t *self, uint8_t bus_id,
                              modbus_slave_snapshot_t *out, size_t max, size_t *out_count);
-
-/**
- * @brief Serialise the bus configuration and the slave table.
- *
- * The blob is versioned and little-endian, independent of struct padding and
- * of the CPU endianness.
- *
- * @return 0 on success, -EINVAL on bad arguments, -ENOSPC when @p max is small.
- */
-int modbus_registry_export(const modbus_registry_t *self, void *buf, size_t max,
-                           size_t *out_size);
-
-/**
- * @brief Replace the bus configuration and the slave table from a blob.
- *
- * The whole blob is validated before anything is mutated: a rejected import
- * leaves the registry untouched.
- *
- * @return 0 on success, -EINVAL on a corrupt, unsupported or inconsistent blob.
- */
-int modbus_registry_import(modbus_registry_t *self, const void *buf, size_t size);
 
 /**
  * @brief Time until the next slave of a bus becomes due.

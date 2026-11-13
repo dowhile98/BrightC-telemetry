@@ -332,11 +332,6 @@ extern "C"
         return modbus_device_table_get_slaves(out_count);
     }
 
-    static inline const modbus_bus_cfg_t *default_config_get_modbus_bus_cfg(uint8_t bus_id)
-    {
-        return modbus_device_table_get_bus_cfg((modbus_bus_id_t)bus_id);
-    }
-
 #ifdef __cplusplus
 }
 #endif

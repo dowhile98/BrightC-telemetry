@@ -44,22 +44,25 @@ The physical EEPROM has 32,768 bytes (32 KB, addresses `0x0000` to `0x7FFF`). Th
 ```text
 Base Offset   Total Size    Logical Domain             Structure and Purpose
 ───────────────────────────────────────────────────────────────────────────────────────────
-0x0000        1024 B (1 KB)  CONFIG_DOMAIN_DEVICE       2 slots of 512 B (Serial, HW Ver, Alias)
-0x0400        2048 B (2 KB)  CONFIG_DOMAIN_MODBUS       2 slots of 1 KB (Buses + 32 Slaves)
-0x0C00        1024 B (1 KB)  CONFIG_DOMAIN_NET_ETH      2 slots of 512 B (Static IP/DHCP, MAC, gateway)
-0x1000        1024 B (1 KB)  CONFIG_DOMAIN_NET_WIFI     2 slots of 512 B (STA/AP/STA+AP mode, SSID, credentials, soft-AP IP)
-0x1400        1024 B (1 KB)  CONFIG_DOMAIN_CALIBRATION  2 slots of 512 B (Offsets and ADC Factors)
-0x1800        2048 B (2 KB)  CONFIG_DOMAIN_SENSOR_CFG   2 slots of 1 KB (Sensor Channel Routing & Roles)
-0x2000        2048 B (2 KB)  CONFIG_DOMAIN_BASELINE     2 slots of 1 KB (OLS 64-bit Betas & Baseline Signatures)
-0x2800        2048 B (2 KB)  CONFIG_DOMAIN_HVAC         2 slots of 1 KB (HVAC Sequencer, N+M, HW Endpoints)
-0x3000        4096 B (4 KB)  RESERVED                   Future expansions (SNMP, Certificates)
-0x4000       16384 B (16 KB) EVENT LOG / HISTORY        Circular storage for auditing
+0x0000        256 B          CONFIG_DOMAIN_DEVICE       2 slots of 128 B
+0x0100        128 B          CONFIG_DOMAIN_NET_ETH      2 slots of 64 B
+0x0180        640 B          CONFIG_DOMAIN_NET_WIFI     2 slots of 320 B
+0x0400        1152 B         CONFIG_DOMAIN_HVAC         2 slots of 576 B
+0x0880        384 B          CONFIG_DOMAIN_CALIBRATION  2 slots of 192 B
+0x0A00        1536 B         CONFIG_DOMAIN_THERMAL_SITE 2 slots of 768 B
+0x1000        1024 B         CONFIG_DOMAIN_THERMAL_BASELINE 2 slots of 512 B
+0x1400        1024 B         RESERVED (ex-MODBUS)       Freed when the Modbus topology
+                                                     became compile-time
+0x1800..0x7FFF  Reserved     Available for future domains/event log
 ───────────────────────────────────────────────────────────────────────────────────────────
 ```
 
 ### 2.1 Region Isolation Principle
 - Each region contains its own ping-pong slot pair managed by `microconf`.
-- A change in network structure **does not invalidate** the fingerprint nor CRC of the Modbus region.
+- A change in network structure **does not invalidate** the fingerprint nor CRC of any other region.
+- The Modbus bus/slave topology has **no domain at all**: it is compile-time configuration
+  (`app/Kconfig.modbus` + devicetree), so nothing about the RS-485 plant is persisted or reloaded.
+  Envelopes left at `0x1400` by older firmware are simply never read.
 - If a region suffers corruption due to hardware failure, the other regions remain intact and readable.
 
 ### 2.2 CONFIG_DOMAIN_HVAC Specification & Lifecycle
@@ -133,15 +136,14 @@ Base Offset   Total Size    Logical Domain             Structure and Purpose
 ### 4.1 Domain Definition (`app/include/common/config_types.h`)
 ```c
 typedef enum {
-    CONFIG_DOMAIN_DEVICE = 0,    /**< Device information and metadata */
-    CONFIG_DOMAIN_MODBUS,        /**< Bus and slave configuration */
-    CONFIG_DOMAIN_NET_ETH,       /**< Ethernet interface configuration (IP, DHCP, MAC) */
-    CONFIG_DOMAIN_NET_WIFI,      /**< Wi-Fi interface configuration (mode, SSID, credentials) */
-    CONFIG_DOMAIN_CALIBRATION,   /**< Analog input calibration constants */
-    CONFIG_DOMAIN_SENSOR_CFG,    /**< Physical to semantic sensor routing table */
-    CONFIG_DOMAIN_BASELINE,      /**< 7-day learned OLS coefficients and thermal baseline */
-    CONFIG_DOMAIN_HVAC,          /**< Industrial HVAC sequencer & hardware routing config */
-    CONFIG_DOMAIN_MAX            /**< Upper limit of domains */
+    CONFIG_DOMAIN_DEVICE = 0,       /**< Device serial number, hardware rev, station alias */
+    CONFIG_DOMAIN_NET_ETH,          /**< Ethernet interface configuration (IP, DHCP, MAC, Gateway) */
+    CONFIG_DOMAIN_NET_WIFI,         /**< Wi-Fi interface configuration (Mode, SSID, Credentials) */
+    CONFIG_DOMAIN_HVAC,             /**< HVAC sequencer operational setpoints & group ranges */
+    CONFIG_DOMAIN_CALIBRATION,      /**< Analog input & PT100 temperature calibration offsets */
+    CONFIG_DOMAIN_THERMAL_SITE,     /**< Site thermal & HVAC topology configuration */
+    CONFIG_DOMAIN_THERMAL_BASELINE, /**< Machine-learned steady-state baseline signatures */
+    CONFIG_DOMAIN_MAX               /**< Upper limit of active storage domains (7) */
 } config_domain_t;
 ```
 
@@ -176,11 +178,15 @@ Following the three-piece rule ([`doc/STRUCTURE.md §4.1.D`](file:///media/jeffr
 Reading at boot is **completely synchronous** and occurs before initializing concurrent Active Objects, guaranteeing the system starts in a consistent and known state:
 
 1. `composition_root_init()` initializes the EEPROM driver and calls the storage adapter.
-2. For each registered domain (e.g. `CONFIG_DOMAIN_MODBUS`):
+2. For each registered domain (e.g. `CONFIG_DOMAIN_NET_ETH`):
    - `i_config_storage_load()` is invoked.
-   - **Success case**: The loaded blob is injected directly into the RAM manager (`modbus_registry_import()`).
-   - **Failure case (virgin EEPROM or invalid CRC)**: Default firmware structures (`k_default_slaves`) are loaded, injected into RAM, and the domain is marked as pending hardware initialization.
+   - **Success case**: The loaded blob is validated (`config_envelope_unpack()`) and injected into the owning RAM structure.
+   - **Failure case (virgin EEPROM or invalid CRC)**: Default firmware structures are loaded and the domain is marked as pending hardware initialization.
 3. Active Object threads are launched (`ao_modbus`, `ao_storage`).
+
+The Modbus subsystem is not part of this sequence: its topology is compiled in and its line
+parameters come from the devicetree, so it has no domain to load and no boot dependency on
+storage.
 
 ### 5.2 Runtime Modification and Saving Sequence
 When a user or process modifies a parameter at runtime (e.g., changing Ethernet static IP or Wi-Fi SSID):

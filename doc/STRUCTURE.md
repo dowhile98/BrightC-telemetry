@@ -634,8 +634,8 @@ The BrightC Controller V3 Modbus subsystem is designed for high availability, wi
  |                    SLAVE MANAGER AND BUS ROUTING                                               |
  |                    (modbus_registry.c + slave_scheduler.c)                                      |
  |                                                                                                 |
- |  - Maintains modbus_slave_descriptor_t table (serializable for microconf / EEPROM)             |
- |  - Dynamic failover: reassigns devices between RS485-1 and RS485-2 at runtime                   |
+ |  - Holds the compiled modbus_slave_descriptor_t table (Kconfig, never persisted)              |
+ |  - Read-only port: no insert / move / reconfigure operation exists                              |
  |  - Health state machine with Offline Backoff (isolates disconnected slaves)                   |
  +-----------------------------------------------+-------------------------------------------------+
                           |                                                |
@@ -644,7 +644,7 @@ The BrightC Controller V3 Modbus subsystem is designed for high availability, wi
  |   RS485-1 THREAD: ao_modbus.c (bus 0)         |  |   RS485-2 THREAD: ao_modbus.c (bus 1)       |
  |  - i_modbus_client_t bus1 -> adapter_modbus_nmbs (single Zephyr include)    |  |  - i_modbus_client_t bus2 -> adapter_modbus_nmbs                              |
  |  - DE transceiver control (PD4)               |  |  - DE transceiver control (PG8)           |
- |  - Hot reconfiguration of USART2              |  |  - Hot reconfiguration of USART6          |
+ |  - USART2 line params from devicetree         |  |  - USART6 line params from devicetree     |
  |  - Polls: CWT-TM-16PT (16x PT100)             |  |  - Polls: Energy meters, Relays          |
  +-----------------------+-----------------------+  +----------------------+-----------------------+
                           |                                                 |
@@ -656,19 +656,23 @@ The BrightC Controller V3 Modbus subsystem is designed for high availability, wi
 
 1. **Thread Isolation (Active Object)**:
    - RS485 is a **half-duplex** medium. Each physical port (`RS485-1` and `RS485-2`) is exclusively owned by its own thread. No external component performs direct read/write calls to the UART.
-2. **Hardware Interchangeability (Hot Failover)**:
-   - Field devices are not hard-coded to a fixed port. If the `RS485-1` transceiver is damaged by an electrical discharge, cables A/B are moved to `RS485-2` and:
-     ```c
-     (void) i_slave_registry_set_bus(&app->registry, DEV_ID_CWT_TM16PT, MODBUS_BUS_RS485_2);
-     ```
-   - The system relocates polling instantly without restarting or modifying firmware.
-3. **Dynamic UART Reconfiguration in Zephyr**:
-   - Thanks to `CONFIG_UART_USE_RUNTIME_CONFIGURE=y` and the `uart_configure()` function, baud rate and parity can be changed at runtime if field configuration changes.
+2. **Static, Compile-Time Topology**:
+   - Which slaves exist, on which bus and at which unit address is decided by
+     `app/Kconfig.modbus` and compiled into one immutable table
+     (`app/src/application/modbus/modbus_device_table.c`).
+   - There is no runtime reassignment: moving a device to the other RS-485 pair is a Kconfig
+     edit plus a rebuild, which keeps a given binary's behaviour auditable.
+3. **Devicetree-Owned Line Parameters**:
+   - Baud rate, parity and stop bits of each UART come from
+     `app/boards/brightc-controllerv3.overlay`. They are read once at boot and never
+     reconfigured at runtime, so the RS-485 line cannot drift out of sync with the wiring.
 4. **Protection Against Disconnected Slaves (Offline Backoff)**:
    - If a slave suffers 3 consecutive failures, it enters `MODBUS_HEALTH_OFFLINE_BACKOFF`.
    - Instead of saturating the bus by trying to read it every 1 second (which would generate 300 ms timeouts each cycle), the manager reduces its query rate to a slow probe every 10 seconds, preserving bus bandwidth for healthy devices.
-5. **Preparation for Persistence with `microconf` and EEPROM**:
-   - Configuration descriptors (`modbus_slave_descriptor_t`) and transport (`modbus_bus_transport_cfg_t`) are flat memory structures with fixed sizes and no pointers, ready to be serialized/deserialized in blocks.
+5. **No Persistence for the Plant Topology**:
+   - The Modbus topology has no `config_domain_t`: nothing about the RS-485 plant is read from or
+     written to EEPROM. Only the mutable runtime state (health, round-robin cursor, in-flight
+     claim) lives in RAM and it is rebuilt at every boot.
 
 ### 6.2 CWT-TM-16PT Temperature Sensor Driver
 
@@ -690,20 +694,21 @@ I/O); register reads are performed by the Active Object through port
 The external EEPROM AT24C256C (I2C2) requires between 5 ms and 10 ms per page write cycle. If a control or serial communication thread writes directly and synchronously to the EEPROM, it would freeze causing frame loss and severe jitter. Additionally, `microconf` does not have internal multi-threading synchronization primitives.
 
 Therefore, the architecture decouples storage into three levels:
-1. **RAM memory**: Subsystems read and mutate their configuration in memory instantly under internal mutexes (`modbus_registry`, `ao_network`).
+1. **RAM memory**: Subsystems read and mutate their configuration in memory instantly under internal mutexes (`ao_network`, `ao_hvac`).
 2. **Zbus Notification**: When a configuration is mutated, an event is emitted on channel `chan_system_config`.
 3. **Async Coordinator (`ao_storage`)**: A dedicated Active Object receives events, applies a delay window (*debounce* of 500 ms) to dampen change bursts, and atomically executes `mconf_save()` in the background.
 
 ### 7.2 Modular EEPROM Partitioning
-To avoid a change in network or telemetry configuration invalidating Modbus or calibration data, the 32 KB EEPROM is divided into independent virtual regions via `mconf_zephyr_eeprom_init()`:
-- `0x0000` (1 KB): Device Identity (`CONFIG_DOMAIN_DEVICE`)
-- `0x0400` (2 KB): Modbus Register and Buses (`CONFIG_DOMAIN_MODBUS`)
-- `0x0C00` (1 KB): Ethernet Network Parameters (`CONFIG_DOMAIN_NET_ETH`)
-- `0x1000` (1 KB): Wi-Fi Network Parameters (`CONFIG_DOMAIN_NET_WIFI`)
-- `0x1400` (1 KB): Calibrations and Analog Offsets (`CONFIG_DOMAIN_CALIBRATION`)
-- `0x1800` (2 KB): Sensor Routing and Roles (`CONFIG_DOMAIN_SENSOR_CFG`)
-- `0x2000` (2 KB): OLS Betas and Thermal Baseline (`CONFIG_DOMAIN_BASELINE`)
-- `0x2800` (6 KB): Reserved for future security/SNMP extensions
+To avoid a change in one configuration domain invalidating the fingerprint or CRC of another, the 32 KB EEPROM is divided into independent virtual regions via `mconf_zephyr_eeprom_init()`:
+- `0x0000` (256 B): Device Identity (`CONFIG_DOMAIN_DEVICE`)
+- `0x0100` (128 B): Ethernet Network Parameters (`CONFIG_DOMAIN_NET_ETH`)
+- `0x0180` (640 B): Wi-Fi Network Parameters (`CONFIG_DOMAIN_NET_WIFI`)
+- `0x0400` (1152 B): HVAC Sequencer (`CONFIG_DOMAIN_HVAC`)
+- `0x0880` (384 B): Calibration (`CONFIG_DOMAIN_CALIBRATION`)
+- `0x0A00` (1536 B): Thermal Site (`CONFIG_DOMAIN_THERMAL_SITE`)
+- `0x1000` (1 KB): Thermal Baseline (`CONFIG_DOMAIN_THERMAL_BASELINE`)
+- `0x1400`–`0x17FF` (1 KB): Reserved (formerly `CONFIG_DOMAIN_MODBUS`; the Modbus topology is now compile-time)
+- `0x1800`–`0x7FFF`: Reserved / event-log capacity
 - `0x4000` (16 KB): Circular audit log (*Event Log*)
 
 ---

@@ -58,19 +58,6 @@ static int32_t byte_timeout_ms(const adapter_modbus_nmbs_t *self)
     return (int32_t) ((calculated < 5U) ? 5U : calculated);
 }
 
-static enum uart_config_parity to_uart_parity(modbus_parity_t parity)
-{
-    switch (parity) {
-    case MODBUS_PARITY_EVEN:
-        return UART_CFG_PARITY_EVEN;
-    case MODBUS_PARITY_ODD:
-        return UART_CFG_PARITY_ODD;
-    case MODBUS_PARITY_NONE:
-    default:
-        return UART_CFG_PARITY_NONE;
-    }
-}
-
 static modbus_transaction_result_t read_holding_registers(void *impl, uint8_t slave_addr,
                                                           uint16_t reg_addr, uint16_t quantity,
                                                           uint16_t *out, int32_t timeout_ms)
@@ -218,37 +205,6 @@ static modbus_transaction_result_t write_multiple_coils(void *impl, uint8_t slav
     return classify(nmbs_z_client_get_last_error(&self->client));
 }
 
-static int set_bus_cfg(void *impl, const modbus_bus_cfg_t *cfg)
-{
-    adapter_modbus_nmbs_t *self = (adapter_modbus_nmbs_t *) impl;
-
-    if (self == NULL || !self->is_ready || !modbus_bus_cfg_is_valid(cfg)) {
-        return -EINVAL;
-    }
-
-    /* nmbs_z_serial_transport_reconfigure() only copies baudrate, parity, stop
-     * bits and data bits into the transport; the flow-control field of this
-     * structure is ignored, so the RS-485 hardware driver-enable configured in
-     * devicetree stays in force. Do not set it here, it would be misleading. */
-    const struct uart_config uart_cfg = {
-        .baudrate = cfg->baudrate,
-        .parity = to_uart_parity(cfg->parity),
-        .stop_bits = (cfg->stop_bits == 2U) ? UART_CFG_STOP_BITS_2 : UART_CFG_STOP_BITS_1,
-        .data_bits = UART_CFG_DATA_BITS_8,
-    };
-
-    int err = nmbs_z_serial_transport_reconfigure(&self->transport, &uart_cfg);
-
-    if (err != 0) {
-        LOG_ERR("reconfigure failed (%d)", err);
-        return err;
-    }
-
-    self->cfg = *cfg;
-
-    return 0;
-}
-
 static int get_bus_cfg(void *impl, modbus_bus_cfg_t *out)
 {
     adapter_modbus_nmbs_t *self = (adapter_modbus_nmbs_t *) impl;
@@ -268,7 +224,6 @@ static const i_modbus_client_api_t k_adapter_api = {
     .read_coils = read_coils,
     .write_single_coil = write_single_coil,
     .write_multiple_coils = write_multiple_coils,
-    .set_bus_cfg = set_bus_cfg,
     .get_bus_cfg = get_bus_cfg,
 };
 

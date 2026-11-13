@@ -39,7 +39,20 @@ static storage_stats_t s_storage_stats = {0};
 /* Sensor calibration offsets (in 0.1°C units) */
 static int16_t s_sensor_cal_offsets[21] = {0};
 
+/* Bus stop/restart helpers for the factory-reset path. */
+static int modbus_stop_bus_if_running(app_container_t *app, uint8_t bus)
+{
+    if (app == NULL || bus >= (uint8_t)MODBUS_BUS_MAX ||
+        !app->modbus.ao[bus].is_running) {
+        return 0;
+    }
 
+    int err = ao_modbus_stop(&app->modbus.ao[bus]);
+    if (err != 0) {
+        return err;
+    }
+    return ao_modbus_wait_stopped(&app->modbus.ao[bus], K_MSEC(AO_MODBUS_STOP_WAIT_MS));
+}
 
 /* =========================================================================
  * Helper Functions
@@ -787,20 +800,6 @@ int app_facade_modbus_tcp_get_stats(modbus_tcp_server_stats_t *out_stats)
     return i_modbus_tcp_server_get_stats(server, out_stats);
 }
 
-int app_facade_modbus_configure_slave(const modbus_slave_descriptor_t *slave)
-{
-    if (s_app == NULL || slave == NULL) {
-        return -EINVAL;
-    }
-
-    int ret = modbus_registry_register(&s_app->modbus.registry_impl, slave);
-    if (ret != 0) {
-        return ret;
-    }
-
-    return 0;
-}
-
 int app_facade_modbus_get_slave(uint8_t device_id, modbus_slave_descriptor_t *out_desc)
 {
     if (s_app == NULL || out_desc == NULL) {
@@ -808,36 +807,6 @@ int app_facade_modbus_get_slave(uint8_t device_id, modbus_slave_descriptor_t *ou
     }
 
     return modbus_registry_get(&s_app->modbus.registry_impl, device_id, out_desc);
-}
-
-int app_facade_modbus_configure_bus(uint8_t bus_id, const modbus_bus_config_t *cfg)
-{
-    if (s_app == NULL || bus_id >= (uint8_t)MODBUS_BUS_MAX || cfg == NULL) {
-        return -EINVAL;
-    }
-    if (!modbus_bus_cfg_is_valid(cfg)) {
-        return -EINVAL;
-    }
-
-    /* Apply configuration to physical UART transceiver */
-    if (i_modbus_client_is_bound(&s_app->modbus.client_port[bus_id])) {
-        int wire_err = i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus_id], cfg);
-        if (wire_err != 0) {
-            LOG_ERR("bus %u: failed to set physical wire configuration: %d", bus_id, wire_err);
-            return wire_err;
-        }
-    }
-
-    /* Update container RAM cache */
-    s_app->modbus.bus_cfg[bus_id] = *cfg;
-
-    /* Update registry RAM state */
-    int ret = modbus_registry_set_bus_cfg(&s_app->modbus.registry_impl, bus_id, cfg);
-    if (ret != 0) {
-        return ret;
-    }
-
-    return 0;
 }
 
 /* =========================================================================
@@ -1039,22 +1008,52 @@ int app_facade_storage_reset_defaults(void)
     s_app->device_cfg = *default_config_get_device_cfg();
     s_app->calibration_cfg = *default_config_get_calibration_cfg();
 
-    /* 3. Reset Modbus bus configs & registry */
+    /* 3. Reset the Modbus registry health bookkeeping.
+     *
+     * The topology itself is compile-time and cannot change, so a factory reset
+     * only needs to drop the accumulated health statistics and the round-robin
+     * cursors. The UART line parameters are never touched: they belong to the
+     * devicetree. */
     if (s_app->modbus.initialized) {
+        bool was_running[MODBUS_BUS_MAX] = {false};
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++) {
-            const modbus_bus_cfg_t *bcfg = modbus_device_table_get_bus_cfg((modbus_bus_id_t)bus);
-            if (bcfg != NULL) {
-                s_app->modbus.bus_cfg[bus] = *bcfg;
-            }
-            if (s_app->modbus.client_port[bus].api != NULL) {
-                (void)i_modbus_client_set_bus_cfg(&s_app->modbus.client_port[bus], &s_app->modbus.bus_cfg[bus]);
+            was_running[bus] = s_app->modbus.available[bus] && s_app->modbus.ao[bus].is_running;
+            int stop_err = modbus_stop_bus_if_running(s_app, bus);
+            if (stop_err != 0) {
+                return stop_err;
             }
         }
+
         (void)modbus_registry_init(&s_app->modbus.registry_impl, s_app->modbus.bus_cfg);
         size_t def_count = 0;
         const modbus_slave_descriptor_t *def_slaves = modbus_device_table_get_slaves(&def_count);
         for (size_t i = 0; i < def_count; i++) {
+            if (!def_slaves[i].is_enabled ||
+                !s_app->modbus.available[def_slaves[i].bus_id]) {
+                continue;
+            }
             (void)modbus_registry_register(&s_app->modbus.registry_impl, &def_slaves[i]);
+        }
+
+        modbus_slave_descriptor_t relay_desc;
+        if (modbus_registry_find_by_type(&s_app->modbus.registry_impl,
+                                         MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+                                         &relay_desc) == 0 &&
+            relay_desc.bus_id < (uint8_t)MODBUS_BUS_MAX &&
+            s_app->modbus.available[relay_desc.bus_id]) {
+            (void)adapter_relay_modbus_rebind(&s_app->modbus.waveshare_relay,
+                                              &s_app->modbus.ao[relay_desc.bus_id],
+                                              relay_desc.slave_addr,
+                                              (int32_t)relay_desc.timeout_ms);
+        }
+
+        for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++) {
+            if (was_running[bus]) {
+                int start_err = ao_modbus_start(&s_app->modbus.ao[bus]);
+                if (start_err != 0 && start_err != -EALREADY) {
+                    return start_err;
+                }
+            }
         }
     }
 
