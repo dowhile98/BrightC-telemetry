@@ -15,9 +15,6 @@
 	sync-prescaler = <255>;
 	status = "okay";
 };
-&usart2_rx_pd6 {
-	bias-pull-up;
-};
 
 &usart2 {
 	/*default baud rate */
