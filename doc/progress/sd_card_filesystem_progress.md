@@ -16,7 +16,7 @@
 | **Infrastructure Adapter** | `app/src/infrastructure/adapters/adapter_storage_sd_zephyr.h`, `adapter_storage_sd_zephyr.c` | 100% | Zephyr VFS / FatFS adapter, atomic in-flight operation tracking |
 | **Zbus Notification** | `app/src/application/zbus/storage_channels.h`, `storage_channels.c` | 100% | `chan_storage_sd_status` channel broadcasting `sd_card_status_msg_t` |
 | **Active Object Coordinator** | `app/src/application/active_objects/ao_storage_sd.h`, `ao_storage_sd.c` | 100% | Dedicated coordinator thread, 200 ms poll/tick, automatic folder provisioning (`/SD:/history`, `/logs`, `/www`) |
-| **Application Facade** | `app/src/application/services/app_facade.h`, `app_facade.c` | 100% | Facade APIs (`app_facade_sd_get_status`, `app_facade_sd_mount`, `app_facade_sd_eject`) |
+| **Application Facade** | `app/include/application/services/app_facade.h`, `app/src/application/services/app_facade.c` | 100% | Facade APIs (`app_facade_sd_get_status`, `app_facade_sd_mount`, `app_facade_sd_eject`) |
 | **Composition Root** | `app/src/infrastructure/di/composition_root.h`, `composition_root.c` | 100% | Subsystem 12 wiring, container getters, graceful start/stop lifecycle |
 | **Shell Commands** | `app/src/presentation/shell/shell_brightc.c` | 100% | `sd status`, `sd mount`, `sd eject`, `sd ls [path]` |
 | **Unit Test Suite** | `tests/unit/storage_sd/` | 100% | 12 tests across `fake_storage_fs_suite` and `sd_lifecycle_sm_suite` running on `native_sim` |

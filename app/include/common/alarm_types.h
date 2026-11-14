@@ -255,6 +255,24 @@ typedef struct {
     uint32_t         active_duration_ms;        /**< Cumulative or current active duration in ms */
 } alarm_snapshot_entry_t;
 
+/**
+ * @brief Pre-computed bitmask snapshot of live alarm states for O(1) telemetry serialization.
+ *
+ * Designed to eliminate large stack buffers in network adapters (Modbus TCP, MQTT, SNMP).
+ * Word 0: indices 0..31
+ * Word 1: indices 32..63
+ * Word 2: indices 64..79 (bits 16..31 unused/zero)
+ */
+typedef struct {
+    uint32_t         active_mask[3];   /**< Bits 0..79: Active/Latched alarms (state != ALARM_STATE_INACTIVE) */
+    uint32_t         unacked_mask[3];  /**< Bits 0..79: Unacknowledged active alarms */
+    uint32_t         latched_mask[3];  /**< Bits 0..79: Latched alarms awaiting reset */
+    uint16_t         active_count;     /**< Total active alarms */
+    uint16_t         unack_count;      /**< Total unacknowledged alarms */
+    alarm_severity_t highest_severity; /**< Highest severity among active alarms */
+    uint16_t         highest_alarm_id; /**< Alarm ID corresponding to highest severity */
+} alarm_bitmask_snapshot_t;
+
 /*============================================================================*
  * VALIDATION PREDICATES
  *============================================================================*/

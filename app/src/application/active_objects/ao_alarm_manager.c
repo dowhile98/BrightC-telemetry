@@ -77,6 +77,8 @@ int ao_alarm_manager_init(ao_alarm_manager_t *self,
         self->snapshot[i].trigger_count = 0;
     }
 
+    memset(&self->bitmask, 0, sizeof(self->bitmask));
+
     /* Bind query port handle */
     self->query_port.api = &g_alarm_query_api;
     self->query_port.impl = self;
@@ -383,20 +385,42 @@ uint32_t ao_alarm_manager_get_active_duration(ao_alarm_manager_t *self, uint16_t
 static void recalculate_active_metrics_locked(ao_alarm_manager_t *self)
 {
     size_t count = 0;
+    size_t unack_cnt = 0;
     alarm_severity_t highest = ALARM_SEVERITY_INFO;
+    uint16_t highest_id = 0;
+
+    memset(&self->bitmask, 0, sizeof(self->bitmask));
 
     for (size_t i = 0; i < self->registry.count; i++) {
         alarm_state_t st = self->snapshot[i].state;
-        if (st == ALARM_STATE_ACTIVE || st == ALARM_STATE_ACKNOWLEDGED || st == ALARM_STATE_LATCHED) {
+        if (st != ALARM_STATE_INACTIVE) {
             count++;
-            if (self->snapshot[i].severity > highest) {
+            if (i < 96U) {
+                self->bitmask.active_mask[i / 32U] |= (1U << (i % 32U));
+            }
+            if (st == ALARM_STATE_ACTIVE) {
+                unack_cnt++;
+                if (i < 96U) {
+                    self->bitmask.unacked_mask[i / 32U] |= (1U << (i % 32U));
+                }
+            } else if (st == ALARM_STATE_LATCHED) {
+                if (i < 96U) {
+                    self->bitmask.latched_mask[i / 32U] |= (1U << (i % 32U));
+                }
+            }
+            if (self->snapshot[i].severity > highest || (highest == ALARM_SEVERITY_INFO && highest_id == 0)) {
                 highest = self->snapshot[i].severity;
+                highest_id = self->snapshot[i].alarm_id;
             }
         }
     }
 
     self->active_alarm_count = count;
     self->highest_active_severity = highest;
+    self->bitmask.active_count = (uint16_t)count;
+    self->bitmask.unack_count = (uint16_t)unack_cnt;
+    self->bitmask.highest_severity = (count > 0U) ? highest : ALARM_SEVERITY_INFO;
+    self->bitmask.highest_alarm_id = (count > 0U) ? highest_id : 0U;
 }
 
 static void publish_transition_event(const alarm_transition_event_t *evt)
@@ -655,6 +679,26 @@ static uint32_t query_get_active_duration(void *impl, uint16_t alarm_id)
     return ao_alarm_manager_get_active_duration(self, alarm_id);
 }
 
+static int query_get_bitmask_snapshot(void *impl, alarm_bitmask_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL) {
+        return -EINVAL;
+    }
+    ao_alarm_manager_t *self = (ao_alarm_manager_t *)impl;
+    k_mutex_lock(&self->lock, K_FOREVER);
+    *out_snapshot = self->bitmask;
+    k_mutex_unlock(&self->lock);
+    return 0;
+}
+
+int ao_alarm_manager_get_bitmask_snapshot(ao_alarm_manager_t *self, alarm_bitmask_snapshot_t *out_snapshot)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+    return query_get_bitmask_snapshot(self, out_snapshot);
+}
+
 static const i_alarm_query_api_t g_alarm_query_api = {
     .get_active_count = query_get_active_count,
     .get_highest_active_severity = query_get_highest_active_severity,
@@ -663,5 +707,6 @@ static const i_alarm_query_api_t g_alarm_query_api = {
     .get_alarm_snapshot = query_get_alarm_snapshot,
     .get_active_alarm_ids = query_get_active_alarm_ids,
     .get_descriptor = query_get_descriptor,
-    .get_active_duration = query_get_active_duration
+    .get_active_duration = query_get_active_duration,
+    .get_bitmask_snapshot = query_get_bitmask_snapshot
 };

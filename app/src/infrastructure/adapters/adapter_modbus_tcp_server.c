@@ -76,75 +76,68 @@ nmbs_error adapter_modbus_tcp_on_read_discrete_inputs(uint16_t address, uint16_t
         return NMBS_EXCEPTION_ILLEGAL_DATA_VALUE;
     }
 
-    /* Section 1: Digital Inputs 10001..10056 (PDU 0x0000 .. 0x0037) */
-    if (address < MODBUS_DI_COUNT_DISCRETE_INPUTS &&
-        (address + quantity) <= MODBUS_DI_COUNT_DISCRETE_INPUTS) {
-        di_snapshot_msg_t snap;
-        int err = app_facade_di_get_snapshot(&snap);
-        if (err != 0) {
-            return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
-        }
+    /* Discrete Inputs total addressable span: 0..223 (Modbus Ref 10001..10224)
+     * Section 1: Digital Inputs 10001..10056 (PDU 0x0000 .. 0x0037)
+     * Gap: Padded with sentinel 0 (Modbus Ref 10057..10100)
+     * Section 2: Active Alarm States 10101..10180 (PDU 0x0064 .. 0x00B3)
+     * Gap: Padded with sentinel 0 (Modbus Ref 10181..10200)
+     * Section 3: HVAC Units Tri-State Flags 10201..10224 (PDU 0x00C8 .. 0x00DF)
+     */
+    if (((uint32_t)address + (uint32_t)quantity) <= 224U) {
+        di_snapshot_msg_t di_snap = {0};
+        alarm_bitmask_snapshot_t alarm_snap = {0};
+        app_facade_hvac_status_t hstat = {0};
 
-        for (uint16_t i = 0U; i < quantity; i++) {
-            uint16_t ch = address + i;
-            bool active = (ch < snap.channel_count) ? snap.is_active[ch] : false;
-            nmbs_bitfield_write(inputs_out, i, active);
-        }
-        return NMBS_ERROR_NONE;
-    }
-
-    /* Section 2: Active Alarm States 10101..10180 (PDU 0x0064 .. 0x00B3) */
-    if (address >= MODBUS_DI_OFFSET_ALARMS &&
-        (address + quantity) <= (MODBUS_DI_OFFSET_ALARMS + MODBUS_DI_COUNT_ALARMS)) {
-        const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
-        size_t cat_count = app_facade_alarm_get_catalog(catalog, CONFIG_ALARM_MANAGER_MAX_ALARMS);
-
-        app_facade_alarm_item_t act_items[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
-        size_t act_count = app_facade_alarm_get_active_list(act_items, CONFIG_ALARM_MANAGER_MAX_ALARMS);
-
-        for (uint16_t i = 0U; i < quantity; i++) {
-            uint16_t alarm_idx = (address + i) - MODBUS_DI_OFFSET_ALARMS;
-            bool is_active = false;
-
-            if (alarm_idx < cat_count && catalog[alarm_idx] != NULL) {
-                uint16_t target_id = catalog[alarm_idx]->alarm_id;
-                for (size_t k = 0U; k < act_count; k++) {
-                    if (act_items[k].alarm_id == target_id &&
-                        act_items[k].state != ALARM_STATE_INACTIVE) {
-                        is_active = true;
-                        break;
-                    }
-                }
+        /* Conditionally fetch only required subsystems based on requested range */
+        if (address < MODBUS_DI_COUNT_DISCRETE_INPUTS) {
+            int err = app_facade_di_get_snapshot(&di_snap);
+            if (err != 0) {
+                return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
             }
-            nmbs_bitfield_write(inputs_out, i, is_active);
         }
-        return NMBS_ERROR_NONE;
-    }
-
-    /* Section 3: HVAC Units Tri-State Flags 10201..10224 (PDU 0x00C8 .. 0x00DF) */
-    if (address >= MODBUS_DI_OFFSET_HVAC_TRISTATE &&
-        (address + quantity) <= (MODBUS_DI_OFFSET_HVAC_TRISTATE + MODBUS_DI_COUNT_HVAC_TRISTATE)) {
-        app_facade_hvac_status_t hstat;
-        int err = app_facade_hvac_get_status(&hstat);
-        if (err != 0) {
-            return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
+        if (address < (MODBUS_DI_OFFSET_ALARMS + MODBUS_DI_COUNT_ALARMS) &&
+            (address + quantity) > MODBUS_DI_OFFSET_ALARMS) {
+            (void)app_facade_alarm_get_bitmask_snapshot(&alarm_snap);
+        }
+        if ((address + quantity) > MODBUS_DI_OFFSET_HVAC_TRISTATE) {
+            int err = app_facade_hvac_get_status(&hstat);
+            if (err != 0) {
+                return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
+            }
         }
 
         for (uint16_t i = 0U; i < quantity; i++) {
-            uint16_t rel_idx = (address + i) - MODBUS_DI_OFFSET_HVAC_TRISTATE;
-            uint8_t u = (uint8_t)(rel_idx / 3U);
-            uint8_t r = (uint8_t)(rel_idx % 3U);
+            uint16_t cur = address + i;
             bool val = false;
 
-            if (u < HVAC_MAX_UNITS_TOTAL) {
-                if (r == 0U) {
-                    val = hstat.units[u].tri_state.relay_aa;
-                } else if (r == 1U) {
-                    val = hstat.units[u].tri_state.relay_sm;
-                } else {
-                    val = hstat.units[u].tri_state.relay_g;
+            if (cur < MODBUS_DI_COUNT_DISCRETE_INPUTS) {
+                val = (cur < di_snap.channel_count) ? di_snap.is_active[cur] : false;
+            } else if (cur >= MODBUS_DI_OFFSET_ALARMS &&
+                       cur < (MODBUS_DI_OFFSET_ALARMS + MODBUS_DI_COUNT_ALARMS)) {
+                uint16_t alarm_idx = cur - MODBUS_DI_OFFSET_ALARMS;
+                if (alarm_idx < 80U) {
+                    val = (alarm_snap.active_mask[alarm_idx / 32U] & (1U << (alarm_idx % 32U))) != 0U;
                 }
+            } else if (cur >= MODBUS_DI_OFFSET_HVAC_TRISTATE &&
+                       cur < (MODBUS_DI_OFFSET_HVAC_TRISTATE + MODBUS_DI_COUNT_HVAC_TRISTATE)) {
+                uint16_t rel_idx = cur - MODBUS_DI_OFFSET_HVAC_TRISTATE;
+                uint8_t u = (uint8_t)(rel_idx / 3U);
+                uint8_t r = (uint8_t)(rel_idx % 3U);
+
+                if (u < HVAC_MAX_UNITS_TOTAL) {
+                    if (r == 0U) {
+                        val = hstat.units[u].tri_state.relay_aa;
+                    } else if (r == 1U) {
+                        val = hstat.units[u].tri_state.relay_sm;
+                    } else {
+                        val = hstat.units[u].tri_state.relay_g;
+                    }
+                }
+            } else {
+                /* Gaps 10057..10100 and 10181..10200 padded with 0 for contiguous SCADA block reads */
+                val = false;
             }
+
             nmbs_bitfield_write(inputs_out, i, val);
         }
         return NMBS_ERROR_NONE;
@@ -313,53 +306,25 @@ nmbs_error adapter_modbus_tcp_on_read_input_registers(uint16_t address, uint16_t
         return NMBS_EXCEPTION_ILLEGAL_DATA_VALUE;
     }
 
-    /* Section 1: Sensor Matrix Temperatures 30001..30064 (PDU 0x0000 .. 0x003F) */
-    if (address < MODBUS_IR_COUNT_SENSOR_MATRIX &&
-        (address + quantity) <= MODBUS_IR_COUNT_SENSOR_MATRIX) {
-        sensor_snapshot_msg_t ssnap;
-        int err = app_facade_sensor_get_snapshot(&ssnap);
-        if (err != 0) {
-            return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
-        }
+    /* Block 1: Sensor Matrix, Return RH, and 3-Phase Electrical 30001..30130 (PDU 0x0000 .. 0x0081)
+     * Contiguous SCADA block read up to 130 registers. Unmapped temperature channels return 0x7FFF;
+     * unmapped electrical slots return 0x0000.
+     */
+    if (((uint32_t)address + (uint32_t)quantity) <= (MODBUS_IR_OFFSET_ELECTRICAL + MODBUS_IR_COUNT_ELECTRICAL)) {
+        sensor_snapshot_msg_t ssnap = {0};
+        thermal_energy_capture_t cap = {0};
 
-        for (uint16_t i = 0U; i < quantity; i++) {
-            uint16_t ch = address + i;
-            if ((ssnap.valid_mask & (1ULL << ch)) != 0ULL) {
-                registers_out[i] = (uint16_t)(int16_t)roundf(ssnap.temperatures[ch] * 10.0f);
-            } else {
-                registers_out[i] = 0x7FFFU;
+        if (address < MODBUS_IR_COUNT_SENSOR_MATRIX) {
+            int err = app_facade_sensor_get_snapshot(&ssnap);
+            if (err != 0) {
+                return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
             }
         }
-        return NMBS_ERROR_NONE;
-    }
-
-    /* Section 2: Psychrometrics Return RH 30070..30071 (PDU 0x0045 .. 0x0046) */
-    if (address >= MODBUS_IR_OFFSET_RETURN_RH &&
-        (address + quantity) <= (MODBUS_IR_OFFSET_RETURN_RH + MODBUS_IR_COUNT_RETURN_RH)) {
-        thermal_energy_capture_t cap;
-        int err = app_facade_thermal_get_capture(&cap);
-        if (err != 0) {
-            return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
-        }
-
-        for (uint16_t i = 0U; i < quantity; i++) {
-            uint16_t reg = address + i;
-            if (reg == MODBUS_IR_OFFSET_RETURN_RH) {
-                registers_out[i] = (uint16_t)(int16_t)roundf(cap.humidity_return_pct * 10.0f);
-            } else {
-                registers_out[i] = (cap.humidity_quality == QUALITY_VALID) ? 1U : 0U;
+        if ((address + quantity) > MODBUS_IR_OFFSET_RETURN_RH) {
+            int err = app_facade_thermal_get_capture(&cap);
+            if (err != 0) {
+                return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
             }
-        }
-        return NMBS_ERROR_NONE;
-    }
-
-    /* Section 3: 3-Phase Electrical Parameters 30101..30130 (PDU 0x0064 .. 0x0081) */
-    if (address >= MODBUS_IR_OFFSET_ELECTRICAL &&
-        (address + quantity) <= (MODBUS_IR_OFFSET_ELECTRICAL + MODBUS_IR_COUNT_ELECTRICAL)) {
-        thermal_energy_capture_t cap;
-        int err = app_facade_thermal_get_capture(&cap);
-        if (err != 0) {
-            return NMBS_EXCEPTION_SERVER_DEVICE_FAILURE;
         }
 
         uint32_t kwh_x10 = (uint32_t)round(cap.total_active_energy_kwh * 10.0);
@@ -367,25 +332,45 @@ nmbs_error adapter_modbus_tcp_on_read_input_registers(uint16_t address, uint16_t
         for (uint16_t i = 0U; i < quantity; i++) {
             uint16_t reg = address + i;
             uint16_t val = 0U;
-            switch (reg) {
-            case 100: val = (uint16_t)roundf(cap.voltage_v[0] * 10.0f); break;
-            case 101: val = (uint16_t)roundf(cap.voltage_v[1] * 10.0f); break;
-            case 102: val = (uint16_t)roundf(cap.voltage_v[2] * 10.0f); break;
-            case 103: val = (uint16_t)roundf(cap.current_a[0] * 100.0f); break;
-            case 104: val = (uint16_t)roundf(cap.current_a[1] * 100.0f); break;
-            case 105: val = (uint16_t)roundf(cap.current_a[2] * 100.0f); break;
-            case 106: val = (uint16_t)roundf(cap.total_active_power_kw * 10.0f); break;
-            case 107: val = (uint16_t)(int16_t)roundf(cap.power_factor * 1000.0f); break;
-            case 108: val = 600U; break; /* 60.0 Hz */
-            case 109:
-                val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
-                      (uint16_t)(kwh_x10 & 0xFFFFU) : (uint16_t)((kwh_x10 >> 16) & 0xFFFFU);
-                break;
-            case 110:
-                val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
-                      (uint16_t)((kwh_x10 >> 16) & 0xFFFFU) : (uint16_t)(kwh_x10 & 0xFFFFU);
-                break;
-            default: val = 0U; break;
+
+            if (reg < MODBUS_IR_COUNT_SENSOR_MATRIX) {
+                if ((ssnap.valid_mask & (1ULL << reg)) != 0ULL) {
+                    val = (uint16_t)(int16_t)roundf(ssnap.temperatures[reg] * 10.0f);
+                } else {
+                    val = 0x7FFFU;
+                }
+            } else if (reg >= MODBUS_IR_COUNT_SENSOR_MATRIX && reg < MODBUS_IR_OFFSET_RETURN_RH) {
+                val = 0x7FFFU; /* Channels 64..68 sentinel disconnected */
+            } else if (reg == MODBUS_IR_OFFSET_RETURN_RH) {
+                val = (uint16_t)(int16_t)roundf(cap.humidity_return_pct * 10.0f);
+            } else if (reg == (MODBUS_IR_OFFSET_RETURN_RH + 1U)) {
+                val = (cap.humidity_quality == QUALITY_VALID) ? 1U : 0U;
+            } else if (reg >= (MODBUS_IR_OFFSET_RETURN_RH + MODBUS_IR_COUNT_RETURN_RH) &&
+                       reg < MODBUS_IR_OFFSET_ELECTRICAL) {
+                val = 0x0000U; /* Gaps 71..99 sentinel zero padding */
+            } else if (reg >= MODBUS_IR_OFFSET_ELECTRICAL) {
+                switch (reg) {
+                case 100: val = (uint16_t)roundf(cap.voltage_v[0] * 10.0f); break;
+                case 101: val = (uint16_t)roundf(cap.voltage_v[1] * 10.0f); break;
+                case 102: val = (uint16_t)roundf(cap.voltage_v[2] * 10.0f); break;
+                case 103: val = (uint16_t)roundf(cap.current_a[0] * 100.0f); break;
+                case 104: val = (uint16_t)roundf(cap.current_a[1] * 100.0f); break;
+                case 105: val = (uint16_t)roundf(cap.current_a[2] * 100.0f); break;
+                case 106: val = (uint16_t)roundf(cap.total_active_power_kw * 10.0f); break;
+                case 107: val = (uint16_t)(int16_t)roundf(cap.power_factor * 1000.0f); break;
+                case 108: val = 600U; break; /* 60.0 Hz */
+                case 109:
+                    val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
+                          (uint16_t)(kwh_x10 & 0xFFFFU) : (uint16_t)((kwh_x10 >> 16) & 0xFFFFU);
+                    break;
+                case 110:
+                    val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
+                          (uint16_t)((kwh_x10 >> 16) & 0xFFFFU) : (uint16_t)(kwh_x10 & 0xFFFFU);
+                    break;
+                default:
+                    val = 0x0000U; /* 111..129 reserved padding */
+                    break;
+                }
             }
             registers_out[i] = val;
         }
@@ -440,8 +425,13 @@ nmbs_error adapter_modbus_tcp_on_read_input_registers(uint16_t address, uint16_t
         storage_fs_volume_info_t vol = {0};
         (void)app_facade_sd_get_status(&card_stat, &vol);
 
-        uint32_t eth_ip = 0xC0A80164U; /* 192.168.1.100 */
-        uint32_t wifi_ip = 0xC0A80401U; /* 192.168.4.1 */
+        net_status_t eth_stat = {0};
+        net_status_t wifi_stat = {0};
+        (void)app_facade_network_get_status(NETWORK_INTERFACE_ETHERNET, &eth_stat);
+        (void)app_facade_network_get_status(NETWORK_INTERFACE_WIFI, &wifi_stat);
+
+        uint32_t eth_ip = (eth_stat.state == NET_IF_STATE_CONNECTED) ? eth_stat.ip_addr : 0U;
+        uint32_t wifi_ip = (wifi_stat.state == NET_IF_STATE_CONNECTED) ? wifi_stat.ip_addr : 0U;
         uint32_t uptime_s = (uint32_t)sys_info.uptime_seconds;
         uint32_t total_mb = (uint32_t)(vol.total_bytes / (1024ULL * 1024ULL));
         uint32_t free_mb = (uint32_t)(vol.free_bytes / (1024ULL * 1024ULL));
@@ -458,10 +448,22 @@ nmbs_error adapter_modbus_tcp_on_read_input_registers(uint16_t address, uint16_t
                 val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
                       (uint16_t)((uptime_s >> 16) & 0xFFFFU) : (uint16_t)(uptime_s & 0xFFFFU);
                 break;
-            case 302: val = (uint16_t)((eth_ip >> 16) & 0xFFFFU); break;
-            case 303: val = (uint16_t)(eth_ip & 0xFFFFU); break;
-            case 304: val = (uint16_t)((wifi_ip >> 16) & 0xFFFFU); break;
-            case 305: val = (uint16_t)(wifi_ip & 0xFFFFU); break;
+            case 302:
+                val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
+                      (uint16_t)(eth_ip & 0xFFFFU) : (uint16_t)((eth_ip >> 16) & 0xFFFFU);
+                break;
+            case 303:
+                val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
+                      (uint16_t)((eth_ip >> 16) & 0xFFFFU) : (uint16_t)(eth_ip & 0xFFFFU);
+                break;
+            case 304:
+                val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
+                      (uint16_t)(wifi_ip & 0xFFFFU) : (uint16_t)((wifi_ip >> 16) & 0xFFFFU);
+                break;
+            case 305:
+                val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
+                      (uint16_t)((wifi_ip >> 16) & 0xFFFFU) : (uint16_t)(wifi_ip & 0xFFFFU);
+                break;
             case 306:
                 val = (order == MODBUS_WORD_ORDER_LITTLE_ENDIAN) ?
                       (uint16_t)(total_mb & 0xFFFFU) : (uint16_t)((total_mb >> 16) & 0xFFFFU);
@@ -482,54 +484,51 @@ nmbs_error adapter_modbus_tcp_on_read_input_registers(uint16_t address, uint16_t
                 val = (card_stat == STORAGE_FS_CARD_MOUNTED) ? 3U :
                       ((card_stat != STORAGE_FS_CARD_NOT_INSERTED) ? 1U : 0U);
                 break;
-            default: val = 0U; break;
+            case 311:
+                val = (uint16_t)eth_stat.state;
+                break;
+            case 312:
+                val = (uint16_t)wifi_stat.state;
+                break;
+            case 313:
+                val = (uint16_t)(int16_t)wifi_stat.rssi;
+                break;
+            default:
+                val = 0U; /* 314..319 reserved sentinel zero padding */
+                break;
             }
             registers_out[i] = val;
         }
         return NMBS_ERROR_NONE;
     }
 
-    /* Section 6: Active Alarm Diagnostics 30401..30410 (PDU 0x0190 .. 0x0199) */
+    /* Section 6: Active Alarm Diagnostics 30401..30420 (PDU 0x0190 .. 0x01A3) */
     if (address >= MODBUS_IR_OFFSET_ALARM_DIAG &&
         (address + quantity) <= (MODBUS_IR_OFFSET_ALARM_DIAG + MODBUS_IR_COUNT_ALARM_DIAG)) {
-        app_facade_alarm_status_t astat;
-        (void)app_facade_alarm_get_status(&astat);
-
-        const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
-        size_t cat_count = app_facade_alarm_get_catalog(catalog, CONFIG_ALARM_MANAGER_MAX_ALARMS);
-
-        app_facade_alarm_item_t act_items[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
-        size_t act_count = app_facade_alarm_get_active_list(act_items, CONFIG_ALARM_MANAGER_MAX_ALARMS);
-
-        uint16_t active_mask[5] = {0};
-        for (size_t a = 0U; a < cat_count && a < 80U; a++) {
-            if (catalog[a] == NULL) continue;
-            uint16_t aid = catalog[a]->alarm_id;
-            for (size_t k = 0U; k < act_count; k++) {
-                if (act_items[k].alarm_id == aid && act_items[k].state != ALARM_STATE_INACTIVE) {
-                    active_mask[a / 16U] |= (1U << (a % 16U));
-                    break;
-                }
-            }
-        }
+        alarm_bitmask_snapshot_t snap = {0};
+        (void)app_facade_alarm_get_bitmask_snapshot(&snap);
+        bool buzzer_muted = app_facade_alarm_is_buzzer_muted();
 
         for (uint16_t i = 0U; i < quantity; i++) {
             uint16_t reg = address + i;
             uint16_t val = 0U;
             switch (reg) {
-            case 400: val = (uint16_t)astat.active_count; break;
-            case 401:
-                val = (uint16_t)(astat.active_count > astat.acknowledged_count ?
-                                (astat.active_count - astat.acknowledged_count) : 0U);
-                break;
-            case 402: val = (uint16_t)astat.highest_level; break;
-            case 403: val = (uint16_t)(astat.buzzer_muted ? 0U : (astat.active_count > 0U ? 1U : 2U)); break;
-            case 404: val = active_mask[0]; break;
-            case 405: val = active_mask[1]; break;
-            case 406: val = active_mask[2]; break;
-            case 407: val = active_mask[3]; break;
-            case 408: val = active_mask[4]; break;
-            default: val = 0U; break;
+            case 400: val = snap.active_count; break;
+            case 401: val = snap.unack_count; break;
+            case 402: val = (snap.active_count > 0U) ? (uint16_t)snap.highest_severity : 0U; break;
+            case 403: val = buzzer_muted ? 0U : (snap.active_count > 0U ? 1U : 2U); break;
+            case 404: val = (uint16_t)(snap.active_mask[0] & 0xFFFFU); break;
+            case 405: val = (uint16_t)((snap.active_mask[0] >> 16) & 0xFFFFU); break;
+            case 406: val = (uint16_t)(snap.active_mask[1] & 0xFFFFU); break;
+            case 407: val = (uint16_t)((snap.active_mask[1] >> 16) & 0xFFFFU); break;
+            case 408: val = (uint16_t)(snap.active_mask[2] & 0xFFFFU); break;
+            case 409: val = (uint16_t)(snap.unacked_mask[0] & 0xFFFFU); break;
+            case 410: val = (uint16_t)((snap.unacked_mask[0] >> 16) & 0xFFFFU); break;
+            case 411: val = (uint16_t)(snap.unacked_mask[1] & 0xFFFFU); break;
+            case 412: val = (uint16_t)((snap.unacked_mask[1] >> 16) & 0xFFFFU); break;
+            case 413: val = (uint16_t)(snap.unacked_mask[2] & 0xFFFFU); break;
+            case 414: val = (snap.active_count > 0U) ? snap.highest_alarm_id : 0U; break;
+            default:  val = 0U; break; /* 415..419 (30416..30420) reserved sentinel zero padding */
             }
             registers_out[i] = val;
         }

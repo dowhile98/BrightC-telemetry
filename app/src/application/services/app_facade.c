@@ -1324,6 +1324,20 @@ bool app_facade_alarm_is_buzzer_muted(void)
     return app_container_is_alarm_buzzer_muted(s_app);
 }
 
+int app_facade_alarm_get_bitmask_snapshot(alarm_bitmask_snapshot_t *out_snapshot)
+{
+    if (s_app == NULL || out_snapshot == NULL) {
+        return -EINVAL;
+    }
+
+    const i_alarm_query_t *query = app_container_get_alarm_query(s_app);
+    if (query == NULL || !i_alarm_query_is_bound(query)) {
+        return -ENODEV;
+    }
+
+    return i_alarm_query_get_bitmask_snapshot(query, out_snapshot);
+}
+
 /* =========================================================================
  * Thermal and Energy Subsystem Presentation APIs
  * ========================================================================= */

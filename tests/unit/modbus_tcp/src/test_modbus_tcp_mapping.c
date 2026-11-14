@@ -18,10 +18,26 @@
 
 static di_snapshot_msg_t s_mock_di_snapshot;
 static app_facade_alarm_status_t s_mock_alarm_status;
+static alarm_bitmask_snapshot_t s_mock_alarm_bitmask;
 static app_facade_alarm_item_t s_mock_active_items[10];
 static size_t s_mock_active_count = 0;
 static alarm_descriptor_t s_mock_catalog_items[10];
 static const alarm_descriptor_t *s_mock_catalog[10];
+
+static net_status_t s_mock_eth_status = {
+    .state = NET_IF_STATE_CONNECTED,
+    .ip_addr = 0xC0A80164U, /* 192.168.1.100 */
+    .subnet_mask = 0xFFFFFF00U,
+    .gateway = 0xC0A80101U,
+    .rssi = -128,
+};
+static net_status_t s_mock_wifi_status = {
+    .state = NET_IF_STATE_CONNECTED,
+    .ip_addr = 0xC0A80401U, /* 192.168.4.1 */
+    .subnet_mask = 0xFFFFFF00U,
+    .gateway = 0xC0A80401U,
+    .rssi = -65,
+};
 
 static app_facade_hvac_status_t s_mock_hvac_status;
 static sensor_snapshot_msg_t s_mock_sensor_snapshot;
@@ -102,6 +118,26 @@ int app_facade_alarm_set_buzzer_mute(bool muted)
 bool app_facade_alarm_is_buzzer_muted(void)
 {
     return s_mock_buzzer_muted;
+}
+
+int app_facade_alarm_get_bitmask_snapshot(alarm_bitmask_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == NULL) return -EINVAL;
+    *out_snapshot = s_mock_alarm_bitmask;
+    return 0;
+}
+
+int app_facade_network_get_status(network_interface_t iface, net_status_t *out_status)
+{
+    if (out_status == NULL) return -EINVAL;
+    if (iface == NETWORK_INTERFACE_ETHERNET) {
+        *out_status = s_mock_eth_status;
+        return 0;
+    } else if (iface == NETWORK_INTERFACE_WIFI) {
+        *out_status = s_mock_wifi_status;
+        return 0;
+    }
+    return -ENODEV;
 }
 
 int app_facade_hvac_get_status(app_facade_hvac_status_t *out_status)
@@ -353,11 +389,8 @@ ZTEST(modbus_tcp_mapping_suite, test_discrete_inputs_mapping)
 
     /* 1.2 Alarm states 10101..10180 (PDU offset 100..179) */
     memset(bitfield, 0, sizeof(bitfield));
-    s_mock_active_items[0].alarm_id = 100;
-    s_mock_active_items[0].state = ALARM_STATE_ACTIVE;
-    s_mock_active_items[1].alarm_id = 102;
-    s_mock_active_items[1].state = ALARM_STATE_ACKNOWLEDGED;
-    s_mock_active_count = 2;
+    s_mock_alarm_bitmask.active_mask[0] = 0x05U; /* Bits 0 and 2 set */
+    s_mock_alarm_bitmask.active_count = 2;
 
     err = adapter_modbus_tcp_on_read_discrete_inputs(100, 8, bitfield, 1, &s_adapter);
     zassert_equal(err, NMBS_ERROR_NONE, "Read alarm states failed");
@@ -375,7 +408,12 @@ ZTEST(modbus_tcp_mapping_suite, test_discrete_inputs_mapping)
     zassert_false((bitfield[0] & 0x02) != 0, "SM relay should be OFF");
     zassert_true((bitfield[0] & 0x04) != 0, "G fan relay should be ON");
 
-    /* 1.4 Invalid quantity or address */
+    /* 1.4 Contiguous block read across DI 0..120 (spanning digital inputs and alarms) */
+    memset(bitfield, 0, sizeof(bitfield));
+    err = adapter_modbus_tcp_on_read_discrete_inputs(0, 120, bitfield, 1, &s_adapter);
+    zassert_equal(err, NMBS_ERROR_NONE, "Contiguous block read DI 0..120 failed");
+
+    /* 1.5 Invalid quantity or address */
     err = adapter_modbus_tcp_on_read_discrete_inputs(0, 0, bitfield, 1, &s_adapter);
     zassert_equal(err, NMBS_EXCEPTION_ILLEGAL_DATA_VALUE, "Zero quantity should fail");
 
@@ -468,17 +506,43 @@ ZTEST(modbus_tcp_mapping_suite, test_input_registers_mapping)
     zassert_equal(regs[0], 543, "RH mismatch: %u vs 543", regs[0]);
     zassert_equal(regs[1], 1, "RH valid flag should be 1");
 
-    /* 3.3 Active alarm diagnostics (offset 400..409) */
-    s_mock_alarm_status.active_count = 2;
-    s_mock_active_items[0].alarm_id = 100;
-    s_mock_active_items[0].state = ALARM_STATE_ACTIVE;
-    s_mock_active_items[1].alarm_id = 101;
-    s_mock_active_items[1].state = ALARM_STATE_ACKNOWLEDGED;
-    s_mock_active_count = 2;
+    /* 3.3 Active alarm diagnostics (offset 400..419) */
+    s_mock_alarm_bitmask.active_count = 2;
+    s_mock_alarm_bitmask.unack_count = 1;
+    s_mock_alarm_bitmask.highest_severity = ALARM_SEVERITY_CRITICAL;
+    s_mock_alarm_bitmask.highest_alarm_id = 0x0001;
+    s_mock_alarm_bitmask.active_mask[0] = 0x0003U; /* Alarms 1 & 2 */
+    s_mock_alarm_bitmask.unacked_mask[0] = 0x0001U; /* Alarm 1 */
 
-    err = adapter_modbus_tcp_on_read_input_registers(400, 3, regs, 1, &s_adapter);
+    uint16_t alarm_regs[20] = {0};
+    err = adapter_modbus_tcp_on_read_input_registers(400, 20, alarm_regs, 1, &s_adapter);
     zassert_equal(err, NMBS_ERROR_NONE, "Read alarm diagnostics failed");
-    zassert_equal(regs[0], 2, "Active count mismatch: %u vs 2", regs[0]);
+    zassert_equal(alarm_regs[0], 2, "Active count mismatch: %u vs 2", alarm_regs[0]);
+    zassert_equal(alarm_regs[1], 1, "Unack count mismatch: %u vs 1", alarm_regs[1]);
+    zassert_equal(alarm_regs[2], ALARM_SEVERITY_CRITICAL, "Highest severity mismatch");
+    zassert_equal(alarm_regs[4], 0x0003, "Active mask word 0 mismatch: 0x%04X", alarm_regs[4]);
+    zassert_equal(alarm_regs[9], 0x0001, "Unacked mask word 0 mismatch: 0x%04X", alarm_regs[9]);
+    zassert_equal(alarm_regs[14], 0x0001, "Highest alarm ID mismatch: 0x%04X", alarm_regs[14]);
+    zassert_equal(alarm_regs[15], 0x0000, "Padding slot 415 should be 0");
+
+    /* 3.4 Contiguous block read spanning temperatures, psychrometrics, and electrical (offset 0..125) */
+    uint16_t big_regs[125] = {0};
+    err = adapter_modbus_tcp_on_read_input_registers(0, 125, big_regs, 1, &s_adapter);
+    zassert_equal(err, NMBS_ERROR_NONE, "Contiguous block read IR 0..125 failed");
+    zassert_equal(big_regs[0], 255, "Channel 0 temp mismatch in block read");
+    zassert_equal(big_regs[69], 543, "RH mismatch in block read");
+
+    /* 3.5 System diagnostics dynamic IP and link status (offset 300..314) */
+    uint16_t sys_regs[15] = {0};
+    err = adapter_modbus_tcp_on_read_input_registers(300, 14, sys_regs, 1, &s_adapter);
+    zassert_equal(err, NMBS_ERROR_NONE, "Read system diagnostics failed");
+    zassert_equal(sys_regs[2], 0xC0A8, "Eth IP MSW mismatch: 0x%04X", sys_regs[2]);
+    zassert_equal(sys_regs[3], 0x0164, "Eth IP LSW mismatch: 0x%04X", sys_regs[3]);
+    zassert_equal(sys_regs[4], 0xC0A8, "WiFi IP MSW mismatch: 0x%04X", sys_regs[4]);
+    zassert_equal(sys_regs[5], 0x0401, "WiFi IP LSW mismatch: 0x%04X", sys_regs[5]);
+    zassert_equal(sys_regs[11], (uint16_t)NET_IF_STATE_CONNECTED, "Eth link state mismatch");
+    zassert_equal(sys_regs[12], (uint16_t)NET_IF_STATE_CONNECTED, "WiFi link state mismatch");
+    zassert_equal((int16_t)sys_regs[13], -65, "WiFi RSSI mismatch");
 }
 
 /* ========================================================================= */

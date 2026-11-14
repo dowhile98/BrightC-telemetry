@@ -93,9 +93,10 @@ typedef struct {
     alarm_aggregate_entity_t aggregates[CONFIG_ALARM_MANAGER_MAX_ALARMS];
 
     /* Thread-safe live snapshot cache for PULL query port */
-    alarm_snapshot_entry_t snapshot[CONFIG_ALARM_MANAGER_MAX_ALARMS];
-    size_t                active_alarm_count;
-    alarm_severity_t      highest_active_severity;
+    alarm_snapshot_entry_t   snapshot[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+    alarm_bitmask_snapshot_t bitmask;
+    size_t                   active_alarm_count;
+    alarm_severity_t         highest_active_severity;
 
     /* Exposed PULL Port */
     i_alarm_query_t       query_port;
@@ -181,6 +182,11 @@ int ao_alarm_manager_register_descriptor(ao_alarm_manager_t *self,
  * @brief Retrieve current or total active duration of an alarm in milliseconds (FR-03).
  */
 uint32_t ao_alarm_manager_get_active_duration(ao_alarm_manager_t *self, uint16_t alarm_id);
+
+/**
+ * @brief Retrieve pre-computed bitmask snapshot of all active/unacked/latched alarms.
+ */
+int ao_alarm_manager_get_bitmask_snapshot(ao_alarm_manager_t *self, alarm_bitmask_snapshot_t *out_snapshot);
 
 /**
  * @brief Retrieve the fat-pointer query interface handle.

@@ -666,6 +666,16 @@ int app_facade_alarm_set_buzzer_mute(bool muted);
  */
 bool app_facade_alarm_is_buzzer_muted(void);
 
+/**
+ * @brief Retrieve pre-computed bitmask snapshot of active/unacknowledged/latched alarms.
+ *
+ * Fast O(1) lock retrieval with zero large stack buffer allocations.
+ *
+ * @param[out] out_snapshot Destination bitmask snapshot structure.
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_alarm_get_bitmask_snapshot(alarm_bitmask_snapshot_t *out_snapshot);
+
 /* =========================================================================
  * Thermal and Energy Subsystem Presentation APIs
  * ========================================================================= */

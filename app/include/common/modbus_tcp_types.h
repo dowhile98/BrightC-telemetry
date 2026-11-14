@@ -48,7 +48,7 @@ extern "C" {
 #define MODBUS_TCP_MAX_ADU_LENGTH                260U
 
 /** Dedicated thread stack size and priority. */
-#define MODBUS_TCP_THREAD_STACK_SIZE             3072U
+#define MODBUS_TCP_THREAD_STACK_SIZE             4096U
 #define MODBUS_TCP_THREAD_PRIORITY               8
 
 /* ========================================================================= */
@@ -199,9 +199,9 @@ typedef struct {
 #define MODBUS_IR_OFFSET_SYSTEM_DIAG             0x012CU /**< PDU Offset 300 (30301 - 30001) */
 #define MODBUS_IR_COUNT_SYSTEM_DIAG              20U     /**< Uptime, Eth IP, WiFi IP, SD total & free */
 
-/* Section 3.6: Active Alarm Diagnostics (Modbus Ref 30401..30410) */
+/* Section 3.6: Active Alarm Diagnostics (Modbus Ref 30401..30420) */
 #define MODBUS_IR_OFFSET_ALARM_DIAG              0x0190U /**< PDU Offset 400 (30401 - 30001) */
-#define MODBUS_IR_COUNT_ALARM_DIAG               10U     /**< Active count, unack, severity, masks */
+#define MODBUS_IR_COUNT_ALARM_DIAG               20U     /**< Active count, unack, severity, masks, highest ID, padding */
 
 /* ------------------------------------------------------------------------- */
 /* 4. HOLDING REGISTERS (Function Codes 0x03, 0x06, 0x10, Read/Write 16-bit)  */

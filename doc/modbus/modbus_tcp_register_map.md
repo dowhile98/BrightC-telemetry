@@ -23,21 +23,29 @@ FC 0x0F is implemented by applying each coil in the requested range sequentially
 
 ## Discrete inputs (FC 0x02)
 
+Contiguous block reads of up to 125 inputs spanning anywhere within references 10001..10224 (PDU 0..223) are supported for SCADA compatibility without returning illegal data address exceptions. Unmapped address gaps return sentinel zero bits.
+
 | Reference | PDU address | Access | Meaning / behavior |
 |---|---:|---|---|
 | 10001–10056 | 0–55 | Read-only | Physical/logical digital input snapshot, one bit per channel. Channels beyond the snapshot's reported `channel_count` read as 0. |
-| 10101–10180 | 100–179 | Read-only | Active alarm flags indexed by the alarm catalog order, not by alarm ID. A bit is 1 when its catalog alarm has a non-inactive active-list entry. Positions beyond the current catalog size or with a null catalog entry read 0. |
+| 10057–10100 | 56–99 | Read-only | Reserved gap padding for contiguous SCADA polling; reads as 0. |
+| 10101–10180 | 100–179 | Read-only | Active alarm flags indexed by alarm catalog order (O(1) resolution via pre-computed bitmask). A bit is 1 when its alarm is active, acknowledged, or latched (`state != ALARM_STATE_INACTIVE`). Unused slots read 0. |
+| 10181–10200 | 180–199 | Read-only | Reserved gap padding for contiguous SCADA polling; reads as 0. |
 | 10201–10224 | 200–223 | Read-only | Current HVAC tri-state relay outputs, three per unit: `AA`, `SM`, `G`, in unit order. |
 
 ## Input registers (FC 0x04)
 
-Values are unsigned 16-bit words unless noted. Signed temperatures and other signed values are returned as two's-complement `int16`. Unimplemented positions within an accepted block read 0.
+Values are unsigned 16-bit words unless noted. Signed temperatures and other signed values are returned as two's-complement `int16`. Unimplemented or reserved positions within an accepted contiguous block read sentinel zeros (`0x0000`), or `0x7FFF` for unmapped analog temperature channels.
 
-### Sensor temperatures — 30001–30064 (PDU 0–63)
+### Block 1: Sensor temperatures, humidity & electrical — 30001–30130 (PDU 0–129)
 
-One register per sensor-matrix channel, signed temperature in **0.1 °C**. A valid channel is rounded to the nearest tenth. Invalid channels return `0x7FFF`.
+Contiguous multi-register block reads of up to 125 registers spanning across active and reserved slots within 30001..30130 return contiguous valid data without raising Modbus exception 0x02.
 
-### Return humidity — 30070–30071 (PDU 69–70)
+- **Sensor temperatures — 30001–30064 (PDU 0–63)**: One register per sensor-matrix channel, signed temperature in **0.1 °C**. A valid channel is rounded to the nearest tenth. Invalid or disconnected channels return `0x7FFF`.
+- **Reserved temperature channels — 30065–30069 (PDU 64–68)**: Unmapped analog channels; return sentinel disconnected value `0x7FFF`.
+- **Return humidity — 30070–30071 (PDU 69–70)**: 30070 is Return-air RH in 0.1% RH units; 30071 is Humidity quality flag (1 when `QUALITY_VALID`, 0 otherwise).
+- **Reserved padding — 30072–30100 (PDU 71–99)**: Reserved gap padding for contiguous SCADA polling; reads as `0x0000`.
+- **Electrical measurements — 30101–30130 (PDU 100–129)**: Measured by JSY-MK-339. Registers 30101..30111 expose Phase voltages, currents, total active power, power factor, line frequency, and total active energy. Registers 30112..30130 are reserved padding and read as `0x0000`.
 
 | Reference | PDU | Value |
 |---|---:|---|
@@ -77,23 +85,30 @@ One register per sensor-matrix channel, signed temperature in **0.1 °C**. A val
 | Reference | PDU | Value |
 |---|---:|---|
 | 30301–30302 | 300–301 | Uptime in seconds, unsigned 32-bit, configurable word order. |
-| 30303–30304 | 302–303 | Ethernet IPv4 address, high and low 16-bit words (`192.168.1.100` in current implementation). |
-| 30305–30306 | 304–305 | Wi-Fi IPv4 address, high and low 16-bit words (`192.168.4.1` in current implementation). |
+| 30303–30304 | 302–303 | Ethernet IPv4 address, high and low 16-bit words (dynamically queried from Ethernet network interface; 0.0.0.0 if disconnected). |
+| 30305–30306 | 304–305 | Wi-Fi IPv4 address, high and low 16-bit words (dynamically queried from Wi-Fi network interface; 0.0.0.0 if disconnected). |
 | 30307–30308 | 306–307 | SD total capacity in MiB, unsigned 32-bit, configurable word order. |
 | 30309–30310 | 308–309 | SD free capacity in MiB, unsigned 32-bit, configurable word order. |
 | 30311 | 310 | SD status: 3 mounted; 1 for a state other than mounted or not-inserted; 0 not inserted. |
-| 30312–30320 | 311–319 | Reserved; read as 0. |
+| 30312 | 311 | Ethernet Interface Link State: 0 Down, 1 Disconnected, 2 Connecting, 3 Connected, 4 Failed. |
+| 30313 | 312 | Wi-Fi Interface Link State: 0 Down, 1 Disconnected, 2 Connecting, 3 Connected, 4 Failed. |
+| 30314 | 313 | Wi-Fi RSSI signal strength in dBm (signed int16, e.g. -65). |
+| 30315–30320 | 314–319 | Reserved sentinel padding; read as 0. |
 
-### Alarm diagnostics — 30401–30410 (PDU 400–409)
+### Alarm diagnostics — 30401–30420 (PDU 400–419)
+
+Optimized for O(1) retrieval with zero dynamic stack allocation using pre-computed domain bitmasks.
 
 | Reference | PDU | Value |
 |---|---:|---|
-| 30401 | 400 | Active alarm count. |
-| 30402 | 401 | Unacknowledged count, computed as `max(active_count - acknowledged_count, 0)`. |
-| 30403 | 402 | Highest active alarm level. |
+| 30401 | 400 | Total active alarm count (including acknowledged and latched). |
+| 30402 | 401 | Unacknowledged active alarm count. |
+| 30403 | 402 | Highest active alarm severity level (0=Info, 1=Warning, 2=Critical, 3=Fatal). |
 | 30404 | 403 | Buzzer/alarm state code: 0 muted; 1 unmuted with at least one active alarm; 2 unmuted with no active alarm. |
-| 30405–30409 | 404–408 | Five 16-bit active-alarm masks in alarm catalog order, 16 catalog positions per word, least significant bit first. A bit is set for a matching non-inactive active alarm. |
-| 30410 | 409 | Reserved; read as 0. |
+| 30405–30409 | 404–408 | Five 16-bit active-alarm masks in alarm catalog order (Words 1..5 for alarms 1..80), 16 catalog positions per word, least significant bit first. A bit is 1 for any alarm in non-inactive state (`state != ALARM_STATE_INACTIVE`). |
+| 30410–30414 | 409–413 | Five 16-bit unacknowledged alarm masks in alarm catalog order (Words 1..5 for alarms 1..80), 16 catalog positions per word, least significant bit first. A bit is 1 for active alarms awaiting operator acknowledgment (`state == ALARM_STATE_ACTIVE`). |
+| 30415 | 414 | Highest active alarm ID (16-bit identifier). |
+| 30416–30420 | 415–419 | Reserved sentinel padding; read as 0. |
 
 ## Holding registers (FC 0x03, 0x06, 0x10)
 

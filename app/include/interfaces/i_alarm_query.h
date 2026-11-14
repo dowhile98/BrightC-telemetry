@@ -47,6 +47,7 @@ struct i_alarm_query_api {
     size_t (*get_active_alarm_ids)(void *impl, uint16_t *out_ids, size_t max_count);
     int (*get_descriptor)(void *impl, uint16_t alarm_id, alarm_descriptor_t *out_desc);
     uint32_t (*get_active_duration)(void *impl, uint16_t alarm_id);
+    int (*get_bitmask_snapshot)(void *impl, alarm_bitmask_snapshot_t *out_snapshot);
 };
 
 /*============================================================================*
@@ -68,7 +69,8 @@ static inline bool i_alarm_query_is_bound(const i_alarm_query_t *port)
             port->api->get_alarm_snapshot != NULL &&
             port->api->get_active_alarm_ids != NULL &&
             port->api->get_descriptor != NULL &&
-            port->api->get_active_duration != NULL);
+            port->api->get_active_duration != NULL &&
+            port->api->get_bitmask_snapshot != NULL);
 }
 
 /**
@@ -166,6 +168,18 @@ static inline uint32_t i_alarm_query_get_active_duration(const i_alarm_query_t *
         return 0;
     }
     return port->api->get_active_duration(port->impl, alarm_id);
+}
+
+/**
+ * @brief Retrieve pre-computed bitmask snapshot of active/unacknowledged/latched alarms.
+ */
+static inline int i_alarm_query_get_bitmask_snapshot(const i_alarm_query_t *port,
+                                                     alarm_bitmask_snapshot_t *out_snapshot)
+{
+    if (!i_alarm_query_is_bound(port) || out_snapshot == NULL) {
+        return -EINVAL;
+    }
+    return port->api->get_bitmask_snapshot(port->impl, out_snapshot);
 }
 
 #ifdef __cplusplus
