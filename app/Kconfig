@@ -56,6 +56,53 @@ config BRIGHTC_WIFI_DEFAULT_IP
 
 endmenu
 
+menu "BrightC Operational Profile & Subsystem Gating"
+
+choice BRIGHTC_SYSTEM_PROFILE
+	prompt "Operating Profile"
+	default BRIGHTC_PROFILE_DUAL
+	help
+	  Selects the compile-time operating profile of the controller.
+
+config BRIGHTC_PROFILE_DUAL
+	bool "Controller + Thermal Telemetry (Dual Profile)"
+	help
+	  Enables both HVAC multi-unit lead-lag sequencing and thermal/power telemetry.
+
+config BRIGHTC_PROFILE_CONTROLLER_ONLY
+	bool "HVAC Controller Only"
+	help
+	  Enables HVAC multi-unit sequencing and disables thermal energy telemetry.
+
+config BRIGHTC_PROFILE_THERMAL_ONLY
+	bool "Thermal Telemetry Only"
+	help
+	  Enables thermal energy and power telemetry and disables HVAC control sequencing.
+
+endchoice
+
+config APP_HVAC_SUBSYSTEM
+	bool "HVAC sequencing subsystem"
+	default y if BRIGHTC_PROFILE_DUAL || BRIGHTC_PROFILE_CONTROLLER_ONLY
+	default n
+	help
+	  Internal symbol indicating HVAC control state machine is active.
+
+config APP_THERMAL_SUBSYSTEM
+	bool "Thermal energy and telemetry subsystem"
+	default y if BRIGHTC_PROFILE_DUAL || BRIGHTC_PROFILE_THERMAL_ONLY
+	default n
+	help
+	  Internal symbol indicating thermal energy calculation and telemetry are active.
+
+config BRIGHTC_ENABLE_EXTERNAL_DI_EXPANDER
+	bool "Enable external Modbus DI expander (MBSL32DI)"
+	default y
+	help
+	  Enable remote digital input module polling on RS485-2 for additional alarm/aux inputs.
+
+endmenu
+
 rsource "Kconfig.modbus"
 
 

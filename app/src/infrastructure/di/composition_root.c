@@ -363,9 +363,10 @@ int composition_root_init_modbus(app_container_t *self)
     }
 
     modbus_slave_descriptor_t ws_desc;
-    if (modbus_registry_find_by_type(&self->modbus.registry_impl,
-                                     MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
-                                     &ws_desc) == 0)
+    if ((self->hvac.config.total_units > HARDWARE_LOCAL_HVAC_UNITS_COUNT) &&
+        (modbus_registry_find_by_type(&self->modbus.registry_impl,
+                                      MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+                                      &ws_desc) == 0))
     {
         uint8_t waveshare_bus = ws_desc.bus_id;
         if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
@@ -463,7 +464,13 @@ int composition_root_init_storage(app_container_t *self)
     /* Initialize RAM defaults for persistent configuration domains */
     self->device_cfg = *default_config_get_device_cfg();
     self->calibration_cfg = *default_config_get_calibration_cfg();
+#if defined(CONFIG_BRIGHTC_PROFILE_THERMAL_ONLY)
+    self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY);
+#elif defined(CONFIG_BRIGHTC_PROFILE_CONTROLLER_ONLY)
+    self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
+#else
     self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
+#endif
     self->thermal_site_cfg = *default_config_get_thermal_site_cfg();
     self->thermal_baseline_cfg = *default_config_get_thermal_baseline_cfg();
 
@@ -957,13 +964,20 @@ int composition_root_init_hvac(app_container_t *self)
     /* 1. Ensure HVAC configuration in RAM is valid (loaded during storage init) */
     if (!config_hvac_is_valid(&self->hvac.config))
     {
+#if defined(CONFIG_BRIGHTC_PROFILE_THERMAL_ONLY)
+        self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY);
+#elif defined(CONFIG_BRIGHTC_PROFILE_CONTROLLER_ONLY)
+        self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
+#else
         self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
+#endif
     }
     hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
 
-    /* 2. Bind remote relay port to waveshare relay if available */
+    /* 2. Bind remote relay port to waveshare relay only if configured units exceed local capacity */
     i_relay_t remote_relay = {0};
-    if (i_relay_is_bound(&self->modbus.relay_ext_port))
+    if (self->hvac.config.total_units > HARDWARE_LOCAL_HVAC_UNITS_COUNT &&
+        i_relay_is_bound(&self->modbus.relay_ext_port))
     {
         remote_relay = self->modbus.relay_ext_port;
     }
@@ -1701,12 +1715,20 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
-    BOOT_INF("phase 05/12: initializing HVAC control");
-    err = composition_root_init_hvac(self);
-    if (err != 0)
+    if (IS_ENABLED(CONFIG_APP_HVAC_SUBSYSTEM))
     {
-        BOOT_ERR("phase 05/12 failed: HVAC rc=%d", err);
-        return err;
+        BOOT_INF("phase 05/12: initializing HVAC control");
+        err = composition_root_init_hvac(self);
+        if (err != 0)
+        {
+            BOOT_ERR("phase 05/12 failed: HVAC rc=%d", err);
+            return err;
+        }
+    }
+    else
+    {
+        BOOT_INF("phase 05/12: HVAC control disabled by active profile");
+        self->hvac.initialized = false;
     }
 
     BOOT_INF("phase 06/12: initializing alarm manager");
@@ -1717,20 +1739,29 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
-    BOOT_INF("phase 07/12: initializing sensor matrix");
-    err = composition_root_init_sensor_matrix(self);
-    if (err != 0)
+    if (IS_ENABLED(CONFIG_APP_THERMAL_SUBSYSTEM))
     {
-        BOOT_ERR("phase 07/12 failed: sensor matrix rc=%d", err);
-        return err;
-    }
+        BOOT_INF("phase 07/12: initializing sensor matrix");
+        err = composition_root_init_sensor_matrix(self);
+        if (err != 0)
+        {
+            BOOT_ERR("phase 07/12 failed: sensor matrix rc=%d", err);
+            return err;
+        }
 
-    BOOT_INF("phase 08/12: initializing thermal-energy processing");
-    err = composition_root_init_thermal_energy(self);
-    if (err != 0)
+        BOOT_INF("phase 08/12: initializing thermal-energy processing");
+        err = composition_root_init_thermal_energy(self);
+        if (err != 0)
+        {
+            BOOT_ERR("phase 08/12 failed: thermal energy rc=%d", err);
+            return err;
+        }
+    }
+    else
     {
-        BOOT_ERR("phase 08/12 failed: thermal energy rc=%d", err);
-        return err;
+        BOOT_INF("phase 07-08/12: sensor matrix & thermal energy disabled by active profile");
+        self->sensor.initialized = false;
+        self->thermal_energy.initialized = false;
     }
 
     BOOT_INF("phase 09/12: initializing Ethernet and Wi-Fi networking");
@@ -2482,6 +2513,38 @@ int app_container_set_hvac_config(app_container_t *self, const config_hvac_t *cf
 
     if (self->hvac.initialized)
     {
+        /* Dynamic hardware expansion gating: initialize external relay only if total_units > 4 */
+        if (cfg->total_units > HARDWARE_LOCAL_HVAC_UNITS_COUNT &&
+            !i_relay_is_bound(&self->modbus.relay_ext_port))
+        {
+            modbus_slave_descriptor_t ws_desc;
+            if (modbus_registry_find_by_type(&self->modbus.registry_impl,
+                                             MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+                                             &ws_desc) == 0)
+            {
+                uint8_t waveshare_bus = ws_desc.bus_id;
+                if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
+                {
+                    waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
+                }
+                int init_rc = adapter_relay_modbus_init(&self->modbus.waveshare_relay,
+                                                        &self->modbus.ao[waveshare_bus],
+                                                        ws_desc.slave_addr,
+                                                        (int32_t)ws_desc.timeout_ms);
+                if (init_rc == 0)
+                {
+                    (void)adapter_relay_modbus_port(&self->modbus.waveshare_relay, &self->modbus.relay_ext_port);
+                    (void)adapter_hvac_actuator_set_remote_relay(&self->hvac.actuator_adapter, &self->modbus.relay_ext_port);
+                }
+            }
+        }
+        else if (cfg->total_units <= HARDWARE_LOCAL_HVAC_UNITS_COUNT &&
+                 i_relay_is_bound(&self->modbus.relay_ext_port))
+        {
+            /* Scaled down to local-only capacity; unbind external relay from actuator */
+            (void)adapter_hvac_actuator_set_remote_relay(&self->hvac.actuator_adapter, NULL);
+        }
+
         int act_rc = adapter_hvac_actuator_apply_mode(&self->hvac.actuator_adapter,
                                                       (hvac_operation_mode_t)cfg->operation_mode);
         if (act_rc != 0)

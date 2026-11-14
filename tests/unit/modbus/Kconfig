@@ -13,6 +13,18 @@ config APP_MODBUS_INTER_POLL_DELAY_MS
 	  RS-485 bus. Gives slave transceivers time to release the bus and
 	  satisfies the Modbus RTU inter-frame silence interval (t3.5+).
 
+config APP_HVAC_SUBSYSTEM
+	bool
+	default y
+
+config APP_THERMAL_SUBSYSTEM
+	bool
+	default y
+
+config BRIGHTC_ENABLE_EXTERNAL_DI_EXPANDER
+	bool
+	default y
+
 # Compile the unit tests against the production Modbus topology so the test
 # build and the firmware build cannot disagree about slaves, buses or addresses.
 rsource "../../../app/Kconfig.modbus"

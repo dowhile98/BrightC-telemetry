@@ -48,6 +48,22 @@
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-14**: Operational Profiles & Modular Hardware I/O Gating Implementation:
+  - **Compile-Time Kconfig Specialization**:
+    * Added choice `BRIGHTC_SYSTEM_PROFILE` (`BRIGHTC_PROFILE_DUAL`, `BRIGHTC_PROFILE_CONTROLLER_ONLY`, `BRIGHTC_PROFILE_THERMAL_ONLY`) in `app/Kconfig`, selecting `APP_HVAC_SUBSYSTEM` and `APP_THERMAL_SUBSYSTEM`.
+    * Implemented subsystem gating in `composition_root_init()`: conditionally initializes HVAC (`ao_hvac`, actuator) and thermal telemetry (`ao_thermal_energy`, `ao_sensor_matrix`).
+  - **Dynamic Capacity Scaling & Inactivity Threshold**:
+    * Implemented capacity gating for $\le 4$ units vs $> 4$ units (`HARDWARE_LOCAL_HVAC_UNITS_COUNT`). When configured units count is $\le 4$, `adapter_relay_modbus` is NOT initialized, leaving `modbus.relay_ext_port.api = NULL`, reserving 100% of RS485-2 bus bandwidth for primary operations.
+    * Added `adapter_hvac_actuator_set_remote_relay()` in `adapter_hvac_actuator.h/.c` enabling dynamic binding/unbinding during runtime configuration updates (`app_container_set_hvac_config()`).
+  - **Clean Architecture & Physical Bus Isolation**:
+    * Reused battle-tested `adapter_relay_modbus.c` and domain port `i_relay_t` over `ao_modbus`, completely avoiding any synchronous/blocking GPIO driver inversion.
+    * Enforced physical bus isolation: RS485-1 (USART2) dedicated to telemetry; RS485-2 (USART6) dedicated to external expansion I/O.
+  - **Verification Evidence**:
+    * All 3 profiles compile cleanly for target `brightc-controllerv3` (STM32H743ZIT6):
+      - `DUAL`: Flash 566,192 B (27.00%), RAM 295,612 B (56.38%).
+      - `CONTROLLER_ONLY`: Flash 544,208 B (25.95%), RAM 289,212 B (55.16%) [$-22\text{ KB}$ Flash, $-6.4\text{ KB}$ RAM].
+      - `THERMAL_ONLY`: Flash 559,492 B (26.68%), RAM 291,388 B (55.58%).
+    * Full Twister unit test suite on `native_sim`: 14 of 14 configurations passed, 408 of 408 test cases passed (100.00% PASS).
 - **2026-11-11**: Review Findings 1–4 (Safety Hardening):
   - **F1 — Stale DI feed fail-safe**: `adapter_di_gpio` now rejects remote Modbus DI snapshots older than
     `ADAPTER_DI_MODBUS_STALE_TIMEOUT_MS` (3 s) with `-ENODATA`; the aggregator exposes

@@ -247,6 +247,23 @@ int adapter_hvac_actuator_set_hw_config(adapter_hvac_actuator_t *self,
     return 0;
 }
 
+int adapter_hvac_actuator_set_remote_relay(adapter_hvac_actuator_t *self,
+                                           const i_relay_t *remote_relay)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+    if (remote_relay != NULL) {
+        self->remote_relay_port = *remote_relay;
+    } else {
+        self->remote_relay_port.api = NULL;
+        self->remote_relay_port.impl = NULL;
+    }
+
+    return 0;
+}
+
 i_hvac_unit_t adapter_hvac_actuator_port(adapter_hvac_actuator_t *self)
 {
     i_hvac_unit_t port = {

@@ -99,6 +99,16 @@ int adapter_hvac_actuator_set_hw_config(adapter_hvac_actuator_t *self,
                                         const hvac_unit_hw_config_t *cfg);
 
 /**
+ * @brief Bind or update the remote relay port on the actuator adapter.
+ *
+ * @param[in,out] self          Adapter instance.
+ * @param[in]     remote_relay  Pointer to bound remote relay port (or NULL to unbind).
+ * @return 0 on success, -EINVAL on NULL @p self.
+ */
+int adapter_hvac_actuator_set_remote_relay(adapter_hvac_actuator_t *self,
+                                           const i_relay_t *remote_relay);
+
+/**
  * @brief Obtain the polymorphic i_hvac_unit_t port handle.
  *
  * @param[in] self Adapter instance.
