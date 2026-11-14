@@ -46,6 +46,7 @@ typedef struct {
     i_storage_fs_t           fs;
     struct k_msgq           *queue;
     struct k_thread          thread;
+    k_tid_t                  tid;
     k_thread_stack_t        *stack;
     size_t                   stack_size;
     struct k_sem             stopped_sem;
@@ -84,6 +85,23 @@ int ao_storage_sd_start(ao_storage_sd_t *self);
  * @brief Stop the Active Object coordinator thread gracefully.
  */
 int ao_storage_sd_stop(ao_storage_sd_t *self);
+
+/**
+ * @brief Block until Active Object coordinator thread cleanly halts.
+ *
+ * @param[in,out] self    Active Object instance.
+ * @param[in]     timeout Maximum duration to wait.
+ * @return 0 on success, negative errno on error.
+ */
+int ao_storage_sd_wait_stopped(ao_storage_sd_t *self, k_timeout_t timeout);
+
+/**
+ * @brief Deinitialize Active Object coordinator resources.
+ *
+ * @param[in,out] self Active Object instance.
+ * @return 0 on success, negative errno on error.
+ */
+int ao_storage_sd_deinit(ao_storage_sd_t *self);
 
 /**
  * @brief Post a manual mount request.

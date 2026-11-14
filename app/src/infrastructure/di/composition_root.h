@@ -67,7 +67,6 @@
 #include "infrastructure/adapters/adapter_sensor_zephyr.h"
 #include "infrastructure/adapters/adapter_hvac_actuator.h"
 #include "infrastructure/adapters/adapter_relay_gpio.h"
-#ifndef CONFIG_ZTEST
 #include "infrastructure/adapters/adapter_eth_stm32.h"
 #include "infrastructure/adapters/adapter_wifi_esp_hosted.h"
 #include "infrastructure/adapters/adapter_storage_microconf.h"
@@ -77,7 +76,6 @@
 #include "infrastructure/adapters/adapter_rtc_zephyr.h"
 #include "infrastructure/adapters/adapter_storage_sd_zephyr.h"
 #include "infrastructure/adapters/adapter_bkpsram_stm32.h"
-#endif
 #include "interfaces/i_bkpsram.h"
 #include "application/active_objects/ao_datalogger.h"
 
@@ -132,9 +130,7 @@ struct app_container {
     struct {
         i_digital_input_t port;                        /**< Digital input and contact alarm port */
         di_aggregator_t aggregator;                    /**< Concrete digital input aggregator */
-#ifndef CONFIG_ZTEST
         adapter_di_gpio_t di_adapter;                  /**< GPIO Digital Input adapter */
-#endif
         ao_digital_input_t ao;                         /**< Digital input active object */
         struct k_msgq queue;                           /**< Digital input AO command queue */
         uint8_t queue_buf[AO_DI_QUEUE_DEPTH * sizeof(ao_di_event_t)];
@@ -144,9 +140,7 @@ struct app_container {
     /* Subsystem 3: Configuration & Persistent Storage */
     struct {
         i_config_storage_t port;                       /**< Persistent storage port */
-#ifndef CONFIG_ZTEST
         adapter_storage_microconf_t storage_adapter;   /**< microconf EEPROM storage adapter */
-#endif
         ao_storage_t ao;                               /**< Storage active object coordinator */
         struct k_msgq queue;                           /**< Storage command queue */
         uint8_t queue_buf[AO_STORAGE_QUEUE_DEPTH * sizeof(ao_storage_event_t)];
@@ -158,10 +152,8 @@ struct app_container {
         i_network_t eth_port;                          /**< Ethernet network interface port */
         i_network_t wifi_port;                         /**< WiFi network interface port */
         i_wifi_control_t wifi_ctrl_port;               /**< WiFi control port */
-#ifndef CONFIG_ZTEST
         adapter_eth_stm32_t eth_adapter;               /**< STM32 Ethernet adapter */
-        adapter_wifi_esp_hosted_t wifi_adapter;        /**< ESP-Hosted-MCU WiFi adapter */
-#endif
+        adapter_wifi_esp_hosted_t wifi_adapter;        /**< ESP-Hosted-MCU Wi-Fi adapter */
         ao_network_t ao;                               /**< Network active object */
         struct k_msgq queue;                           /**< Network AO command queue */
         uint8_t queue_buf[AO_NETWORK_QUEUE_DEPTH * sizeof(ao_network_event_t)];
@@ -172,10 +164,8 @@ struct app_container {
     struct {
         i_led_t led_port;                              /**< Status LED port */
         i_buzzer_t buzzer_port;                        /**< Buzzer acoustic port */
-#ifndef CONFIG_ZTEST
         adapter_led_gpio_t led_adapter;                /**< GPIO Status LED adapter */
         adapter_buzzer_pwm_t buzzer_adapter;           /**< PWM Buzzer adapter */
-#endif
         ao_system_indicator_t ao;                      /**< System indicator active object */
         struct k_msgq queue;                           /**< Indicator AO command queue */
         uint8_t queue_buf[AO_INDICATOR_QUEUE_DEPTH * sizeof(ao_indicator_event_t)];
@@ -226,18 +216,14 @@ struct app_container {
     /* Subsystem 11: Real-Time Clock & System Time Management */
     struct {
         i_rtc_t port;
-#ifndef CONFIG_ZTEST
         adapter_rtc_zephyr_t zephyr_adapter;
-#endif
         bool initialized;
     } rtc;
 
     /* Subsystem 12: MicroSD Storage & Filesystem */
     struct {
         i_storage_fs_t port;
-#ifndef CONFIG_ZTEST
         adapter_storage_sd_zephyr_t zephyr_adapter;
-#endif
         ao_storage_sd_t ao;
         struct k_msgq queue;
         uint8_t queue_buf[AO_STORAGE_SD_QUEUE_DEPTH * sizeof(ao_storage_sd_event_t)];
@@ -258,9 +244,7 @@ struct app_container {
     /* Subsystem 14: Unified Historical Datalogger & Backup SRAM */
     struct {
         i_bkpsram_t bkp_port;                          /**< Backup SRAM abstract port */
-#ifndef CONFIG_ZTEST
         adapter_bkpsram_stm32_t bkpsram_adapter;       /**< STM32H7 hardware adapter */
-#endif
         ao_datalogger_t ao;                            /**< Datalogger Active Object */
         struct k_msgq queue;                           /**< Event ingress message queue */
         uint8_t queue_buf[AO_DATALOGGER_QUEUE_DEPTH * sizeof(datalogger_event_envelope_t)];

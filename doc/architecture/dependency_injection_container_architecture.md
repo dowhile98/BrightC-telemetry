@@ -36,24 +36,61 @@ Each subsystem encapsulates:
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ▼ Subsystem 1: Modbus Master & Relays                                      │
 │    - registry_port, client_port[2], relay_ext_port                          │
-│    - registry_impl, waveshare_relay, nmbs[2]                                │
 │    - ao[2], ao_queue[2], ao_queue_buf[2], bus_cfg[2], initialized           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ▼ Subsystem 2: Digital Inputs & Contact Alarms                             │
-│    - port (i_digital_input_t), aggregator, di_adapter                       │
+│    - port (i_digital_input_t), aggregator                                    │
 │    - ao (ao_digital_input_t), queue, queue_buf, initialized                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ▼ Subsystem 3: Configuration & Persistent Storage                          │
-│    - port (i_config_storage_t), storage_adapter                             │
+│    - port (i_config_storage_t)                                               │
 │    - ao (ao_storage_t), queue, queue_buf, initialized                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ▼ Subsystem 4: Network (Ethernet LAN8742 & WiFi ESP-Hosted)                │
-│    - eth_port, wifi_port, eth_adapter, wifi_adapter                         │
+│    - eth_port, wifi_port                                                    │
 │    - ao (ao_network_t), queue, queue_buf, initialized                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ▼ Subsystem 5: System Indicators (LED & Buzzer)                            │
-│    - led_port, buzzer_port, led_adapter, buzzer_adapter                     │
+│    - led_port, buzzer_port                                                  │
 │    - ao (ao_system_indicator_t), queue, queue_buf, initialized              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 6: Industrial HVAC Control                                     │
+│    - actuator_port (i_hvac_actuator_t), group[2], unit[8]                   │
+│    - ao (ao_hvac_t), queue, queue_buf, initialized                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 7: RAM Configuration Domains & Layout Validation               │
+│    - device_cfg, calibration_cfg, thermal_site_cfg, thermal_baseline_cfg    │
+│    - storage_eeprom_map.h (ADR-6 compile-time layout verification)          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 8: Sensor Matrix Ingestion                                     │
+│    - port (i_sensor_matrix_t), pilot channels                               │
+│    - ao (ao_sensor_matrix_t), queue, queue_buf, initialized                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 9: Alarm Management                                            │
+│    - query_port (i_alarm_query_t), det_di, det_temp, det_volt, det_hvac      │
+│    - ao (ao_alarm_manager_t), queue, queue_buf, initialized                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 10: Thermal Energy Management                                  │
+│    - port (i_thermal_energy_t), compressor FSM, psychrometrics              │
+│    - ao (ao_thermal_energy_t), queue, queue_buf, initialized                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 11: Real-Time Clock & Time Synchronization                     │
+│    - port (i_rtc_t), initialized                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 12: MicroSD Storage & Filesystem (FATFS)                       │
+│    - port (i_storage_fs_t)                                                  │
+│    - ao (ao_storage_sd_t), queue, queue_buf, initialized                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 13: Modbus TCP Server Subsystem (nanoMODBUS TCP)               │
+│    - port (i_modbus_tcp_server_t)                                           │
+│    - ao (ao_modbus_tcp_t), config, initialized                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Subsystem 14: Unified Historical Datalogger & Backup SRAM                │
+│    - bkp_port (i_bkpsram_t), 32-byte aligned .nocache MPU sector buffers    │
+│    - ao (ao_datalogger_t), queue, queue_buf, initialized                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ▼ Event Mediator: app_event_mediator_bind() / unbind()                     │
+│    - 11 dedicated Zbus listener callbacks decoupled from composition root   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ▼ Global Container Status: is_initialized, is_running                      │
 └─────────────────────────────────────────────────────────────────────────────┘

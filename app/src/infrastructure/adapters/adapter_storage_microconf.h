@@ -18,6 +18,14 @@
 #include <mconf.h>
 #include <mconf_zephyr.h>
 
+#if !defined(CONFIG_MICROCONF_BACKEND_EEPROM)
+struct mconf_zephyr_eeprom_ctx {
+    const struct device *dev;
+    size_t base_offset;
+    size_t total_size;
+};
+#endif
+
 #include "common/config_types.h"
 #include "interfaces/i_config_storage.h"
 

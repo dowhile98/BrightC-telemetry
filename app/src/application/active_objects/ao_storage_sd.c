@@ -187,16 +187,16 @@ int ao_storage_sd_init(ao_storage_sd_t *self,
     k_sem_init(&self->stopped_sem, 0, 1);
     sd_lifecycle_sm_init(&self->fsm);
 
-    k_thread_create(&self->thread,
-                    self->stack,
-                    self->stack_size,
-                    ao_storage_sd_thread_entry,
-                    self, NULL, NULL,
-                    priority,
-                    0,
-                    K_FOREVER);
+    self->tid = k_thread_create(&self->thread,
+                                self->stack,
+                                self->stack_size,
+                                ao_storage_sd_thread_entry,
+                                self, NULL, NULL,
+                                priority,
+                                0,
+                                K_FOREVER);
 
-    k_thread_name_set(&self->thread, "ao_storage_sd");
+    k_thread_name_set(self->tid, "ao_storage_sd");
 
     self->is_initialized = true;
     return 0;
@@ -213,7 +213,7 @@ int ao_storage_sd_start(ao_storage_sd_t *self)
     }
 
     self->is_running = true;
-    k_thread_start(&self->thread);
+    k_thread_start(self->tid);
 
     ao_storage_sd_event_t evt = {.type = AO_STORAGE_SD_EVT_START};
     return k_msgq_put(self->queue, &evt, K_MSEC(100));
@@ -230,8 +230,43 @@ int ao_storage_sd_stop(ao_storage_sd_t *self)
     if (rc != 0) {
         self->is_running = false;
     }
+    return rc;
+}
 
-    (void)k_sem_take(&self->stopped_sem, K_MSEC(2000));
+int ao_storage_sd_wait_stopped(ao_storage_sd_t *self, k_timeout_t timeout)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+    int rc = k_sem_take(&self->stopped_sem, timeout);
+    if (rc == 0 && self->tid != NULL) {
+        (void)k_thread_join(self->tid, timeout);
+        self->tid = NULL;
+    }
+    return rc;
+}
+
+int ao_storage_sd_deinit(ao_storage_sd_t *self)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+    if (self->is_running) {
+        (void)ao_storage_sd_stop(self);
+        int rc = ao_storage_sd_wait_stopped(self, K_MSEC(500));
+        if (rc != 0 && self->tid != NULL) {
+            k_thread_abort(self->tid);
+            self->tid = NULL;
+        }
+    } else if (self->tid != NULL) {
+        (void)k_thread_join(self->tid, K_MSEC(200));
+        self->tid = NULL;
+    }
+
+    self->is_running = false;
+    self->is_initialized = false;
     return 0;
 }
 

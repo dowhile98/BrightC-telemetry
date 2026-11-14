@@ -63,12 +63,12 @@ typedef struct {
     char                    mount_point[32];
     uint32_t                boot_count;
 
-    /* Dedicated 512-byte RAM stream buffers (sector-aligned) */
-    uint8_t                 alarms_buf[AO_DATALOGGER_SECTOR_SIZE];
+    /* Dedicated 512-byte RAM stream buffers (sector-aligned, .nocache on hardware) */
+    uint8_t                *alarms_buf;
     size_t                  alarms_buf_len;
-    uint8_t                 system_buf[AO_DATALOGGER_SECTOR_SIZE];
+    uint8_t                *system_buf;
     size_t                  system_buf_len;
-    uint8_t                 boot_buf[AO_DATALOGGER_SECTOR_SIZE];
+    uint8_t                *boot_buf;
     size_t                  boot_buf_len;
 
     /* Active file handles */

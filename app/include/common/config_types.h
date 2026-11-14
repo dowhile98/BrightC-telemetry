@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "common/thermal_energy_types.h"
+#include "common/storage_eeprom_map.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -194,39 +195,39 @@ static inline int config_domain_get_layout(config_domain_t domain,
 
     switch (domain) {
     case CONFIG_DOMAIN_DEVICE:
-        base = 0x0000;
-        total = 256;
-        slot = 128;
+        base = EEPROM_ADDR_DEVICE;
+        total = EEPROM_SIZE_DEVICE;
+        slot = EEPROM_SLOT_DEVICE;
         break;
     case CONFIG_DOMAIN_NET_ETH:
-        base = 0x0100;
-        total = 128;
-        slot = 64;
+        base = EEPROM_ADDR_NET_ETH;
+        total = EEPROM_SIZE_NET_ETH;
+        slot = EEPROM_SLOT_NET_ETH;
         break;
     case CONFIG_DOMAIN_NET_WIFI:
-        base = 0x0180;
-        total = 640;
-        slot = 320;
+        base = EEPROM_ADDR_NET_WIFI;
+        total = EEPROM_SIZE_NET_WIFI;
+        slot = EEPROM_SLOT_NET_WIFI;
         break;
     case CONFIG_DOMAIN_HVAC:
-        base = 0x0400;
-        total = 1152;
-        slot = 576;
+        base = EEPROM_ADDR_HVAC;
+        total = EEPROM_SIZE_HVAC;
+        slot = EEPROM_SLOT_HVAC;
         break;
     case CONFIG_DOMAIN_CALIBRATION:
-        base = 0x0880;
-        total = 384;
-        slot = 192;
+        base = EEPROM_ADDR_CALIBRATION;
+        total = EEPROM_SIZE_CALIBRATION;
+        slot = EEPROM_SLOT_CALIBRATION;
         break;
     case CONFIG_DOMAIN_THERMAL_SITE:
-        base = 0x0A00;
-        total = 1536;
-        slot = 768;
+        base = EEPROM_ADDR_THERMAL_SITE;
+        total = EEPROM_SIZE_THERMAL_SITE;
+        slot = EEPROM_SLOT_THERMAL_SITE;
         break;
     case CONFIG_DOMAIN_THERMAL_BASELINE:
-        base = 0x1000;
-        total = 1024;
-        slot = 512;
+        base = EEPROM_ADDR_THERMAL_BASELINE;
+        total = EEPROM_SIZE_THERMAL_BASELINE;
+        slot = EEPROM_SLOT_THERMAL_BASELINE;
         break;
     default:
         return -EINVAL;

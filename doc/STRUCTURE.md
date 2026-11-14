@@ -126,6 +126,7 @@ BrightC_TelemetryWorkspace/                  # Root of the West Workspace
     │   │   │   ├── i_temperature_bank.h     # Multi-channel temperature read contract
     │   │   │   └── i_display_port.h         # DWIN HMI interface contract
     │   │   └── common/                      # Agnostic primitive data types
+    │   │       ├── storage_eeprom_map.h     # AT24C256C memory partition map & static assertions
     │   │       ├── config_types.h           # Persistent configuration domains and events
     │   │       ├── indicator_types.h        # Indicator types (LED, buzzer, alarms)
     │   │       ├── modbus_types.h           # Bus structs, descriptors, results
@@ -163,9 +164,11 @@ BrightC_TelemetryWorkspace/                  # Root of the West Workspace
     │       │   │   ├── adapter_led_gpio.c         # User LED control via GPIO
     │       │   │   ├── adapter_buzzer_pwm.c       # Buzzer control via PWM
     │       │   │   └── adapter_display_dwin.c     # DWIN serial parser over Zephyr UART3
-    │       │   └── di/                      # Composition Root (Dependency Injection)
-    │       │       ├── composition_root.h   # Startup API of the dependency graph
-    │       │       └── composition_root.c   # DEVICE_DT_GET and port-adapter binding
+    │       │   └── di/                      # Composition Root & Event Mediation (Dependency Injection)
+    │       │       ├── composition_root.h   # Container API, lifecycle, and dependency graph
+    │       │       ├── composition_root.c   # Hardware wiring, adapter binding, and AO orchestration
+    │       │       ├── app_event_mediator.h # Decoupled Zbus observer dispatch & event mediation API
+    │       │       └── app_event_mediator.c # Cross-subsystem listener callbacks & channel routing
     │       │
     │       ├── presentation/                # User Interface / HMI
     │       │   ├── dwin/                    # Model-View-Presenter (MVP) for DWIN LCD

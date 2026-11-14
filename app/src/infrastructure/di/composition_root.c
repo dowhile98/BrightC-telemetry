@@ -21,6 +21,7 @@
 #include "domain/services/cwt_tm16pt_codec.h"
 #include "domain/services/sensor_matrix_mapper.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
+#include "infrastructure/di/app_event_mediator.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -47,22 +48,16 @@ BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 64 -
              "net_eth_config_t envelope exceeds storage slot size (64 - 32 bytes)");
 BUILD_ASSERT(sizeof(net_wifi_config_t) + sizeof(config_envelope_header_t) <= 320 - 32,
              "net_wifi_config_t envelope exceeds storage slot size (320 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= 128 - 32,
+#include "common/storage_eeprom_map.h"
+
+BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= EEPROM_SLOT_DEVICE - 32,
              "config_device_t envelope exceeds storage slot size (128 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= 192 - 32,
+BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= EEPROM_SLOT_CALIBRATION - 32,
              "config_calibration_t envelope exceeds storage slot size (192 - 32 bytes)");
 
-/* EEPROM capacity check: 32 KB AT24C256C */
-#define EEPROM_AT24C256C_CAPACITY_BYTES 32768U
-BUILD_ASSERT(0x0880 + 384 <= EEPROM_AT24C256C_CAPACITY_BYTES,
+BUILD_ASSERT(EEPROM_ADDR_CALIBRATION + EEPROM_SIZE_CALIBRATION <= EEPROM_AT24C256C_CAPACITY_BYTES,
              "Storage domains exceed physical EEPROM capacity (32KB)");
-
-/* Non-overlapping domain layout checks (ADR-6) */
-BUILD_ASSERT(0x0000 + 256 <= 0x0100, "DEVICE domain overlaps NET_ETH");
-BUILD_ASSERT(0x0100 + 128 <= 0x0180, "NET_ETH domain overlaps NET_WIFI");
-BUILD_ASSERT(0x0180 + 640 <= 0x0400, "NET_WIFI domain overlaps HVAC");
-BUILD_ASSERT(0x0400 + 1152 <= 0x0880, "HVAC domain overlaps CALIBRATION");
-BUILD_ASSERT(0x1000 + 1024 <= EEPROM_AT24C256C_CAPACITY_BYTES,
+BUILD_ASSERT(EEPROM_ADDR_THERMAL_BASELINE + EEPROM_SIZE_THERMAL_BASELINE <= EEPROM_AT24C256C_CAPACITY_BYTES,
              "THERMAL_BASELINE domain exceeds physical EEPROM capacity");
 
 #ifdef CONFIG_NANOMODBUS
@@ -703,15 +698,14 @@ int composition_root_init_network(app_container_t *self)
     /* Synchronous boot read from storage for network configurations */
     net_eth_config_t loaded_eth_cfg;
     const net_eth_config_t *eth_cfg_ptr = default_config_get_net_eth_cfg();
-    uint8_t eth_buf[sizeof(config_envelope_header_t) + sizeof(net_eth_config_t)];
-    size_t loaded_eth_size = 0;
-    int eth_load_res = -1;
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
-        eth_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                             eth_buf, sizeof(eth_buf),
-                                             &loaded_eth_size);
+        uint8_t eth_buf[sizeof(config_envelope_header_t) + sizeof(net_eth_config_t)];
+        size_t loaded_eth_size = 0;
+        int eth_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
+                                                 eth_buf, sizeof(eth_buf),
+                                                 &loaded_eth_size);
         if (eth_load_res == 0 &&
             config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, eth_buf, loaded_eth_size,
                                    &loaded_eth_cfg, sizeof(loaded_eth_cfg), NULL) == 0 &&
@@ -741,15 +735,14 @@ int composition_root_init_network(app_container_t *self)
 
     net_wifi_config_t loaded_wifi_cfg;
     const net_wifi_config_t *wifi_cfg_ptr = default_config_get_net_wifi_cfg();
-    uint8_t wifi_buf[sizeof(config_envelope_header_t) + sizeof(net_wifi_config_t)];
-    size_t loaded_wifi_size = 0;
-    int wifi_load_res = -1;
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
-        wifi_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                              wifi_buf, sizeof(wifi_buf),
-                                              &loaded_wifi_size);
+        uint8_t wifi_buf[sizeof(config_envelope_header_t) + sizeof(net_wifi_config_t)];
+        size_t loaded_wifi_size = 0;
+        int wifi_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
+                                                  wifi_buf, sizeof(wifi_buf),
+                                                  &loaded_wifi_size);
         if (wifi_load_res == 0 &&
             config_envelope_unpack(CONFIG_DOMAIN_NET_WIFI, wifi_buf, loaded_wifi_size,
                                    &loaded_wifi_cfg, sizeof(loaded_wifi_cfg), NULL) == 0 &&
@@ -1404,354 +1397,8 @@ int composition_root_init_alarm(app_container_t *self)
 }
 
 /* =========================================================================
- * Zbus Observers & Listeners
+ * Zbus Event Mediation is managed by app_event_mediator.h / .c
  * ========================================================================= */
-
-/*
- * Note on Invariant 6: Zephyr Zbus listener callbacks (ZBUS_LISTENER_DEFINE) have a fixed
- * C signature `void (*)(const struct zbus_channel *chan)` that passes no user_data context.
- * s_active_container holds strictly an instance reference to the active container (allocated
- * in main.c or test suites) to route Zbus notifications to the appropriate subsystems,
- * without maintaining any mutable operational state at file scope.
- */
-static app_container_t *s_active_container = NULL;
-
-static void on_hvac_sensor_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_sensor_snapshot || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const sensor_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->hvac.initialized)
-    {
-        (void)ao_hvac_feed_sensor_snapshot(&s_active_container->hvac.ao,
-                                           msg->temperatures,
-                                           msg->valid_mask,
-                                           64U);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_hvac_sensor_feed, on_hvac_sensor_feed_cb);
-
-static void on_hvac_di_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_digital_input_snapshot || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const di_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (!s_active_container->hvac.initialized)
-    {
-        return;
-    }
-
-    /* 1. Fire alarm safety interlock */
-    bool fire_active = false;
-    for (uint8_t i = 0U; i < msg->channel_count; i++)
-    {
-        if (msg->roles[i] == DI_ROLE_SMOKE_FIRE)
-        {
-            fire_active = msg->is_active[i];
-            break;
-        }
-    }
-    (void)ao_hvac_set_fire(&s_active_container->hvac.ao, fire_active);
-
-    /* 2. Physical bypass switch interlock */
-    bool bypass_sw_active = false;
-    for (uint8_t i = 0U; i < msg->channel_count; i++)
-    {
-        if (msg->roles[i] == DI_ROLE_BYPASS_SWITCH)
-        {
-            bypass_sw_active = msg->is_active[i];
-            break;
-        }
-    }
-    for (uint8_t g = 0U; g < (uint8_t)HVAC_MAX_GROUPS; g++)
-    {
-        (void)ao_hvac_set_bypass_cause(&s_active_container->hvac.ao, g,
-                                       BYPASS_CAUSE_PHYSICAL_SWITCH, bypass_sw_active);
-    }
-
-    /* 3. HVAC Unit Mechanical Alarms (Units 0..7).
-     * A channel whose last acquisition failed is unknown, not healthy: it is
-     * reported as asserted so the affected unit is never started blind. */
-    for (uint8_t u = 0U; u < (uint8_t)HVAC_MAX_UNITS_TOTAL; u++)
-    {
-        di_role_t base_role = (di_role_t)(DI_ROLE_UNIT_0_ALARM_HP + (u * 4U));
-
-        bool hp = di_snapshot_role_active_or_stale(msg, base_role);
-        bool lp = di_snapshot_role_active_or_stale(msg, (di_role_t)(base_role + 1U));
-        bool flow = di_snapshot_role_active_or_stale(msg, (di_role_t)(base_role + 2U));
-        bool volt = di_snapshot_role_active_or_stale(msg, (di_role_t)(base_role + 3U));
-
-        (void)ao_hvac_set_unit_alarms(&s_active_container->hvac.ao, u, hp, lp, flow, volt);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_hvac_di_feed, on_hvac_di_feed_cb);
-
-static void on_hvac_event_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_hvac_event)
-    {
-        return;
-    }
-
-    const hvac_event_t *ev = zbus_chan_const_msg(chan);
-    if (ev == NULL)
-    {
-        return;
-    }
-
-    LOG_INF("HVAC Event: grp=%u unit=%u type=%d ts=%u",
-            ev->group_id, ev->unit_id, (int)ev->type, ev->timestamp_ms);
-}
-
-ZBUS_LISTENER_DEFINE(lis_hvac_event_logger, on_hvac_event_cb);
-
-static void on_alarm_di_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_digital_input_state || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const di_transition_event_t *ev = zbus_chan_const_msg(chan);
-    if (ev == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->alarm.initialized)
-    {
-        adapter_alarm_detector_di_process_transition(&s_active_container->alarm.det_di, ev);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_alarm_di_feed, on_alarm_di_feed_cb);
-
-static void on_alarm_sensor_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_sensor_snapshot || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const sensor_snapshot_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->alarm.initialized)
-    {
-        adapter_alarm_detector_temp_process_snapshot(&s_active_container->alarm.det_temp, msg);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_alarm_sensor_feed, on_alarm_sensor_feed_cb);
-
-static void on_alarm_hvac_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_hvac_status || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const hvac_status_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->alarm.initialized)
-    {
-        adapter_alarm_detector_hvac_process_status(&s_active_container->alarm.det_hvac, msg);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_alarm_hvac_feed, on_alarm_hvac_feed_cb);
-
-static void on_indicator_alarm_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_system_alarm || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const alarm_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->indicators.initialized)
-    {
-        (void)ao_system_indicator_post_alarm(&s_active_container->indicators.ao, msg);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_indicator_alarm_feed, on_indicator_alarm_feed_cb);
-
-static void on_alarm_transition_logger_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_alarm_transition)
-    {
-        return;
-    }
-
-    const alarm_transition_event_t *ev = zbus_chan_const_msg(chan);
-    if (ev == NULL)
-    {
-        return;
-    }
-
-    const char *tr_str = "UNKNOWN";
-    switch (ev->event_type)
-    {
-    case ALARM_EVENT_ACTIVATED:      tr_str = "ACTIVATED"; break;
-    case ALARM_EVENT_CLEARED:        tr_str = "CLEARED"; break;
-    case ALARM_EVENT_ACKNOWLEDGED:   tr_str = "ACKNOWLEDGED"; break;
-    case ALARM_EVENT_LATCHED:        tr_str = "LATCHED"; break;
-    case ALARM_EVENT_SOURCE_CHANGED: tr_str = "SRC_CHANGED"; break;
-    default: break;
-    }
-
-    LOG_INF("ALARM [0x%04X] %s: state=%d sev=%d val=%.2f mask=0x%08X ts=%llu ms",
-            ev->alarm_id, tr_str, (int)ev->new_state, (int)ev->severity,
-            (double)ev->trigger_value, (unsigned int)ev->contributing_sources_mask,
-            (unsigned long long)ev->timestamp_ms);
-
-    if (s_active_container != NULL && s_active_container->datalogger.initialized)
-    {
-        uint32_t seq = datalogger_next_seq_id();
-        uint64_t uptime = (uint64_t)k_uptime_get();
-
-        /* Mirror critical/fatal alarms to non-volatile Backup SRAM immediately */
-        if (ev->severity >= ALARM_SEVERITY_CRITICAL &&
-            i_bkpsram_is_bound(&s_active_container->datalogger.bkp_port))
-        {
-            alarm_nv_record_t rec;
-            memset(&rec, 0, sizeof(rec));
-            rec.seq_id = seq;
-            rec.uptime_ms = uptime;
-            rec.epoch_s = (uint32_t)(ev->timestamp_ms / 1000ULL);
-            rec.alarm_id = ev->alarm_id;
-            rec.source_subsystem = (uint8_t)ev->source_category;
-            rec.transition_type = (uint8_t)ev->event_type;
-            rec.threshold_value = 0.0f;
-            rec.measured_value = ev->trigger_value;
-            rec.severity = (uint8_t)ev->severity;
-            rec.status_flags = ALARM_NV_FLAG_NONE;
-            snprintf(rec.tag, sizeof(rec.tag), "ALM_%04X", ev->alarm_id);
-
-            (void)i_bkpsram_write_record(&s_active_container->datalogger.bkp_port, &rec);
-        }
-
-        /* Forward to datalogger queue for batched SD card streaming */
-        datalogger_event_envelope_t envelope;
-        memset(&envelope, 0, sizeof(envelope));
-        envelope.type = DATALOGGER_EVT_ALARM_TRANSITION;
-        envelope.seq_id = seq;
-        envelope.uptime_ms = uptime;
-        envelope.payload.alarm = *ev;
-        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &envelope);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_alarm_logger, on_alarm_transition_logger_cb);
-
-static void on_storage_sd_status_logger_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_storage_sd_status || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const sd_card_status_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->datalogger.initialized)
-    {
-        datalogger_event_envelope_t env;
-        memset(&env, 0, sizeof(env));
-        env.type = DATALOGGER_EVT_STORAGE_STATUS;
-        env.seq_id = datalogger_next_seq_id();
-        env.uptime_ms = (uint64_t)k_uptime_get();
-        env.payload.storage_status = msg->status;
-        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &env);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_storage_sd_status_logger, on_storage_sd_status_logger_cb);
-
-static void on_system_event_logger_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_system_event || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const system_event_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->datalogger.initialized)
-    {
-        datalogger_event_envelope_t env;
-        memset(&env, 0, sizeof(env));
-        env.type = DATALOGGER_EVT_SYSTEM_EVENT;
-        env.seq_id = datalogger_next_seq_id();
-        env.uptime_ms = (uint64_t)k_uptime_get();
-        env.payload.system = *msg;
-        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &env);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_system_event_logger, on_system_event_logger_cb);
-
-static void on_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
-{
-    if (chan != &chan_network_eth_state || s_active_container == NULL)
-    {
-        return;
-    }
-
-    const net_state_msg_t *msg = zbus_chan_const_msg(chan);
-    if (msg == NULL)
-    {
-        return;
-    }
-
-    if (s_active_container->alarm.initialized)
-    {
-        bool is_down = (msg->status.state != NET_IF_STATE_CONNECTED);
-        (void)ao_alarm_manager_post_condition(&s_active_container->alarm.ao,
-                                              ALARM_ID_INFRA_ETHERNET_DOWN,
-                                              is_down, 0.0f);
-    }
-}
-
-ZBUS_LISTENER_DEFINE(lis_alarm_net_eth_feed, on_alarm_net_eth_feed_cb);
 
 static void on_thermal_baseline_persisted(void *user_data, const config_thermal_baseline_t *baseline)
 {
@@ -2018,7 +1665,7 @@ int composition_root_init(app_container_t *self)
     }
 
     (void)memset(self, 0, sizeof(*self));
-    s_active_container = self;
+    (void)app_event_mediator_bind(self);
 
     BOOT_INF("composition root: initialization started (dependency order enforced)");
 
@@ -2303,7 +1950,7 @@ int composition_root_stop(app_container_t *self)
         return -EINVAL;
     }
 
-    int rc = 0;
+    int rc;
 
 #if defined(CONFIG_NANOMODBUS_SERVER_TCP)
     /* 0. Stop Modbus TCP server */
@@ -2313,6 +1960,11 @@ int composition_root_stop(app_container_t *self)
         if (rc != 0 && rc != -EALREADY)
         {
             LOG_WRN("ao_modbus_tcp_stop returned %d", rc);
+        }
+        rc = ao_modbus_tcp_wait_stopped(&self->modbus_tcp.ao, K_MSEC(2000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_modbus_tcp_wait_stopped returned %d", rc);
         }
     }
 #endif
@@ -2463,6 +2115,11 @@ int composition_root_stop(app_container_t *self)
         {
             LOG_WRN("ao_storage_sd_stop returned %d", rc);
         }
+        rc = ao_storage_sd_wait_stopped(&self->sd_storage.ao, K_MSEC(2000));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_storage_sd_wait_stopped returned %d", rc);
+        }
     }
 
     /* 9. Stop Datalogger Active Object */
@@ -2603,6 +2260,16 @@ int composition_root_deinit(app_container_t *self)
         self->storage.initialized = false;
     }
 
+    if (self->sd_storage.initialized)
+    {
+        rc = ao_storage_sd_deinit(&self->sd_storage.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_storage_sd_deinit returned %d", rc);
+        }
+        self->sd_storage.initialized = false;
+    }
+
     if (self->datalogger.initialized)
     {
         rc = ao_datalogger_deinit(&self->datalogger.ao);
@@ -2613,7 +2280,19 @@ int composition_root_deinit(app_container_t *self)
         self->datalogger.initialized = false;
     }
 
-    s_active_container = NULL;
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
+    if (self->modbus_tcp.initialized)
+    {
+        rc = ao_modbus_tcp_deinit(&self->modbus_tcp.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_modbus_tcp_deinit returned %d", rc);
+        }
+        self->modbus_tcp.initialized = false;
+    }
+#endif
+
+    app_event_mediator_unbind();
     self->is_initialized = false;
     self->is_running = false;
     return 0;

@@ -13,8 +13,11 @@
 
 | Component / Layer | File Path | Status | Verification |
 | :--- | :--- | :---: | :--- |
-| **Active Object Template** | All 5 AOs (`ao_modbus`, `ao_network`, `ao_storage`, `ao_di`, `ao_indicator`) | 100% | 5-phase lifecycle (`init`, `start`, `stop`, `wait_stopped`, `deinit`), MPU stack guards |
-| **DI Container / Composition Root** | `app/src/infrastructure/di/composition_root.c`, `.h` | 100% | Vertical subsystem grouping, modular init, `wire()`, 10 DIP getters |
+| **Active Object Template** | All 10 AOs (`ao_alarm_manager`, `ao_datalogger`, `ao_digital_input`, `ao_hvac`, `ao_modbus`, `ao_modbus_tcp`, `ao_network`, `ao_sensor_matrix`, `ao_storage`, `ao_storage_sd`, `ao_system_indicator`, `ao_thermal_energy`) | 100% | Canonical 5-phase lifecycle (`init`, `start`, `stop`, `wait_stopped`, `deinit`), MPU stack guards, non-blocking stops |
+| **DI Container / Composition Root** | `app/src/infrastructure/di/composition_root.c`, `.h` | 100% | Vertical subsystem grouping, modular init, `wire()`, DIP getters, symmetric container layout |
+| **App Event Mediator** | `app/src/infrastructure/di/app_event_mediator.h`, `.c` | 100% | Decoupled Zbus listener routing and observer dispatch hub from DI composition root |
+| **EEPROM Memory Map & ADR-6 Layout** | `app/include/common/storage_eeprom_map.h` | 100% | Pure C11 centralized partition offsets, slot sizes, and `_Static_assert` overlap checks |
+| **D-Cache MPU Section Alignment** | `ao_datalogger.c`, `adc_dma_engine.c` | 100% | `.nocache` 32-byte aligned buffers under `CONFIG_DCACHE=1` |
 | **Hexagonal Port Encapsulation** | `app/include/interfaces/` | 100% | Rule §4.1.D fat-pointers, validated inline wrappers, 0 `api->` direct calls outside adapters |
 | **Hardware Injection Rule** | `app/src/infrastructure/adapters/` | 100% | 0 `DEVICE_DT_GET()` inside adapters; all devices injected from `composition_root.c` |
 | **Declarative Hardware Pinout** | `app/include/common/hardware_pin_map.h` | 100% | Compile-time 24 local DIs, 32 remote DIs, 12 HVAC relays, 8 alarm relays |
@@ -24,11 +27,17 @@
 ---
 
 ## 2. Pending Work
-- Phase 3 of Architecture Refactor: Multi-room HVAC range engine (`[sensor_start, sensor_end]` and metric policies).
+- Telemetry store & forward Active Object (`ao_telemetry_spool`) integration.
 
 ---
 
 ## 3. Changelog & Refactoring History
+- **2026-11-14**: Completed Comprehensive Architectural Refactor across all Subsystems:
+  - Extracted inter-subsystem Zbus listeners and mediator routing from `composition_root.c` into dedicated `app_event_mediator.h` and `.c` (350+ lines extracted, eliminating monolith bloat).
+  - Standardized all Active Objects (`ao_storage_sd`, `ao_modbus_tcp`, etc.) to canonical 5-phase lifecycle with non-blocking `stop()`, thread-joining `wait_stopped()`, and graceful `deinit()`.
+  - Created `storage_eeprom_map.h` in pure C11, centralizing physical AT24C256C domain offsets and compile-time `_Static_assert` non-overlap verification.
+  - Hardened DMA and file stream buffers for ARM Cortex-M7 D-Cache (`CONFIG_DCACHE=1`) using 32-byte aligned static `.nocache` memory regions.
+  - Verified 100% test pass rate across all 14 test suites (408/408 tests pass on `native_sim`), 0 Cppcheck errors/warnings, and clean target compilation for `brightc-controllerv3/stm32h743xx`.
 - **2026-11-13**: Updated the composition root Modbus lifecycle: storage is loaded before topology registration, unavailable buses are degraded without starting polling AOs, and runtime reconfiguration is serialized with AO stop/restart sequencing.
 - **2026-11-12**: Standardized boot and composition-root observability:
   - Added structured `[BOOT]`, `[CFG]`, `[DI]`, and `[RUN]` prefixes in `app/src/main.c` and `app/src/infrastructure/di/composition_root.c`.

@@ -79,6 +79,23 @@ int ao_modbus_tcp_start(ao_modbus_tcp_t *self);
 int ao_modbus_tcp_stop(ao_modbus_tcp_t *self);
 
 /**
+ * @brief Block until Modbus TCP Active Object server halts.
+ *
+ * @param[in,out] self    Active Object instance.
+ * @param[in]     timeout Maximum duration to wait.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_modbus_tcp_wait_stopped(ao_modbus_tcp_t *self, k_timeout_t timeout);
+
+/**
+ * @brief Deinitialize Modbus TCP Active Object coordinator and release resources.
+ *
+ * @param[in,out] self Active Object instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int ao_modbus_tcp_deinit(ao_modbus_tcp_t *self);
+
+/**
  * @brief Retrieve copy of cumulative diagnostic metrics from server instance.
  *
  * @param[in]  self      AO instance.

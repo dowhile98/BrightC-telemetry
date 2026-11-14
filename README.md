@@ -105,10 +105,16 @@ Toda la lógica de dominio se desarrolla mediante el ciclo **Red-Green-Refactor*
 # 1. Ejecutar todas las pruebas unitarias en native_sim
 west twister -T tests/unit -p native_sim -v --inline-logs
 
-# 2. Ejecutar pruebas con reporte de cobertura de código
+# 2. Ejecutar pruebas con reporte de cobertura de código (LCOV)
 west twister -T tests/unit -p native_sim --coverage -v
+lcov --capture --directory twister-out --output-file twister-out/app_coverage.info --ignore-errors mismatch --rc branch_coverage=1
+lcov --extract twister-out/app_coverage.info "*/BrightC-telemetry/app/src/*" "*/BrightC-telemetry/lib/*" --output-file twister-out/brightc_only.info --rc branch_coverage=1
+lcov --summary twister-out/brightc_only.info --rc branch_coverage=1
 
-# 3. Ejecutar pruebas de integración con emuladores Zephyr
+# 3. Análisis estático de código (Cppcheck estricto: 0 errores, 0 warnings)
+cppcheck --project=app/build/primary/compile_commands.json -D__GNUC__=12 --enable=warning,performance,portability --file-filter="*BrightC-telemetry/app/src/*" --suppress=toomanyconfigs --suppress=preprocessorErrorDirective --error-exitcode=1
+
+# 4. Ejecutar pruebas de integración con emuladores Zephyr
 west twister -T tests/integration -p native_sim
 ```
 

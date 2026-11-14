@@ -96,10 +96,10 @@ nmbs_error adapter_modbus_tcp_on_read_discrete_inputs(uint16_t address, uint16_t
     /* Section 2: Active Alarm States 10101..10180 (PDU 0x0064 .. 0x00B3) */
     if (address >= MODBUS_DI_OFFSET_ALARMS &&
         (address + quantity) <= (MODBUS_DI_OFFSET_ALARMS + MODBUS_DI_COUNT_ALARMS)) {
-        const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+        const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
         size_t cat_count = app_facade_alarm_get_catalog(catalog, CONFIG_ALARM_MANAGER_MAX_ALARMS);
 
-        app_facade_alarm_item_t act_items[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+        app_facade_alarm_item_t act_items[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
         size_t act_count = app_facade_alarm_get_active_list(act_items, CONFIG_ALARM_MANAGER_MAX_ALARMS);
 
         for (uint16_t i = 0U; i < quantity; i++) {
@@ -495,10 +495,10 @@ nmbs_error adapter_modbus_tcp_on_read_input_registers(uint16_t address, uint16_t
         app_facade_alarm_status_t astat;
         (void)app_facade_alarm_get_status(&astat);
 
-        const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+        const alarm_descriptor_t *catalog[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
         size_t cat_count = app_facade_alarm_get_catalog(catalog, CONFIG_ALARM_MANAGER_MAX_ALARMS);
 
-        app_facade_alarm_item_t act_items[CONFIG_ALARM_MANAGER_MAX_ALARMS];
+        app_facade_alarm_item_t act_items[CONFIG_ALARM_MANAGER_MAX_ALARMS] = {0};
         size_t act_count = app_facade_alarm_get_active_list(act_items, CONFIG_ALARM_MANAGER_MAX_ALARMS);
 
         uint16_t active_mask[5] = {0};

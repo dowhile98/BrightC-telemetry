@@ -202,7 +202,7 @@ int thermo_ols_add_sample(thermo_ols_t *ols,
         return -EINVAL;
     }
 
-    double x[4] = {1.0, t_ret, t_ext, f_carga};
+    const double x[4] = {1.0, t_ret, t_ext, f_carga};
     double y = q_total;
 
     for (int i = 0; i < 4; i++) {

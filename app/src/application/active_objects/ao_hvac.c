@@ -304,10 +304,10 @@ int ao_hvac_step(ao_hvac_t *self)
                     publish_hvac_event(g, 0U, HVAC_EVENT_FIRE_ACTIVATED);
                 }
 
-                if (self->prev_group_state[g] == GROUP_STATE_BYPASS && g_after != GROUP_STATE_BYPASS) {
+                if (self->prev_group_state[g] == GROUP_STATE_BYPASS) {
                     publish_hvac_event(g, 0U, HVAC_EVENT_BYPASS_CLEARED);
                 }
-                if (self->prev_group_state[g] == GROUP_STATE_FIRE && g_after != GROUP_STATE_FIRE) {
+                if (self->prev_group_state[g] == GROUP_STATE_FIRE) {
                     publish_hvac_event(g, 0U, HVAC_EVENT_FIRE_CLEARED);
                 }
 

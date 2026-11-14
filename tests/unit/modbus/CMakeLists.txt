@@ -59,6 +59,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/application/zbus/sensor_channels.c
     ${APP_DIR}/app/src/domain/models/hvac_unit_entity.c
     ${APP_DIR}/app/src/domain/models/hvac_group_entity.c
+    ${APP_DIR}/app/src/infrastructure/di/app_event_mediator.c
     ${APP_DIR}/app/src/infrastructure/di/composition_root.c
     ${APP_DIR}/app/src/application/services/app_facade.c
     ${APP_DIR}/tests/fakes/src/fake_sensor_matrix.c

@@ -16,6 +16,16 @@
 
 LOG_MODULE_REGISTER(ao_datalogger, CONFIG_LOG_DEFAULT_LEVEL);
 
+#if defined(CONFIG_NOCACHE_MEMORY)
+#define DATALOGGER_BUF_ATTR __aligned(32) __nocache
+#else
+#define DATALOGGER_BUF_ATTR __aligned(32)
+#endif
+
+static uint8_t s_datalogger_alarms_buf[AO_DATALOGGER_SECTOR_SIZE] DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_system_buf[AO_DATALOGGER_SECTOR_SIZE] DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_boot_buf[AO_DATALOGGER_SECTOR_SIZE]   DATALOGGER_BUF_ATTR;
+
 #define CSV_ALARMS_HEADER \
     "# schema_version=1;source=BrightC_V3;medium=SDMMC\n" \
     "Timestamp_ISO,Uptime_ms,Seq_ID,Alarm_ID,Subsystem,Transition,Threshold,Measured,Severity,Tag\n"
@@ -85,7 +95,7 @@ static void flush_stream_buffer(ao_datalogger_t *self,
                                 void **file_handle,
                                 const char *file_path,
                                 const char *header_csv,
-                                uint8_t *buf,
+                                const uint8_t *buf,
                                 size_t *buf_len)
 {
     if (*buf_len == 0U || !self->is_sd_mounted) {
@@ -380,7 +390,7 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
             }
 
             case DATALOGGER_EVT_ALARM_TRANSITION: {
-                alarm_transition_event_t *alm = &evt.payload.alarm;
+                const alarm_transition_event_t *alm = &evt.payload.alarm;
                 char line_buf[256];
                 char time_str[32];
                 char path_buf[FS_MAX_PATH_LEN];
@@ -421,7 +431,7 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
             }
 
             case DATALOGGER_EVT_HVAC_EVENT: {
-                hvac_event_t *hvac = &evt.payload.hvac;
+                const hvac_event_t *hvac = &evt.payload.hvac;
                 char line_buf[256];
                 char time_str[32];
                 char path_buf[FS_MAX_PATH_LEN];
@@ -453,7 +463,7 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
             }
 
             case DATALOGGER_EVT_SYSTEM_EVENT: {
-                system_event_msg_t *sys = &evt.payload.system;
+                const system_event_msg_t *sys = &evt.payload.system;
                 char line_buf[256];
                 char time_str[32];
                 char path_buf[FS_MAX_PATH_LEN];
@@ -564,6 +574,13 @@ int ao_datalogger_init(ao_datalogger_t *self,
 
     k_sem_init(&self->stopped_sem, 0, 1);
     k_mutex_init(&self->lock);
+
+    self->alarms_buf = s_datalogger_alarms_buf;
+    self->system_buf = s_datalogger_system_buf;
+    self->boot_buf   = s_datalogger_boot_buf;
+    memset(self->alarms_buf, 0, AO_DATALOGGER_SECTOR_SIZE);
+    memset(self->system_buf, 0, AO_DATALOGGER_SECTOR_SIZE);
+    memset(self->boot_buf,   0, AO_DATALOGGER_SECTOR_SIZE);
 
     self->is_initialized = true;
     return 0;

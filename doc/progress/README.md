@@ -11,7 +11,7 @@
 
 | Subsystem / Layer | Progress File | Status | Codebase Coverage | Last Updated |
 | :--- | :--- | :---: | :--- | :---: |
-| **Core Architecture & Framework** | [`core_architecture_progress.md`](core_architecture_progress.md) | **100%** | Active Objects (5/5), DI Container, Hexagonal Ports & Adapters | 2026-11-07 |
+| **Core Architecture & Framework** | [`core_architecture_progress.md`](core_architecture_progress.md) | **100%** | Active Objects (10/10 canonical lifecycle), DI Container, App Event Mediator, EEPROM memory map, Hexagonal Ports & Adapters, 408/408 unit tests pass | 2026-11-14 |
 | **System Indicators** | [`system_indicators_progress.md`](system_indicators_progress.md) | **100%** | `ao_system_indicator`, LED GPIO & Buzzer PWM adapters, Zbus | 2026-11-05 |
 | **Industrial Modbus & Modbus TCP** | [`modbus_progress.md`](modbus_progress.md) | **100%** | Dual RS-485 Master, 4 codecs, scheduler, registry, relay adapter, `ao_modbus`, mode-aware topology; Modbus TCP Server leveraging Zephyr native `<zephyr/nanomodbus/nanomodbus_z_tcp.h>` engine (`nmbs_z_server_tcp_t`), `ao_modbus_tcp`, `adapter_modbus_tcp_server`, pure C99 types, `i_modbus_tcp_server.h`, 7 unit tests (100% pass) | 2026-11-12 |
 | **Digital Inputs** | [`digital_inputs_progress.md`](digital_inputs_progress.md) | **95%** | `ao_digital_input`, Zbus snapshot & transitions, HVAC safety interlock listener, 2x MCP23S17 SPI + Modbus MBSL32DI, profile-specific pin tables (control/telemetry), acquisition staleness contract | 2026-11-11 |

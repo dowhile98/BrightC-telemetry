@@ -65,7 +65,7 @@ int app_facade_network_get_eth_config(net_eth_config_t *out_cfg)
         return -EINVAL;
     }
 
-    ao_network_t *net_ao = app_container_get_network_ao(s_app);
+    const ao_network_t *net_ao = app_container_get_network_ao(s_app);
     if (net_ao == NULL) {
         return -ENODEV;
     }
@@ -79,7 +79,7 @@ int app_facade_network_get_wifi_config(net_wifi_config_t *out_cfg)
         return -EINVAL;
     }
 
-    ao_network_t *net_ao = app_container_get_network_ao(s_app);
+    const ao_network_t *net_ao = app_container_get_network_ao(s_app);
     if (net_ao == NULL) {
         return -ENODEV;
     }

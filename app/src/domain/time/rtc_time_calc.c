@@ -70,7 +70,7 @@ bool rtc_calc_is_valid_datetime(const rtc_date_time_t *dt)
     }
 
     /* Day of week if populated: 1..7 */
-    if (dt->day_of_week != 0 && (dt->day_of_week < 1 || dt->day_of_week > 7)) {
+    if (dt->day_of_week > 7) {
         return false;
     }
 

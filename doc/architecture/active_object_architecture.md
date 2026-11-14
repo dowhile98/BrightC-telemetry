@@ -406,15 +406,22 @@ int ao_example_step(ao_example_t *self, uint32_t elapsed_ms)
 
 ---
 
-## 6. Subsystem Active Object Inventory & Migration Plan
+## 6. Subsystem Active Object Inventory & Operational Status
 
-| Active Object | Assigned Pattern | Current Status | Key Refactoring Directives |
+| Active Object | Assigned Pattern | Current Status | Key Architectural Characteristics |
 |---|---|---|---|
-| [`ao_digital_input`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_digital_input.h) | **Pattern A (Polling)** | Legacy Dynamic Spawn | - Add `run_sem` & `stopped_sem`.<br>- Move `k_thread_create` to `init()`.<br>- Remove dynamic thread abort on stop. |
-| [`ao_storage`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_storage.h) | **Pattern B (Message-Driven)** | Legacy Static Buffer | - Eliminate file-scope `s_storage_bounce_buffer`. Embed in struct.<br>- Add `stopped_sem` & outer queue gate.<br>- Support `AO_MSG_START`, `STOP`, `TERMINATE`. |
-| [`ao_system_indicator`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_system_indicator.h) | **Pattern B (Message + Tick)** | Legacy Join/Abort | - Implement queue gate with 25 ms tick timeout.<br>- Eliminate `k_thread_abort` in stop.<br>- Add `wait_stopped()` & `deinit()`. |
-| [`ao_network`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_network.h) | **Pattern B (Message + Tick)** | Legacy Join/Abort | - Implement queue gate with 500 ms status poll tick.<br>- Remove thread recreation on start.<br>- Add `stopped_sem` synchronization. |
-| [`ao_modbus`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_modbus.h) | **Pattern C (Scheduled Arbiter)** | Legacy Join/Wait | - Unify with standard lifecycle (`wait_stopped`, `deinit`).<br>- Retain dual-bus isolation (one AO instance per RS-485 bus). |
+| [`ao_digital_input`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_digital_input.h) | **Pattern A (Polling)** | **COMPLETED (100%)** | 20 ms poll tick, debounce engine, Zbus snapshot publishing, non-blocking stop & wait_stopped |
+| [`ao_storage`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_storage.h) | **Pattern B (Message-Driven)** | **COMPLETED (100%)** | Microconf I2C2 EEPROM adapter, 7 storage domains, dirty bitmask synchronization, flush on stop |
+| [`ao_system_indicator`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_system_indicator.h) | **Pattern B (Message + Tick)** | **COMPLETED (100%)** | 25 ms tick timeout, LED pattern sequencer, PWM buzzer cadence, persistent buzzer mute |
+| [`ao_network`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_network.h) | **Pattern B (Message + Tick)** | **COMPLETED (100%)** | 500 ms status poll tick, Ethernet LAN8742 & ESP-Hosted Wi-Fi coordination |
+| [`ao_modbus`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_modbus.h) | **Pattern C (Scheduled Arbiter)** | **COMPLETED (100%)** | Dual-bus isolation (RS485-1 Telemetry, RS485-2 Control), round-robin slave scheduler |
+| [`ao_hvac`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_hvac.h) | **Pattern B (Message + Tick)** | **COMPLETED (100%)** | 100 ms control loop, 2 thermal groups, 8 HVAC units, multi-room range engine, safety interlocks |
+| [`ao_alarm_manager`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_alarm_manager.h) | **Pattern B (Message-Driven)** | **COMPLETED (100%)** | Discrete & multi-source aggregate FSMs, 4 detector adapters, DIP query port, priority queue |
+| [`ao_sensor_matrix`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_sensor_matrix.h) | **Pattern A (DMA Ingestion)** | **COMPLETED (100%)** | 100 ms acquisition tick, 64-channel snapshot, thermodynamic engine mapping |
+| [`ao_thermal_energy`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_thermal_energy.h) | **Pattern B (Message + Tick)** | **COMPLETED (100%)** | CMSIS-DSP predictive analytics, COP/EER calculation, 720h RAM ring buffer, baseline persistence |
+| [`ao_storage_sd`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_storage_sd.h) | **Pattern B (Hot-Plug SM)** | **COMPLETED (100%)** | MicroSD hot-plug lifecycle, contact debouncing (150 ms), directory auto-provisioning, wait_stopped & deinit |
+| [`ao_modbus_tcp`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_modbus_tcp.h) | **Pattern B (Socket Server)** | **COMPLETED (100%)** | nanoMODBUS Zephyr TCP server engine, listener thread synchronization, wait_stopped & deinit |
+| [`ao_datalogger`](file:///media/jeffry/jqb/embedded-mcu/BrightC-workspace/BrightC-telemetry/app/src/application/active_objects/ao_datalogger.h) | **Pattern B (Event Batching)** | **COMPLETED (100%)** | Non-volatile Backup SRAM ring mirror, 512B batched CSV streaming to SD, 32-byte .nocache MPU buffers |
 
 ---
 
@@ -424,41 +431,36 @@ The system startup and shutdown sequencing in `composition_root.c` follows this 
 
 ```c
 /* 1. INITIALIZATION: composition_root_init(&g_app) */
-/* All AOs are initialized. Threads are spawned and immediately blocked on gates. */
-ao_digital_input_init(&self->ao_di, &di_cfg);
-ao_storage_init(&self->ao_store, &storage_cfg);
-ao_network_init(&self->ao_net, &net_cfg);
-ao_system_indicator_init(&self->ao_indicator, &indicator_cfg);
-for (int i = 0; i < MODBUS_BUS_MAX; i++) {
-    ao_modbus_init(&self->ao[i], &modbus_cfg[i]);
-}
+/* Dependency order: Storage -> Modbus -> Modbus TCP -> Indicators -> DI -> HVAC -> Network -> Sensors -> Thermal -> Alarm -> SD -> Datalogger */
+composition_root_init_storage(self);
+composition_root_init_modbus(self);
+composition_root_init_modbus_tcp(self);
+composition_root_init_indicators(self);
+composition_root_init_digital_inputs(self);
+composition_root_init_hvac(self);
+composition_root_init_network(self);
+composition_root_init_sensors(self);
+composition_root_init_thermal_energy(self);
+composition_root_init_alarm(self);
+composition_root_init_sd_storage(self);
+composition_root_init_datalogger(self);
+app_event_mediator_bind(self);
 
 /* 2. START: composition_root_start(&g_app) */
-/* Gates are opened. Threads enter their inner execution loops. */
-ao_storage_start(&self->ao_store);
-ao_network_start(&self->ao_net);
-ao_system_indicator_start(&self->ao_indicator);
-ao_digital_input_start(&self->ao_di);
-for (int i = 0; i < MODBUS_BUS_MAX; i++) {
-    ao_modbus_start(&self->ao[i]);
-}
+/* All active object threads unblock and transition to running */
 
 /* 3. SHUTDOWN: composition_root_stop(&g_app) */
-/* Graceful, coordinated stop without thread destruction. */
-ao_digital_input_stop(&self->ao_di);
-ao_digital_input_wait_stopped(&self->ao_di, K_MSEC(500));
+/* Graceful, coordinated stop without thread destruction. Reverse dependency order with timeouts. */
+ao_modbus_tcp_stop(&self->modbus_tcp.ao);
+ao_modbus_tcp_wait_stopped(&self->modbus_tcp.ao, K_MSEC(2000));
+ao_network_stop(&self->network.ao);
+ao_network_wait_stopped(&self->network.ao, K_MSEC(2000));
+/* ... other AOs stopped and waited ... */
+ao_storage_sd_stop(&self->sd_storage.ao);
+ao_storage_sd_wait_stopped(&self->sd_storage.ao, K_MSEC(2000));
+ao_datalogger_stop(&self->datalogger.ao);
+ao_datalogger_wait_stopped(&self->datalogger.ao, K_MSEC(500));
 
-for (int i = 0; i < MODBUS_BUS_MAX; i++) {
-    ao_modbus_stop(&self->ao[i]);
-    ao_modbus_wait_stopped(&self->ao[i], K_MSEC(1000));
-}
-
-ao_network_stop(&self->ao_net);
-ao_network_wait_stopped(&self->ao_net, K_MSEC(1000));
-
-ao_storage_stop(&self->ao_store);
-ao_storage_wait_stopped(&self->ao_store, K_MSEC(2000));
-
-ao_system_indicator_stop(&self->ao_indicator);
-ao_system_indicator_wait_stopped(&self->ao_indicator, K_MSEC(500));
-```
+/* 4. DEINITIALIZATION: composition_root_deinit(&g_app) */
+/* Unbinds app_event_mediator and safely deinits all active objects */
+app_event_mediator_unbind();

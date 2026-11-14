@@ -114,8 +114,7 @@ static inline void modbus_tcp_pack_float(uint16_t *dest, float val, modbus_word_
     union {
         float f;
         uint32_t u;
-    } conv;
-    conv.f = val;
+    } conv = { .f = val };
     modbus_tcp_pack_32(dest, conv.u, order);
 }
 
@@ -139,8 +138,7 @@ static inline float modbus_tcp_unpack_float(const uint16_t *src, modbus_word_ord
     union {
         uint32_t u;
         float f;
-    } conv;
-    conv.u = modbus_tcp_unpack_32(src, order);
+    } conv = { .u = modbus_tcp_unpack_32(src, order) };
     return conv.f;
 }
 

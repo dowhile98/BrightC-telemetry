@@ -183,7 +183,7 @@ int ao_storage_init(ao_storage_t *self,
     self->is_running = false;
     self->dirty_mask = 0;
 
-    if (storage == NULL || !i_config_storage_is_bound(storage)) {
+    if (!i_config_storage_is_bound(storage)) {
         self->is_degraded = true;
         LOG_WRN("ao_storage initialized in DEGRADED mode (storage unbound); EEPROM writes disabled");
     }

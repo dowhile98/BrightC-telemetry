@@ -36,6 +36,7 @@ target_sources(app PRIVATE
     src/infrastructure/adapters/adapter_di_gpio.c
     src/infrastructure/adapters/adapter_relay_gpio.c
     src/infrastructure/adapters/adapter_sensor_zephyr.c
+    src/infrastructure/di/app_event_mediator.c
     src/infrastructure/di/composition_root.c
     src/domain/models/hvac_unit_entity.c
     src/domain/models/hvac_group_entity.c

@@ -161,6 +161,45 @@ int ao_modbus_tcp_stop(ao_modbus_tcp_t *self)
     return err;
 }
 
+int ao_modbus_tcp_wait_stopped(ao_modbus_tcp_t *self, k_timeout_t timeout)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+#if defined(CONFIG_NANOMODBUS_SERVER_TCP)
+    int64_t start = k_uptime_get();
+    int64_t wait_ms = (K_TIMEOUT_EQ(timeout, K_FOREVER)) ? INT64_MAX : (int64_t)k_ticks_to_ms_near32(timeout.ticks);
+    while (atomic_get(&self->server.thread_active) != 0 || atomic_get(&self->server.running) != 0) {
+        if ((k_uptime_get() - start) > wait_ms) {
+            return -ETIMEDOUT;
+        }
+        k_sleep(K_MSEC(10));
+    }
+#else
+    ARG_UNUSED(timeout);
+#endif
+
+    self->state = MODBUS_TCP_STATE_STOPPED;
+    return 0;
+}
+
+int ao_modbus_tcp_deinit(ao_modbus_tcp_t *self)
+{
+    if (self == NULL) {
+        return -EINVAL;
+    }
+
+    if (ao_modbus_tcp_is_running(self)) {
+        (void)ao_modbus_tcp_stop(self);
+        (void)ao_modbus_tcp_wait_stopped(self, K_MSEC(500));
+    }
+
+    self->state = MODBUS_TCP_STATE_UNINITIALIZED;
+    self->is_initialized = false;
+    return 0;
+}
+
 int ao_modbus_tcp_get_stats(ao_modbus_tcp_t *self, modbus_tcp_server_stats_t *out_stats)
 {
     if (self == NULL || out_stats == NULL) {

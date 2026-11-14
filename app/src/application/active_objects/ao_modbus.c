@@ -141,7 +141,7 @@ static modbus_transaction_result_t poll_target(ao_modbus_t *self,
 }
 
 /** Milliseconds to sleep before looking at the registry again. */
-static uint32_t idle_wait_ms(ao_modbus_t *self, uint64_t now_ms)
+static uint32_t idle_wait_ms(const ao_modbus_t *self, uint64_t now_ms)
 {
     uint32_t next_due_ms = 0U;
 

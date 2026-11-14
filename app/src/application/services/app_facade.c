@@ -1061,10 +1061,10 @@ int app_facade_storage_reset_defaults(void)
     if (s_app->network.initialized) {
         const net_eth_config_t *eth_def = default_config_get_net_eth_cfg();
         const net_wifi_config_t *wifi_def = default_config_get_net_wifi_cfg();
-        if (eth_def != NULL && i_network_is_bound(&s_app->network.eth_port)) {
+        if (i_network_is_bound(&s_app->network.eth_port)) {
             (void)i_network_set_config(&s_app->network.eth_port, eth_def, sizeof(*eth_def));
         }
-        if (wifi_def != NULL && i_network_is_bound(&s_app->network.wifi_port)) {
+        if (i_network_is_bound(&s_app->network.wifi_port)) {
             (void)i_network_set_config(&s_app->network.wifi_port, wifi_def, sizeof(*wifi_def));
         }
     }
