@@ -12,7 +12,7 @@ ZBUS_CHAN_DEFINE(
     sd_card_status_msg_t,
     NULL,
     NULL,
-    ZBUS_OBSERVERS_EMPTY,
+    ZBUS_OBSERVERS(lis_storage_sd_status_logger),
     ZBUS_MSG_INIT(
         .status = STORAGE_FS_CARD_NOT_INSERTED,
         .card_present = false,

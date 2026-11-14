@@ -76,7 +76,10 @@
 #include "infrastructure/adapters/adapter_di_gpio.h"
 #include "infrastructure/adapters/adapter_rtc_zephyr.h"
 #include "infrastructure/adapters/adapter_storage_sd_zephyr.h"
+#include "infrastructure/adapters/adapter_bkpsram_stm32.h"
 #endif
+#include "interfaces/i_bkpsram.h"
+#include "application/active_objects/ao_datalogger.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -251,6 +254,18 @@ struct app_container {
         modbus_tcp_server_config_t config;             /**< Server configuration */
         bool initialized;                              /**< Subsystem initialization status */
     } modbus_tcp;
+
+    /* Subsystem 14: Unified Historical Datalogger & Backup SRAM */
+    struct {
+        i_bkpsram_t bkp_port;                          /**< Backup SRAM abstract port */
+#ifndef CONFIG_ZTEST
+        adapter_bkpsram_stm32_t bkpsram_adapter;       /**< STM32H7 hardware adapter */
+#endif
+        ao_datalogger_t ao;                            /**< Datalogger Active Object */
+        struct k_msgq queue;                           /**< Event ingress message queue */
+        uint8_t queue_buf[AO_DATALOGGER_QUEUE_DEPTH * sizeof(datalogger_event_envelope_t)];
+        bool initialized;                              /**< Subsystem initialization status */
+    } datalogger;
 
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
@@ -645,6 +660,26 @@ const i_storage_fs_t *app_container_get_sd_storage(const app_container_t *self);
  * @return Pointer to ao_storage_sd_t, or NULL if uninitialized.
  */
 ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self);
+
+/**
+ * @brief Get the Unified Datalogger Active Object handle.
+ *
+ * @param[in] self Container instance.
+ * @return Pointer to ao_datalogger_t, or NULL if uninitialized.
+ */
+ao_datalogger_t *app_container_get_datalogger_ao(app_container_t *self);
+
+/**
+ * @brief Initialize the Unified Event & Forensic Datalogger Subsystem.
+ *
+ * Configures the Backup SRAM hardware adapter, message queue, and initializes
+ * the ao_datalogger Active Object.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_datalogger(app_container_t *self);
+
 
 /**
  * @brief Initialize the Modbus TCP Server Subsystem.

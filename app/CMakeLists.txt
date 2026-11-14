@@ -70,6 +70,10 @@ target_sources(app PRIVATE
     src/infrastructure/adapters/adapter_storage_sd_zephyr.c
     src/infrastructure/adapters/adapter_modbus_tcp_server.c
     src/application/active_objects/ao_modbus_tcp.c
+    src/domain/storage/bkpsram_ring.c
+    src/infrastructure/adapters/adapter_bkpsram_stm32.c
+    src/application/active_objects/ao_datalogger.c
+    src/application/zbus/system_channels.c
 )
 
 if(CONFIG_SHELL)

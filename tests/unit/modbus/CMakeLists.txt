@@ -21,6 +21,7 @@ target_sources(app PRIVATE
     ${APP_DIR}/tests/fakes/src/fake_config_storage.c
     ${APP_DIR}/tests/fakes/src/fake_rtc.c
     ${APP_DIR}/tests/mocks/fake_storage_fs.c
+    ${APP_DIR}/tests/mocks/fake_bkpsram.c
     ${APP_DIR}/tests/fakes/src/fake_led.c
     ${APP_DIR}/tests/fakes/src/fake_buzzer.c
     ${APP_DIR}/tests/fakes/src/fake_digital_input.c
@@ -39,12 +40,15 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/application/active_objects/ao_network.c
     ${APP_DIR}/app/src/application/active_objects/ao_storage.c
     ${APP_DIR}/app/src/application/active_objects/ao_storage_sd.c
+    ${APP_DIR}/app/src/application/active_objects/ao_datalogger.c
+    ${APP_DIR}/app/src/domain/storage/bkpsram_ring.c
     ${APP_DIR}/app/src/application/active_objects/ao_system_indicator.c
     ${APP_DIR}/app/src/application/active_objects/ao_digital_input.c
     ${APP_DIR}/app/src/application/active_objects/ao_sensor_matrix.c
     ${APP_DIR}/app/src/application/zbus/network_channels.c
     ${APP_DIR}/app/src/application/zbus/config_channels.c
     ${APP_DIR}/app/src/application/zbus/storage_channels.c
+    ${APP_DIR}/app/src/application/zbus/system_channels.c
     ${APP_DIR}/app/src/application/zbus/indicator_channels.c
     ${APP_DIR}/app/src/application/zbus/digital_input_channels.c
     ${APP_DIR}/app/src/infrastructure/adapters/adapter_relay_modbus.c
@@ -87,4 +91,5 @@ target_include_directories(app PRIVATE
     ${APP_DIR}/lib/codec_modbus
     ${APP_DIR}/lib/transducers
     ${APP_DIR}/tests/fakes/include
+    ${APP_DIR}/tests/mocks
 )

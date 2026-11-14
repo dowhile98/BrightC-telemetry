@@ -11,6 +11,8 @@
 #include "application/zbus/hvac_channels.h"
 #include "application/zbus/indicator_channels.h"
 #include "application/zbus/alarm_channels.h"
+#include "application/zbus/storage_channels.h"
+#include "application/zbus/system_channels.h"
 #include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
@@ -21,6 +23,7 @@
 #include "infrastructure/adapters/adapter_di_gpio.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <zephyr/devicetree.h>
@@ -88,6 +91,7 @@ static K_THREAD_STACK_DEFINE(s_ao_sensor_stack, AO_SENSOR_MATRIX_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_alarm_stack, CONFIG_AO_ALARM_MANAGER_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_thermal_energy_stack, AO_THERMAL_ENERGY_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_storage_sd_stack, AO_STORAGE_SD_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(s_ao_datalogger_stack, AO_DATALOGGER_STACK_SIZE);
 
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
@@ -199,6 +203,7 @@ static int storage_provider_thermal_baseline(void *ctx, config_domain_t domain,
 #include "fake_sensor_matrix.h"
 #include "fake_rtc.h"
 #include "fake_storage_fs.h"
+#include "fake_bkpsram.h"
 #endif
 
 /* =========================================================================
@@ -1630,9 +1635,99 @@ static void on_alarm_transition_logger_cb(const struct zbus_channel *chan)
             ev->alarm_id, tr_str, (int)ev->new_state, (int)ev->severity,
             (double)ev->trigger_value, (unsigned int)ev->contributing_sources_mask,
             (unsigned long long)ev->timestamp_ms);
+
+    if (s_active_container != NULL && s_active_container->datalogger.initialized)
+    {
+        uint32_t seq = datalogger_next_seq_id();
+        uint64_t uptime = (uint64_t)k_uptime_get();
+
+        /* Mirror critical/fatal alarms to non-volatile Backup SRAM immediately */
+        if (ev->severity >= ALARM_SEVERITY_CRITICAL &&
+            i_bkpsram_is_bound(&s_active_container->datalogger.bkp_port))
+        {
+            alarm_nv_record_t rec;
+            memset(&rec, 0, sizeof(rec));
+            rec.seq_id = seq;
+            rec.uptime_ms = uptime;
+            rec.epoch_s = (uint32_t)(ev->timestamp_ms / 1000ULL);
+            rec.alarm_id = ev->alarm_id;
+            rec.source_subsystem = (uint8_t)ev->source_category;
+            rec.transition_type = (uint8_t)ev->event_type;
+            rec.threshold_value = 0.0f;
+            rec.measured_value = ev->trigger_value;
+            rec.severity = (uint8_t)ev->severity;
+            rec.status_flags = ALARM_NV_FLAG_NONE;
+            snprintf(rec.tag, sizeof(rec.tag), "ALM_%04X", ev->alarm_id);
+
+            (void)i_bkpsram_write_record(&s_active_container->datalogger.bkp_port, &rec);
+        }
+
+        /* Forward to datalogger queue for batched SD card streaming */
+        datalogger_event_envelope_t envelope;
+        memset(&envelope, 0, sizeof(envelope));
+        envelope.type = DATALOGGER_EVT_ALARM_TRANSITION;
+        envelope.seq_id = seq;
+        envelope.uptime_ms = uptime;
+        envelope.payload.alarm = *ev;
+        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &envelope);
+    }
 }
 
 ZBUS_LISTENER_DEFINE(lis_alarm_logger, on_alarm_transition_logger_cb);
+
+static void on_storage_sd_status_logger_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_storage_sd_status || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const sd_card_status_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->datalogger.initialized)
+    {
+        datalogger_event_envelope_t env;
+        memset(&env, 0, sizeof(env));
+        env.type = DATALOGGER_EVT_STORAGE_STATUS;
+        env.seq_id = datalogger_next_seq_id();
+        env.uptime_ms = (uint64_t)k_uptime_get();
+        env.payload.storage_status = msg->status;
+        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &env);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_storage_sd_status_logger, on_storage_sd_status_logger_cb);
+
+static void on_system_event_logger_cb(const struct zbus_channel *chan)
+{
+    if (chan != &chan_system_event || s_active_container == NULL)
+    {
+        return;
+    }
+
+    const system_event_msg_t *msg = zbus_chan_const_msg(chan);
+    if (msg == NULL)
+    {
+        return;
+    }
+
+    if (s_active_container->datalogger.initialized)
+    {
+        datalogger_event_envelope_t env;
+        memset(&env, 0, sizeof(env));
+        env.type = DATALOGGER_EVT_SYSTEM_EVENT;
+        env.seq_id = datalogger_next_seq_id();
+        env.uptime_ms = (uint64_t)k_uptime_get();
+        env.payload.system = *msg;
+        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &env);
+    }
+}
+
+ZBUS_LISTENER_DEFINE(lis_system_event_logger, on_system_event_logger_cb);
 
 static void on_alarm_net_eth_feed_cb(const struct zbus_channel *chan)
 {
@@ -1780,6 +1875,57 @@ int composition_root_init_sd_storage(app_container_t *self)
     }
 
     self->sd_storage.initialized = true;
+    return 0;
+}
+
+int composition_root_init_datalogger(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->datalogger.initialized)
+    {
+        return 0;
+    }
+
+#if defined(CONFIG_ZTEST)
+    if (!i_bkpsram_is_bound(&self->datalogger.bkp_port))
+    {
+        self->datalogger.bkp_port = fake_bkpsram_get_port();
+    }
+#else
+    int err = adapter_bkpsram_stm32_init(&self->datalogger.bkpsram_adapter,
+                                         (void *)STM32H7_BKPSRAM_BASE_ADDR,
+                                         STM32H7_BKPSRAM_SIZE);
+    if (err != 0)
+    {
+        LOG_ERR("Failed to initialize STM32 Backup SRAM adapter: %d", err);
+        return err;
+    }
+    self->datalogger.bkp_port = adapter_bkpsram_stm32_port(&self->datalogger.bkpsram_adapter);
+#endif
+
+    k_msgq_init(&self->datalogger.queue,
+                (char *)self->datalogger.queue_buf,
+                sizeof(datalogger_event_envelope_t),
+                AO_DATALOGGER_QUEUE_DEPTH);
+
+    int rc = ao_datalogger_init(&self->datalogger.ao,
+                                &self->sd_storage.port,
+                                &self->datalogger.bkp_port,
+                                &self->datalogger.queue,
+                                s_ao_datalogger_stack,
+                                K_THREAD_STACK_SIZEOF(s_ao_datalogger_stack),
+                                AO_DATALOGGER_PRIORITY);
+    if (rc != 0)
+    {
+        LOG_ERR("Failed to initialize ao_datalogger: %d", rc);
+        return rc;
+    }
+
+    self->datalogger.initialized = true;
     return 0;
 }
 
@@ -1964,11 +2110,19 @@ int composition_root_init(app_container_t *self)
         return err;
     }
 
-    BOOT_INF("phase 12/12: initializing Modbus TCP server");
+    BOOT_INF("phase 12/13: initializing Modbus TCP server");
     err = composition_root_init_modbus_tcp(self);
     if (err != 0)
     {
-        BOOT_ERR("phase 12/12 failed: Modbus TCP rc=%d", err);
+        BOOT_ERR("phase 12/13 failed: Modbus TCP rc=%d", err);
+        return err;
+    }
+
+    BOOT_INF("phase 13/13: initializing unified event & forensic datalogger");
+    err = composition_root_init_datalogger(self);
+    if (err != 0)
+    {
+        BOOT_ERR("phase 13/13 failed: Datalogger rc=%d", err);
         return err;
     }
 
@@ -2126,6 +2280,16 @@ int composition_root_start(app_container_t *self)
         }
     }
 #endif
+
+    if (self->datalogger.initialized)
+    {
+        int err = ao_datalogger_start(&self->datalogger.ao);
+        if (err != 0 && err != -EALREADY)
+        {
+            LOG_ERR("Datalogger active object start failed (%d)", err);
+            return err;
+        }
+    }
 
     self->is_running = true;
     RUN_INF("all enabled Active Objects started; runtime state=RUNNING");
@@ -2301,6 +2465,21 @@ int composition_root_stop(app_container_t *self)
         }
     }
 
+    /* 9. Stop Datalogger Active Object */
+    if (self->datalogger.initialized)
+    {
+        rc = ao_datalogger_stop(&self->datalogger.ao);
+        if (rc != 0 && rc != -EALREADY)
+        {
+            LOG_WRN("ao_datalogger_stop returned %d", rc);
+        }
+        rc = ao_datalogger_wait_stopped(&self->datalogger.ao, K_MSEC(500));
+        if (rc != 0)
+        {
+            LOG_WRN("ao_datalogger_wait_stopped returned %d", rc);
+        }
+    }
+
     self->is_running = false;
     return 0;
 }
@@ -2422,6 +2601,16 @@ int composition_root_deinit(app_container_t *self)
             LOG_WRN("ao_storage_deinit returned %d", rc);
         }
         self->storage.initialized = false;
+    }
+
+    if (self->datalogger.initialized)
+    {
+        rc = ao_datalogger_deinit(&self->datalogger.ao);
+        if (rc != 0)
+        {
+            LOG_WRN("ao_datalogger_deinit returned %d", rc);
+        }
+        self->datalogger.initialized = false;
     }
 
     s_active_container = NULL;
@@ -2734,6 +2923,15 @@ ao_storage_sd_t *app_container_get_sd_storage_ao(app_container_t *self)
         return NULL;
     }
     return &self->sd_storage.ao;
+}
+
+ao_datalogger_t *app_container_get_datalogger_ao(app_container_t *self)
+{
+    if (self == NULL || !self->datalogger.initialized)
+    {
+        return NULL;
+    }
+    return &self->datalogger.ao;
 }
 
 const i_modbus_tcp_server_t *app_container_get_modbus_tcp_server(const app_container_t *self)

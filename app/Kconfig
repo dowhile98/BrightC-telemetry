@@ -113,3 +113,22 @@ config THERMAL_HOURLY_OUTDOOR_PROBES_COUNT
 
 endmenu
 
+menu "BrightC Historical Datalogger & Event Logging Subsystem"
+
+config DATALOGGER_BUFFER_SIZE
+	int "Datalogger sector staging buffer size in bytes"
+	default 512
+	range 256 4096
+	help
+	  Size of sector-aligned RAM staging buffer allocated per active stream.
+
+config DATALOGGER_FLUSH_INTERVAL_MS
+	int "Datalogger inactivity hold-off flush timeout in milliseconds"
+	default 5000
+	range 1000 60000
+	help
+	  Duration of inactivity before staging buffers are automatically flushed.
+
+endmenu
+
+
