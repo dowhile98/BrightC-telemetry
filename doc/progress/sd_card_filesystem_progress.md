@@ -17,49 +17,49 @@
 | **Zbus Notification** | `app/src/application/zbus/storage_channels.h`, `storage_channels.c` | 100% | `chan_storage_sd_status` channel broadcasting `sd_card_status_msg_t` |
 | **Active Object Coordinator** | `app/src/application/active_objects/ao_storage_sd.h`, `ao_storage_sd.c` | 100% | Dedicated coordinator thread, 200 ms poll/tick, automatic folder provisioning (`/SD:/history`, `/logs`, `/www`) |
 | **Application Facade** | `app/include/application/services/app_facade.h`, `app/src/application/services/app_facade.c` | 100% | Facade APIs (`app_facade_sd_get_status`, `app_facade_sd_mount`, `app_facade_sd_eject`) |
-| **Composition Root** | `app/src/infrastructure/di/composition_root.h`, `composition_root.c` | 100% | Subsystem 12 wiring, container getters, graceful start/stop lifecycle |
+| **Composition Root** | `app/src/infrastructure/di/composition_root.h`, `composition_root.c` | 100% | Subsystems 12, 13, and 14 wiring, container getters, graceful start/stop lifecycle |
 | **Shell Commands** | `app/src/presentation/shell/shell_brightc.c` | 100% | `sd status`, `sd mount`, `sd eject`, `sd ls [path]` |
-| **Unit Test Suite** | `tests/unit/storage_sd/` | 100% | 12 tests across `fake_storage_fs_suite` and `sd_lifecycle_sm_suite` running on `native_sim` |
-| **Datalogger Architecture** | `doc/architecture/historical_datalogger_storage_subsystem.md` | 100% | 3 daily CSV streams (`control`, `energy`, `thermal`), 2 daily logs (`system`, `alarms`), zero-copy HTTP streaming, 5s anti-chatter debounce |
-| **Datalogger Types** | `app/include/common/datalogger_types.h` | 100% | 64-byte packed `alarm_nv_record_t`, monotonic sequence counter, envelopes |
+| **HVAC Status Port Contract** | `app/include/interfaces/i_hvac_status.h` | 100% | Abstract port fat pointer (`i_hvac_status_t`) decoupling telemetry sampler from `ao_hvac` internals |
+| **Datalogger Types** | `app/include/common/datalogger_types.h` | 100% | Packed `datalogger_telemetry_record_t` with HVAC governing temperatures (`t_ctrl_g0`, `t_ctrl_g1`, `t_inj_mean`, `t_ret_mean`, `delta_t_clima`), 64-byte `alarm_nv_record_t`, envelopes |
 | **BKPSRAM Ring Buffer** | `app/src/domain/storage/bkpsram_ring.h/.c` | 100% | Pure C circular buffer in STM32 Backup SRAM with CRC-16-CCITT and corruption detection |
 | **BKPSRAM Hardware Adapter** | `app/include/interfaces/i_bkpsram.h`, `app/src/infrastructure/adapters/adapter_bkpsram_stm32.h/.c` | 100% | STM32H7 Backup SRAM peripheral driver (`0x38800000`, `RCC_AHB4ENR_BKPRAMEN`, `PWR_CR1_DBP`, `PWR_CR2_BREN`) |
 | **BKPSRAM Mock Fake** | `tests/mocks/fake_bkpsram.h/.c`, `tests/fakes/include/fake_bkpsram.h` | 100% | In-memory RAM adapter for host unit tests |
-| **Active Object Datalogger** | `app/src/application/active_objects/ao_datalogger.h/.c` | 100% | Canonical 5-phase lifecycle, 512-byte stream buffers (`_alarms.log`, `_system.log`, `boot_staging.csv`), BKPSRAM recovery on mount, low-watermark auto-pruning |
+| **Active Object Datalogger** | `app/src/application/active_objects/ao_datalogger.h/.c` | 100% | Canonical 5-phase lifecycle, 1024-byte staging buffers in `.nocache` RAM, 30s flush timer, FIFO queue serialization, BKPSRAM recovery on mount, 100 MB low-watermark auto-pruning |
 | **Operational System Channel** | `app/src/application/zbus/system_channels.h/.c` | 100% | `chan_system_event` broadcasting system operational and storage events |
-| **Datalogger Unit Test Suite** | `tests/unit/datalogger/` | 100% | 10 unit tests covering circular buffer integrity, wraparound, corruption recovery, AO lifecycle, buffer flush, and storage pruning |
+| **Datalogger Formatters** | `app/include/domain/datalogger/datalogger_formatters.h`, `app/src/domain/datalogger/datalogger_formatters.c` | 100% | Pure C99 ASCII CSV row formatters for unified 27-column telemetry, forensic alarm SOE, and system events |
+| **Telemetry Sampler Service** | `app/include/application/services/telemetry_sampler.h`, `app/src/application/services/telemetry_sampler.c` | 100% | Aggregates periodic multi-source telemetry via `i_hvac_status_t` (highest temps, mean coil temps, delta-T, unit states), thermal metrics ($Q_{sens}, Q_{lat}, COP, \dot{m}_{da}, T_{dew}$), 3-phase electrical energy ($V, I, P_{tot}, PF, kWh$), and active alarms |
+| **Datalogger Streamer Service** | `app/include/application/services/datalogger_streamer.h`, `app/src/application/services/datalogger_streamer.c` | 100% | 1024-byte chunk streamer with strict YYYY-MM-DD traversal sanitization and active-day AO flush synchronization |
+| **Unit Test Suite** | `tests/unit/datalogger/`, `tests/unit/storage_sd/` | 100% | 35 total unit tests (23 datalogger tests across 5 suites + 12 storage_sd tests across 2 suites) running on `native_sim` |
 
 ---
 
 ## 2. Pending Work
-- Telemetry periodic CSV stream sampling (`_control.csv`, `_energy.csv`, `_thermal.csv`) integration and zero-copy HTTP streamer per [`historical_datalogger_storage_subsystem.md`](../architecture/historical_datalogger_storage_subsystem.md).
+- None. Historical telemetry logging with HVAC governing temperature capture, Backup SRAM forensic recovery, and chunked HTTP streamer services are fully implemented and verified.
 
 ---
 
 ## 3. Changelog & Refactoring History
-- **2026-11-14**: Implemented Unified Device Event & Forensic Logging Subsystem on MicroSD and Backup SRAM:
+- **2026-11-14 (Stage 7 Complete)**: Resolved all Stage 6 Critic Findings & Integrated HVAC Governing Temperatures:
+  - Created Clean Architecture port contract `i_hvac_status.h` (`i_hvac_status_t`, `i_hvac_status_api_t`, `i_hvac_status_get`) decoupling telemetry sampler from `ao_hvac` internals.
+  - Expanded `datalogger_telemetry_record_t` and `DATALOGGER_CSV_HEADER_TELEMETRY` with governing temperatures: `t_ctrl_g0`, `t_ctrl_g1` (highest control temp per HVAC group), `t_inj_mean`, `t_ret_mean`, and `delta_t_clima`.
+  - Updated `telemetry_sampler.c` to ingest HVAC snapshot via `i_hvac_status_t` and compute mean coil supply/return and delta-T metrics.
+  - Sized staging buffers to 1024 bytes (`AO_DATALOGGER_BUFFER_SIZE`) in non-cacheable RAM (`.nocache`).
+  - Added bounds checking in `ao_datalogger.c` `append_to_stream()` to prevent buffer overflow.
+  - Serialized `ao_datalogger_flush()` via `DATALOGGER_EVT_FLUSH_TRIGGER` in message queue for strict FIFO execution.
+  - Harmonized file path generation (`%s/history/%04d/%02d/%s_telemetry.csv`) across both `ao_datalogger.c` and `datalogger_streamer.c`.
+  - Implemented reader/writer concurrency synchronization in `datalogger_streamer.c` (flushing and closing active file before streaming).
+  - Wired `chan_hvac_event` in `app_event_mediator.c` to forward HVAC state transitions to `ao_datalogger` as `DATALOGGER_EVT_HVAC_EVENT`.
+  - Updated unit test suites in `tests/unit/datalogger/` to verify all new fields and edge cases (23/23 passed, 100%).
+  - Verified clean target cross-compilation for `brightc-controllerv3` (STM32H743) (Flash: 27.33%, RAM: 58.26%, SRAM3: 50.00%).
+  - Synchronized `doc/architecture/historical_datalogger_storage_subsystem.md` with final code as the single source of truth.
+- **2026-11-14**: Implemented Historical Telemetry Datalogger, Sampler Aggregator, and Chunked Streamer:
+  - Added `LOG_STREAM_TELEMETRY`, `datalogger_telemetry_record_t`, and `DATALOGGER_EVT_TELEMETRY_SAMPLE` to `datalogger_types.h`.
+  - Implemented pure C99 CSV formatters `datalogger_formatters.h/.c` for telemetry, forensic alarms, and system events.
+  - Implemented `telemetry_sampler.h/.c` aggregating HVAC group/units, thermal metrics ($Q_{sens}, Q_{lat}, COP, \dot{m}_{da}, T_{dew}$), 3-phase electrical energy ($V, I, P_{tot}, PF, kWh$), and active alarm bitmask.
+  - Implemented zero-heap chunked streamer `datalogger_streamer.h/.c` with path traversal sanitization and active-day buffer flush synchronization.
+- **2026-11-14 (Initial)**: Implemented Unified Device Event & Forensic Logging Subsystem on MicroSD and Backup SRAM:
   - Created packed 64-byte `alarm_nv_record_t` and `datalogger_event_envelope_t` in `datalogger_types.h`.
   - Implemented pure C Backup SRAM circular buffer `bkpsram_ring.h/.c` with CRC-16-CCITT integrity checks.
   - Implemented abstract port contract `i_bkpsram.h` and STM32H7 hardware driver `adapter_bkpsram_stm32.h/.c`.
   - Developed Active Object coordinator `ao_datalogger.h/.c` with 512-byte stream buffers (`_alarms.log`, `_system.log`, `boot_staging.csv`), BKPSRAM crash forensic recovery, and 100 MB low-watermark prune.
-  - Configured `CONFIG_FS_FATFS_LFN_MODE_STACK=y` and `CONFIG_FS_FATFS_REENTRANT=y` for thread-safe concurrent FatFS access.
-  - Wired Subsystem 14 in `composition_root.h/.c` and hooked Zbus listeners for `chan_alarm_transition`, `chan_storage_sd_status`, and `chan_system_event`.
-  - Created unit test suite `tests/unit/datalogger/` (10/10 passed).
-  - Verified full test regression: 14/14 test suites passed (408/408 test cases, 100% pass rate).
-  - Target cross-compilation verified clean for `brightc-controllerv3` (Flash: 26.99%, RAM: 56.70%).
-- **2026-11-05**: Initial port contract `i_storage_fs.h` defined.
-- **2026-11-12**: Implemented full MicroSD Storage & FAT Filesystem Subsystem:
-  - Configured `CONFIG_DISK_ACCESS`, `CONFIG_DISK_DRIVER_SDMMC`, `CONFIG_FILE_SYSTEM`, `CONFIG_FAT_FILESYSTEM_ELM`, `CONFIG_FS_FATFS_LFN`.
-  - Created domain types and interface (`storage_fs_types.h`, `i_storage_fs.h`).
-  - Implemented in-memory fake (`tests/mocks/fake_storage_fs.h`, `tests/mocks/fake_storage_fs.c`).
-  - Implemented SD lifecycle state machine (`sd_lifecycle_sm.h`, `sd_lifecycle_sm.c`).
-  - Added unit test suite `tests/unit/storage_sd/` (100% pass on `native_sim`).
-  - Implemented Zephyr VFS / FatFS adapter (`adapter_storage_sd_zephyr.h`, `adapter_storage_sd_zephyr.c`) with atomic in-flight operation counter.
-  - Implemented Active Object coordinator `ao_storage_sd.h/.c` and Zbus channel `chan_storage_sd_status`.
-  - Integrated with `app_facade`, `composition_root`, and registered shell commands `sd status`, `sd mount`, `sd eject`, `sd ls`.
-  - Target firmware build verified for `brightc-controllerv3/stm32h743xx` (0 warnings, 0 errors).
-- **2026-11-12**: Authored authoritative specification for Historical Telemetry & Event-Driven Datalogger (`doc/architecture/historical_datalogger_storage_subsystem.md`):
-  - Defined 3 segregated daily CSV streams (`_control.csv`, `_energy.csv`, `_thermal.csv`) and 2 daily log streams (`_system.log`, `_alarms.log`).
-  - Aligned MicroSD standard directory layout under `/SD:/history/YYYY/MM/` and `/SD:/logs/YYYY/MM/`.
-  - Defined 5s anti-chatter debounce filter, 512-byte sector-aligned RAM staging buffers, and midnight UTC rollover protocol.
-  - Specified STM32H743 Zero-Copy HTTP Streaming engine for embedded web server (2 KB chunk DMA direct to socket).
+- **2026-11-12**: Implemented full MicroSD Storage & FAT Filesystem Subsystem.

@@ -149,6 +149,16 @@ static void on_hvac_event_cb(const struct zbus_channel *chan)
 
     LOG_INF("HVAC Event: grp=%u unit=%u type=%d ts=%u",
             ev->group_id, ev->unit_id, (int)ev->type, ev->timestamp_ms);
+
+    if (s_active_container != NULL && s_active_container->datalogger.initialized) {
+        datalogger_event_envelope_t envelope;
+        memset(&envelope, 0, sizeof(envelope));
+        envelope.type = DATALOGGER_EVT_HVAC_EVENT;
+        envelope.seq_id = datalogger_next_seq_id();
+        envelope.uptime_ms = (uint64_t)k_uptime_get();
+        envelope.payload.hvac = *ev;
+        (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &envelope);
+    }
 }
 
 ZBUS_LISTENER_DEFINE(lis_hvac_event_logger, on_hvac_event_cb);

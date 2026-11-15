@@ -9,11 +9,18 @@ target_sources(app PRIVATE
     src/main.c
     src/test_bkpsram_ring.c
     src/test_ao_datalogger.c
+    src/test_datalogger_domain.c
+    src/test_telemetry_sampler.c
+    src/test_datalogger_streamer.c
     ${APP_DIR}/app/src/domain/storage/bkpsram_ring.c
     ${APP_DIR}/app/src/domain/time/rtc_time_calc.c
+    ${APP_DIR}/app/src/domain/datalogger/datalogger_formatters.c
     ${APP_DIR}/app/src/application/active_objects/ao_datalogger.c
+    ${APP_DIR}/app/src/application/services/telemetry_sampler.c
+    ${APP_DIR}/app/src/application/services/datalogger_streamer.c
     ${APP_DIR}/tests/mocks/fake_bkpsram.c
     ${APP_DIR}/tests/mocks/fake_storage_fs.c
+    ${APP_DIR}/tests/mocks/fake_rtc.c
 )
 
 target_include_directories(app PRIVATE

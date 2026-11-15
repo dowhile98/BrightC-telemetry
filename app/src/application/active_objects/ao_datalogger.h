@@ -30,7 +30,8 @@ extern "C" {
 #define AO_DATALOGGER_PRIORITY          9
 #define AO_DATALOGGER_QUEUE_DEPTH       64U
 #define AO_DATALOGGER_SECTOR_SIZE       512U
-#define AO_DATALOGGER_FLUSH_INTERVAL_MS 5000U
+#define AO_DATALOGGER_BUFFER_SIZE       1024U
+#define AO_DATALOGGER_FLUSH_INTERVAL_MS 30000U
 #define AO_DATALOGGER_LOW_WATERMARK_MB  100U
 #define AO_DATALOGGER_MAX_BOOT_FILES    5U
 
@@ -64,6 +65,8 @@ typedef struct {
     uint32_t                boot_count;
 
     /* Dedicated 512-byte RAM stream buffers (sector-aligned, .nocache on hardware) */
+    uint8_t                *telemetry_buf;
+    size_t                  telemetry_buf_len;
     uint8_t                *alarms_buf;
     size_t                  alarms_buf_len;
     uint8_t                *system_buf;
@@ -72,6 +75,7 @@ typedef struct {
     size_t                  boot_buf_len;
 
     /* Active file handles */
+    void                   *telemetry_file;
     void                   *alarms_file;
     void                   *system_file;
     void                   *boot_file;

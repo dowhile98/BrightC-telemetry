@@ -1539,6 +1539,15 @@ int composition_root_init_sd_storage(app_container_t *self)
     return 0;
 }
 
+static int hvac_status_adapter_get(void *impl, hvac_status_msg_t *out)
+{
+    return ao_hvac_get_status((ao_hvac_t *)impl, out);
+}
+
+static const i_hvac_status_api_t s_hvac_status_api = {
+    .get_status = hvac_status_adapter_get,
+};
+
 int composition_root_init_datalogger(app_container_t *self)
 {
     if (self == NULL)
@@ -1585,6 +1594,24 @@ int composition_root_init_datalogger(app_container_t *self)
         LOG_ERR("Failed to initialize ao_datalogger: %d", rc);
         return rc;
     }
+
+    i_hvac_status_t hvac_port = {
+        .api = &s_hvac_status_api,
+        .impl = &self->hvac.ao,
+    };
+
+    (void)telemetry_sampler_init(&self->datalogger.sampler,
+                                 &self->datalogger.ao,
+                                 &self->thermal_energy.port,
+                                 &self->alarm.query_port,
+                                 &self->rtc.port,
+                                 &hvac_port,
+                                 TELEMETRY_SAMPLER_DEFAULT_INTERVAL_S);
+
+    (void)datalogger_streamer_init(&self->datalogger.streamer,
+                                  &self->sd_storage.port,
+                                  &self->datalogger.ao,
+                                  "/SD:");
 
     self->datalogger.initialized = true;
     return 0;

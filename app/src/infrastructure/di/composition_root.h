@@ -44,6 +44,7 @@
 #include "interfaces/i_wifi_control.h"
 #include "interfaces/i_alarm_query.h"
 #include "interfaces/i_thermal_energy.h"
+#include "interfaces/i_hvac_status.h"
 #include "interfaces/i_rtc.h"
 #include "common/rtc_types.h"
 #include "interfaces/i_storage_fs.h"
@@ -78,6 +79,8 @@
 #include "infrastructure/adapters/adapter_bkpsram_stm32.h"
 #include "interfaces/i_bkpsram.h"
 #include "application/active_objects/ao_datalogger.h"
+#include "application/services/telemetry_sampler.h"
+#include "application/services/datalogger_streamer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -246,6 +249,8 @@ struct app_container {
         i_bkpsram_t bkp_port;                          /**< Backup SRAM abstract port */
         adapter_bkpsram_stm32_t bkpsram_adapter;       /**< STM32H7 hardware adapter */
         ao_datalogger_t ao;                            /**< Datalogger Active Object */
+        telemetry_sampler_t sampler;                   /**< Periodic telemetry sampler aggregator */
+        datalogger_streamer_t streamer;                /**< Chunked historical HTTP streamer */
         struct k_msgq queue;                           /**< Event ingress message queue */
         uint8_t queue_buf[AO_DATALOGGER_QUEUE_DEPTH * sizeof(datalogger_event_envelope_t)];
         bool initialized;                              /**< Subsystem initialization status */

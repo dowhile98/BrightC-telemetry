@@ -218,3 +218,143 @@ ZTEST(ao_datalogger_suite, test_system_event_boot_staging_and_time_sync)
     (void)ao_datalogger_stop(&s_datalogger);
     (void)ao_datalogger_wait_stopped(&s_datalogger, K_MSEC(1000));
 }
+
+ZTEST(ao_datalogger_suite, test_telemetry_stream_logging)
+{
+    zassert_equal(ao_datalogger_start(&s_datalogger), 0);
+
+    /* Mount SD storage */
+    datalogger_event_envelope_t mount_evt = {
+        .type = DATALOGGER_EVT_STORAGE_STATUS,
+        .payload.storage_status = STORAGE_FS_CARD_MOUNTED,
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &mount_evt), 0);
+
+    /* Set date */
+    zassert_equal(ao_datalogger_set_date(&s_datalogger, "2026-11-12"), 0);
+    k_sleep(K_MSEC(20));
+
+    /* Post unified telemetry sample */
+    datalogger_event_envelope_t tel_evt = {
+        .type = DATALOGGER_EVT_TELEMETRY_SAMPLE,
+        .seq_id = 10,
+        .uptime_ms = 120000,
+        .payload.telemetry = {
+            .epoch_s = 1794474862,
+            .uptime_ms = 120000,
+            .hvac_mode = 1,
+            .active_unit_mask = 0x05,
+            .t_ctrl_avg = 23.50f,
+            .t_ctrl_max = 24.10f,
+            .t_ctrl_min = 22.80f,
+            .v_a = 220.0f,
+            .v_b = 221.0f,
+            .v_c = 219.5f,
+            .i_a = 12.30f,
+            .i_b = 11.90f,
+            .i_c = 12.10f,
+            .p_tot_kw = 7.500f,
+            .power_factor = 0.96f,
+            .energy_kwh = 3450.25f,
+            .q_sens_kw = 10.50f,
+            .q_lat_kw = 1.80f,
+            .cop_real = 3.40f,
+            .airflow_kg_s = 0.750f,
+            .t_dew_c = 13.50f,
+            .alarm_bits = 0x00000000
+        }
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &tel_evt), 0);
+    k_sleep(K_MSEC(20));
+
+    /* Flush to commit staging buffer to fake FS */
+    zassert_equal(ao_datalogger_flush(&s_datalogger), 0);
+    k_sleep(K_MSEC(50));
+
+    ao_datalogger_stats_t stats;
+    zassert_equal(ao_datalogger_get_stats(&s_datalogger, &stats), 0);
+    zassert_true(stats.events_written >= 1);
+
+    /* Verify file creation and content in fake filesystem */
+    fake_storage_fs_state_t *st = fake_storage_fs_get_state();
+    bool found_file = false;
+    for (size_t i = 0; i < FAKE_STORAGE_FS_MAX_NODES; i++) {
+        if (st->nodes[i].exists && strstr(st->nodes[i].path, "2026-11-12_telemetry.csv") != NULL) {
+            found_file = true;
+            zassert_true(st->nodes[i].size > 0);
+            /* Check header and row presence */
+            zassert_not_null(strstr((const char *)st->nodes[i].data, "# schema_version=2;source=BrightC_V3;type=periodic_telemetry"));
+            zassert_not_null(strstr((const char *)st->nodes[i].data, "23.50,24.10,22.80"));
+            break;
+        }
+    }
+    zassert_true(found_file, "Telemetry file not found in fake storage nodes!");
+
+    (void)ao_datalogger_stop(&s_datalogger);
+    (void)ao_datalogger_wait_stopped(&s_datalogger, K_MSEC(1000));
+}
+
+ZTEST(ao_datalogger_suite, test_telemetry_stream_date_rollover)
+{
+    zassert_equal(ao_datalogger_start(&s_datalogger), 0);
+
+    datalogger_event_envelope_t mount_evt = {
+        .type = DATALOGGER_EVT_STORAGE_STATUS,
+        .payload.storage_status = STORAGE_FS_CARD_MOUNTED,
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &mount_evt), 0);
+
+    /* Day 1 */
+    zassert_equal(ao_datalogger_set_date(&s_datalogger, "2026-11-12"), 0);
+    k_sleep(K_MSEC(20));
+
+    datalogger_event_envelope_t tel_evt1 = {
+        .type = DATALOGGER_EVT_TELEMETRY_SAMPLE,
+        .seq_id = 1,
+        .uptime_ms = 1000,
+        .payload.telemetry = {
+            .epoch_s = 1794474862,
+            .t_ctrl_avg = 20.0f
+        }
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &tel_evt1), 0);
+    zassert_equal(ao_datalogger_flush(&s_datalogger), 0);
+    k_sleep(K_MSEC(50));
+
+    /* Day 2 rollover */
+    zassert_equal(ao_datalogger_set_date(&s_datalogger, "2026-11-13"), 0);
+    k_sleep(K_MSEC(20));
+
+    datalogger_event_envelope_t tel_evt2 = {
+        .type = DATALOGGER_EVT_TELEMETRY_SAMPLE,
+        .seq_id = 2,
+        .uptime_ms = 86401000,
+        .payload.telemetry = {
+            .epoch_s = 1794561262,
+            .t_ctrl_avg = 25.0f
+        }
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &tel_evt2), 0);
+    zassert_equal(ao_datalogger_flush(&s_datalogger), 0);
+    k_sleep(K_MSEC(50));
+
+    fake_storage_fs_state_t *st = fake_storage_fs_get_state();
+    bool found_day1 = false;
+    bool found_day2 = false;
+
+    for (size_t i = 0; i < FAKE_STORAGE_FS_MAX_NODES; i++) {
+        if (st->nodes[i].exists) {
+            if (strstr(st->nodes[i].path, "2026/11/2026-11-12_telemetry.csv") != NULL) {
+                found_day1 = true;
+            }
+            if (strstr(st->nodes[i].path, "2026/11/2026-11-13_telemetry.csv") != NULL) {
+                found_day2 = true;
+            }
+        }
+    }
+    zassert_true(found_day1, "Day 1 telemetry file not found!");
+    zassert_true(found_day2, "Day 2 telemetry file not found!");
+
+    (void)ao_datalogger_stop(&s_datalogger);
+    (void)ao_datalogger_wait_stopped(&s_datalogger, K_MSEC(1000));
+}

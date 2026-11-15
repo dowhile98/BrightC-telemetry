@@ -118,6 +118,9 @@ int main(void)
 	while (true)
 	{
 		k_sleep(K_MSEC(1000U));
+		if (g_app.datalogger.initialized) {
+			(void)telemetry_sampler_tick(&g_app.datalogger.sampler, k_uptime_get() / 1000LL);
+		}
 	}
 	return 0;
 }
