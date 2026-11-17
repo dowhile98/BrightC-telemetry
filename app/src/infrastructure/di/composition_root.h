@@ -81,6 +81,10 @@
 #include "application/active_objects/ao_datalogger.h"
 #include "application/services/telemetry_sampler.h"
 #include "application/services/datalogger_streamer.h"
+#if defined(CONFIG_SNMP_AGENT)
+#include <snmp/snmp.h>
+#include "infrastructure/adapters/adapter_snmp_traps.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -256,11 +260,23 @@ struct app_container {
         bool initialized;                              /**< Subsystem initialization status */
     } datalogger;
 
+    /* Subsystem 15: SNMP Agent Subsystem */
+    struct {
+        config_snmp_t config;                          /**< Persistent SNMP configuration */
+#if defined(CONFIG_SNMP_AGENT)
+        struct snmp_agent agent;                       /**< zephyr-snmp agent instance */
+        adapter_snmp_traps_t trap_adapter;             /**< Enterprise alarm trap adapter */
+#endif
+        bool initialized;                              /**< Subsystem initialization status */
+        bool running;                                  /**< Agent running state */
+    } snmp;
+
     /* Subsystem 7: RAM Configuration Domains */
     config_device_t device_cfg;
     config_calibration_t calibration_cfg;
     config_thermal_site_t thermal_site_cfg;
     config_thermal_baseline_t thermal_baseline_cfg;
+    energy_reading_t latest_energy_reading;
 
     /* Container-level status */
     bool is_initialized;                               /**< True when container is initialized */
@@ -590,6 +606,32 @@ int app_container_set_thermal_site_config(app_container_t *self, const config_th
  */
 int app_container_set_thermal_baseline_config(app_container_t *self, const config_thermal_baseline_t *cfg);
 
+/**
+ * @brief Retrieve active SNMP agent operational configuration from RAM.
+ */
+static inline const config_snmp_t *app_container_get_snmp_config(const app_container_t *self)
+{
+    return (self != NULL) ? &self->snmp.config : NULL;
+}
+
+/**
+ * @brief Dynamically update SNMP agent operational configuration at runtime.
+ *
+ * @param[in,out] self Container instance.
+ * @param[in]     cfg  New SNMP configuration.
+ * @return 0 on success, negative errno on error.
+ */
+int app_container_set_snmp_config(app_container_t *self, const config_snmp_t *cfg);
+
+/**
+ * @brief Retrieve latest 3-phase AC electrical energy reading.
+ *
+ * @param[in]  self Container instance.
+ * @param[out] out_reading Destination energy reading structure.
+ * @return 0 on success, -ENODATA if not yet acquired, -EINVAL on invalid arguments.
+ */
+int app_container_get_energy_reading(const app_container_t *self, energy_reading_t *out_reading);
+
 /* =========================================================================
  * Modular Subsystem Initializers
  * ========================================================================= */
@@ -598,6 +640,9 @@ int composition_root_init_modbus(app_container_t *self);
 int composition_root_init_storage(app_container_t *self);
 int composition_root_init_network(app_container_t *self);
 int composition_root_init_indicators(app_container_t *self);
+int composition_root_init_snmp(app_container_t *self);
+int composition_root_start_snmp(app_container_t *self);
+int composition_root_stop_snmp(app_container_t *self);
 int composition_root_init_digital_inputs(app_container_t *self);
 int composition_root_init_hvac(app_container_t *self);
 int composition_root_init_thermal_energy(app_container_t *self);

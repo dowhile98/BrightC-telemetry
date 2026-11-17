@@ -83,6 +83,14 @@ target_sources(app PRIVATE
 if(CONFIG_SHELL)
     target_sources(app PRIVATE
         src/presentation/shell/shell_brightc.c
+        src/presentation/shell/shell_snmp.c
+    )
+endif()
+
+if(CONFIG_SNMP_AGENT)
+    target_sources(app PRIVATE
+        src/infrastructure/adapters/adapter_snmp_traps.c
+        src/infrastructure/adapters/adapter_snmp_telemetry.c
     )
 endif()
 

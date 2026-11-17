@@ -27,6 +27,7 @@ static const char *s_domain_keys[CONFIG_DOMAIN_MAX] = {
     [CONFIG_DOMAIN_CALIBRATION]      = "calib",
     [CONFIG_DOMAIN_THERMAL_SITE]     = "thm_site",
     [CONFIG_DOMAIN_THERMAL_BASELINE] = "thm_base",
+    [CONFIG_DOMAIN_SNMP]             = "snmp",
 };
 
 static int mconf_err_to_errno(mconf_err_t err)

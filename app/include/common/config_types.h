@@ -39,7 +39,8 @@ typedef enum {
     CONFIG_DOMAIN_CALIBRATION,      /**< Analog input & PT100 temperature calibration offsets */
     CONFIG_DOMAIN_THERMAL_SITE,     /**< Site thermal & HVAC topology configuration */
     CONFIG_DOMAIN_THERMAL_BASELINE, /**< Machine-learned steady-state baseline signatures */
-    CONFIG_DOMAIN_MAX               /**< Upper limit of active storage domains (7) */
+    CONFIG_DOMAIN_SNMP,             /**< SNMPv1/v2c agent operational configuration & trap targets */
+    CONFIG_DOMAIN_MAX               /**< Upper limit of active storage domains (8) */
 } config_domain_t;
 
 /**
@@ -130,6 +131,50 @@ typedef struct {
 
 _Static_assert(sizeof(config_thermal_baseline_t) == 216U,
                "config_thermal_baseline_t must be exactly 216 bytes");
+
+#define CONFIG_SNMP_MAX_TRAP_DESTS 4U
+#define CONFIG_SNMP_COMMUNITY_MAX_LEN 32U
+#define CONFIG_SNMP_SYS_STR_MAX_LEN 64U
+
+#define CONFIG_SNMP_VERSION_MASK_V1  (1U << 0)
+#define CONFIG_SNMP_VERSION_MASK_V2C (1U << 1)
+
+/**
+ * @brief SNMP Trap Destination configuration entry.
+ */
+typedef struct {
+    char     target_ip[16];   /**< 16 B: null-terminated IPv4 string, e.g., "192.168.1.50" */
+    uint16_t port;            /**< 2 B: destination UDP port (default 162) */
+    uint8_t  enabled;         /**< 1 B: 1 if active, 0 if disabled */
+    uint8_t  reserved;        /**< 1 B: natural alignment */
+} config_snmp_trap_dest_t;
+
+_Static_assert(sizeof(config_snmp_trap_dest_t) == 20U,
+               "config_snmp_trap_dest_t must be exactly 20 bytes");
+
+/**
+ * @brief SNMP Agent operational configuration persisted in EEPROM (Domain 7).
+ *
+ * Persisted in ping-pong slot at 0x1400 (512 B capacity, payload exactly 412 B).
+ */
+typedef struct {
+    uint16_t                schema_version;                          /**< 2 B: Schema version (1) */
+    uint8_t                 enabled;                                 /**< 1 B: Master enable (1=enabled, 0=disabled) */
+    uint8_t                 version_mask;                            /**< 1 B: Bitmask: bit 0: v1, bit 1: v2c */
+    uint16_t                listen_port;                             /**< 2 B: Default 161 */
+    uint16_t                flags;                                   /**< 2 B: Reserved flags / bitfield */
+    char                    read_community[CONFIG_SNMP_COMMUNITY_MAX_LEN];  /**< 32 B: Default "public" */
+    char                    write_community[CONFIG_SNMP_COMMUNITY_MAX_LEN]; /**< 32 B: Default "private" */
+    char                    sys_name[CONFIG_SNMP_SYS_STR_MAX_LEN];          /**< 64 B */
+    char                    sys_contact[CONFIG_SNMP_SYS_STR_MAX_LEN];       /**< 64 B */
+    char                    sys_location[CONFIG_SNMP_SYS_STR_MAX_LEN];      /**< 64 B */
+    config_snmp_trap_dest_t trap_dests[CONFIG_SNMP_MAX_TRAP_DESTS];         /**< 4 * 20 = 80 B */
+    uint32_t                engine_boots;                            /**< 4 B: Monotonic engine boot counter */
+    uint8_t                 reserved[64];                            /**< 64 B: Future alignment/expansion */
+} config_snmp_t;
+
+_Static_assert(sizeof(config_snmp_t) == 412U,
+               "config_snmp_t must be exactly 412 bytes");
 
 /* ========================================================================= */
 /* Pure Validation & Layout Functions                                        */
@@ -228,6 +273,11 @@ static inline int config_domain_get_layout(config_domain_t domain,
         base = EEPROM_ADDR_THERMAL_BASELINE;
         total = EEPROM_SIZE_THERMAL_BASELINE;
         slot = EEPROM_SLOT_THERMAL_BASELINE;
+        break;
+    case CONFIG_DOMAIN_SNMP:
+        base = EEPROM_ADDR_SNMP;
+        total = EEPROM_SIZE_SNMP;
+        slot = EEPROM_SLOT_SNMP;
         break;
     default:
         return -EINVAL;
@@ -340,6 +390,43 @@ static inline bool config_thermal_baseline_is_valid(const config_thermal_baselin
     }
     if (cfg->training_hours_accumulated < 168U) {
         return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Validate SNMP agent operational configuration parameters.
+ *
+ * @param cfg Configuration structure to validate.
+ * @return true if all parameters adhere to sanity bounds, false otherwise.
+ */
+static inline bool config_snmp_is_valid(const config_snmp_t *cfg)
+{
+    if (cfg == NULL) {
+        return false;
+    }
+    if (cfg->schema_version != 1U) {
+        return false;
+    }
+    if (cfg->enabled > 1U) {
+        return false;
+    }
+    if ((cfg->version_mask & (CONFIG_SNMP_VERSION_MASK_V1 | CONFIG_SNMP_VERSION_MASK_V2C)) == 0U) {
+        return false;
+    }
+    if (cfg->listen_port == 0U) {
+        return false;
+    }
+    if (cfg->read_community[0] == '\0') {
+        return false;
+    }
+    for (uint8_t i = 0U; i < CONFIG_SNMP_MAX_TRAP_DESTS; i++) {
+        if (cfg->trap_dests[i].enabled > 1U) {
+            return false;
+        }
+        if (cfg->trap_dests[i].enabled == 1U && cfg->trap_dests[i].port == 0U) {
+            return false;
+        }
     }
     return true;
 }

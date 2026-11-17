@@ -22,6 +22,10 @@
 #include "domain/services/sensor_matrix_mapper.h"
 #include "infrastructure/adapters/adapter_di_gpio.h"
 #include "infrastructure/di/app_event_mediator.h"
+#if defined(CONFIG_SNMP_AGENT)
+#include "infrastructure/adapters/adapter_snmp_traps.h"
+#include "infrastructure/adapters/adapter_snmp_telemetry.h"
+#endif
 
 #include <errno.h>
 #include <stdio.h>
@@ -186,6 +190,18 @@ static int storage_provider_thermal_baseline(void *ctx, config_domain_t domain,
     }
     return config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &self->thermal_baseline_cfg,
                                 sizeof(self->thermal_baseline_cfg), out_buf, max_size, out_size);
+}
+
+static int storage_provider_snmp(void *ctx, config_domain_t domain,
+                                 void *out_buf, size_t max_size, size_t *out_size)
+{
+    app_container_t *self = (app_container_t *)ctx;
+    if (domain != CONFIG_DOMAIN_SNMP || out_buf == NULL || self == NULL)
+    {
+        return -EINVAL;
+    }
+    return config_envelope_pack(CONFIG_DOMAIN_SNMP, &self->snmp.config,
+                                sizeof(self->snmp.config), out_buf, max_size, out_size);
 }
 
 
@@ -363,10 +379,9 @@ int composition_root_init_modbus(app_container_t *self)
     }
 
     modbus_slave_descriptor_t ws_desc;
-    if ((self->hvac.config.total_units > HARDWARE_LOCAL_HVAC_UNITS_COUNT) &&
-        (modbus_registry_find_by_type(&self->modbus.registry_impl,
-                                      MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
-                                      &ws_desc) == 0))
+    if (modbus_registry_find_by_type(&self->modbus.registry_impl,
+                                     MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+                                     &ws_desc) == 0)
     {
         uint8_t waveshare_bus = ws_desc.bus_id;
         if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
@@ -473,6 +488,7 @@ int composition_root_init_storage(app_container_t *self)
 #endif
     self->thermal_site_cfg = *default_config_get_thermal_site_cfg();
     self->thermal_baseline_cfg = *default_config_get_thermal_baseline_cfg();
+    self->snmp.config = *default_config_get_snmp_cfg();
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
@@ -626,6 +642,42 @@ int composition_root_init_storage(app_container_t *self)
                     if (save_rc != 0)
                     {
                         BOOT_ERR("CFG THERMAL_BASELINE default persist failed: rc=%d", save_rc);
+                    }
+                }
+            }
+        }
+
+        /* 6. SNMP */
+        {
+            uint8_t snmp_buf[sizeof(config_envelope_header_t) + sizeof(config_snmp_t)];
+            size_t snmp_size = 0U;
+            config_snmp_t snmp_cfg;
+            memset(&snmp_cfg, 0, sizeof(snmp_cfg));
+            size_t snmp_unpacked = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_SNMP,
+                                      snmp_buf, sizeof(snmp_buf), &snmp_size) == 0 &&
+                config_envelope_unpack(CONFIG_DOMAIN_SNMP, snmp_buf, snmp_size,
+                                       &snmp_cfg, sizeof(snmp_cfg), &snmp_unpacked) == 0 &&
+                snmp_unpacked == sizeof(config_snmp_t) &&
+                config_snmp_is_valid(&snmp_cfg))
+            {
+                self->snmp.config = snmp_cfg;
+                CFG_INF("SNMP loaded from EEPROM; enabled=%d, port=%u",
+                        self->snmp.config.enabled, (unsigned int)self->snmp.config.listen_port);
+            }
+            else
+            {
+                CFG_WRN("SNMP record absent or invalid; applying compiled defaults and persisting them");
+                size_t pack_len = 0U;
+                if (config_envelope_pack(CONFIG_DOMAIN_SNMP, &self->snmp.config,
+                                         sizeof(self->snmp.config), snmp_buf,
+                                         sizeof(snmp_buf), &pack_len) == 0)
+                {
+                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_SNMP,
+                                                        snmp_buf, pack_len);
+                    if (save_rc != 0)
+                    {
+                        BOOT_ERR("CFG SNMP default persist failed: rc=%d", save_rc);
                     }
                 }
             }
@@ -1112,6 +1164,8 @@ static void on_modbus_jsy_mk339_reading(void *ctx, uint8_t device_id, const ener
         return;
     }
 
+    self->latest_energy_reading = *reading;
+
     if (self->alarm.initialized)
     {
         adapter_alarm_detector_volt_process_reading(&self->alarm.det_volt, reading);
@@ -1200,6 +1254,13 @@ int composition_root_wire(app_container_t *self)
         if (reg_err != 0)
         {
             LOG_WRN("failed to register storage provider for THERMAL_BASELINE: %d", reg_err);
+        }
+
+        reg_err = ao_storage_register_provider(&self->storage.ao, CONFIG_DOMAIN_SNMP,
+                                               storage_provider_snmp, self);
+        if (reg_err != 0)
+        {
+            LOG_WRN("failed to register storage provider for SNMP: %d", reg_err);
         }
 
     }
@@ -1691,6 +1752,137 @@ i_thermal_energy_t composition_root_get_thermal_energy_port(app_container_t *sel
     return self->thermal_energy.port;
 }
 
+int composition_root_init_snmp(app_container_t *self)
+{
+#if defined(CONFIG_SNMP_AGENT)
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (self->snmp.initialized)
+    {
+        return 0;
+    }
+
+    struct snmp_agent_cfg agent_cfg = {
+        .port = self->snmp.config.listen_port,
+        .iface = NULL,
+        .read_community = self->snmp.config.read_community,
+        .write_community = self->snmp.config.write_community,
+        .sys_name = self->snmp.config.sys_name,
+        .sys_contact = self->snmp.config.sys_contact,
+        .sys_location = self->snmp.config.sys_location,
+        .sys_descr = "BrightC V3 Industrial HVAC Controller",
+        .engine_boots = self->snmp.config.engine_boots,
+        .user_data = self,
+    };
+
+    int err = snmp_agent_init(&self->snmp.agent, &agent_cfg);
+    if (err != 0)
+    {
+        LOG_ERR("Failed to initialize snmp_agent: %d", err);
+        return err;
+    }
+
+    /* Configure trap destinations */
+    snmp_trap_clear_destinations(&self->snmp.agent);
+    for (uint8_t i = 0; i < CONFIG_SNMP_MAX_TRAP_DESTS; i++)
+    {
+        if (self->snmp.config.trap_dests[i].enabled &&
+            self->snmp.config.trap_dests[i].target_ip[0] != '\0')
+        {
+            snmp_trap_add_destination_port(&self->snmp.agent,
+                                           self->snmp.config.trap_dests[i].target_ip,
+                                           self->snmp.config.trap_dests[i].port);
+        }
+    }
+
+    /* Initialize enterprise alarm trap adapter */
+    i_alarm_query_t query_port = {0};
+    if (self->alarm.initialized)
+    {
+        query_port = self->alarm.query_port;
+    }
+    err = adapter_snmp_traps_init(&self->snmp.trap_adapter, &self->snmp.agent, query_port);
+    if (err != 0)
+    {
+        LOG_WRN("Failed to initialize adapter_snmp_traps: %d", err);
+    }
+
+    /* Initialize and register temperature and energy MIB telemetry */
+    err = adapter_snmp_telemetry_init(&self->snmp.agent);
+    if (err != 0)
+    {
+        LOG_WRN("Failed to initialize adapter_snmp_telemetry: %d", err);
+    }
+
+    self->snmp.initialized = true;
+    return 0;
+#else
+    ARG_UNUSED(self);
+    return 0;
+#endif
+}
+
+int composition_root_start_snmp(app_container_t *self)
+{
+#if defined(CONFIG_SNMP_AGENT)
+    if (self == NULL || !self->snmp.initialized)
+    {
+        return -EINVAL;
+    }
+
+    if (!self->snmp.config.enabled)
+    {
+        BOOT_INF("SNMP agent disabled in persistent configuration; not starting listener");
+        return 0;
+    }
+
+    if (self->snmp.running)
+    {
+        return 0;
+    }
+
+    self->snmp.agent.port = self->snmp.config.listen_port;
+    int rc = snmp_agent_start(&self->snmp.agent);
+    if (rc == 0)
+    {
+        self->snmp.running = true;
+        BOOT_INF("SNMP agent started on UDP port %u", (unsigned int)self->snmp.config.listen_port);
+    }
+    else
+    {
+        BOOT_ERR("Failed to start SNMP agent: %d", rc);
+    }
+    return rc;
+#else
+    ARG_UNUSED(self);
+    return 0;
+#endif
+}
+
+int composition_root_stop_snmp(app_container_t *self)
+{
+#if defined(CONFIG_SNMP_AGENT)
+    if (self == NULL || !self->snmp.initialized)
+    {
+        return -EINVAL;
+    }
+
+    if (self->snmp.running)
+    {
+        (void)snmp_agent_stop(&self->snmp.agent);
+        self->snmp.running = false;
+        BOOT_INF("SNMP agent stopped");
+    }
+    return 0;
+#else
+    ARG_UNUSED(self);
+    return 0;
+#endif
+}
+
 
 
 int composition_root_init(app_container_t *self)
@@ -1829,6 +2021,13 @@ int composition_root_init(app_container_t *self)
     {
         BOOT_ERR("phase 13/13 failed: Datalogger rc=%d", err);
         return err;
+    }
+
+    BOOT_INF("phase 14/14: initializing SNMP agent");
+    err = composition_root_init_snmp(self);
+    if (err != 0)
+    {
+        BOOT_WRN("phase 14/14 failed: SNMP agent rc=%d (continuing boot)", err);
     }
 
     BOOT_INF("wiring cross-subsystem callbacks, storage providers and ports");
@@ -1994,6 +2193,11 @@ int composition_root_start(app_container_t *self)
             LOG_ERR("Datalogger active object start failed (%d)", err);
             return err;
         }
+    }
+
+    if (self->snmp.initialized)
+    {
+        (void)composition_root_start_snmp(self);
     }
 
     self->is_running = true;
@@ -2193,6 +2397,12 @@ int composition_root_stop(app_container_t *self)
         {
             LOG_WRN("ao_datalogger_wait_stopped returned %d", rc);
         }
+    }
+
+    /* 10. Stop SNMP Agent */
+    if (self->snmp.initialized)
+    {
+        (void)composition_root_stop_snmp(self);
     }
 
     self->is_running = false;
@@ -2826,4 +3036,93 @@ int app_container_set_thermal_baseline_config(app_container_t *self, const confi
     }
 
     return 0;
+}
+
+int app_container_set_snmp_config(app_container_t *self, const config_snmp_t *cfg)
+{
+    if (self == NULL || cfg == NULL)
+    {
+        return -EINVAL;
+    }
+
+    if (!config_snmp_is_valid(cfg))
+    {
+        return -EINVAL;
+    }
+
+    self->snmp.config = *cfg;
+
+#if defined(CONFIG_SNMP_AGENT)
+    bool port_changed = (self->snmp.config.listen_port != cfg->listen_port);
+    bool enable_changed = (self->snmp.config.enabled != cfg->enabled);
+
+    if (self->snmp.initialized)
+    {
+        /* Hot-reload communities */
+        (void)snmp_agent_set_read_community(&self->snmp.agent, cfg->read_community);
+        (void)snmp_agent_set_write_community(&self->snmp.agent, cfg->write_community);
+
+        /* Hot-reload identity strings */
+        k_mutex_lock(&self->snmp.agent.lock, K_FOREVER);
+        strncpy(self->snmp.agent.sys_name, cfg->sys_name, sizeof(self->snmp.agent.sys_name) - 1);
+        self->snmp.agent.sys_name[sizeof(self->snmp.agent.sys_name) - 1] = '\0';
+        strncpy(self->snmp.agent.sys_contact, cfg->sys_contact, sizeof(self->snmp.agent.sys_contact) - 1);
+        self->snmp.agent.sys_contact[sizeof(self->snmp.agent.sys_contact) - 1] = '\0';
+        strncpy(self->snmp.agent.sys_location, cfg->sys_location, sizeof(self->snmp.agent.sys_location) - 1);
+        self->snmp.agent.sys_location[sizeof(self->snmp.agent.sys_location) - 1] = '\0';
+        k_mutex_unlock(&self->snmp.agent.lock);
+
+        /* Hot-reload trap destinations */
+        snmp_trap_clear_destinations(&self->snmp.agent);
+        for (uint8_t i = 0; i < CONFIG_SNMP_MAX_TRAP_DESTS; i++)
+        {
+            if (cfg->trap_dests[i].enabled && cfg->trap_dests[i].target_ip[0] != '\0')
+            {
+                snmp_trap_add_destination_port(&self->snmp.agent,
+                                               cfg->trap_dests[i].target_ip,
+                                               cfg->trap_dests[i].port);
+            }
+        }
+
+        /* If port changed or agent disabled, stop if currently running */
+        if (self->snmp.running && (port_changed || (enable_changed && !cfg->enabled)))
+        {
+            (void)snmp_agent_stop(&self->snmp.agent);
+            self->snmp.running = false;
+        }
+
+        /* If agent should be running, start it */
+        if (cfg->enabled && !self->snmp.running)
+        {
+            self->snmp.agent.port = cfg->listen_port;
+            int rc = snmp_agent_start(&self->snmp.agent);
+            if (rc == 0)
+            {
+                self->snmp.running = true;
+            }
+        }
+    }
+#endif
+
+    if (self->storage.initialized)
+    {
+        int rc = ao_storage_mark_dirty(&self->storage.ao, CONFIG_DOMAIN_SNMP, 0U);
+        if (rc != 0)
+        {
+            LOG_WRN("failed to mark storage dirty for SNMP: %d", rc);
+        }
+    }
+
+    return 0;
+}
+
+int app_container_get_energy_reading(const app_container_t *self, energy_reading_t *out_reading)
+{
+    if (self == NULL || out_reading == NULL)
+    {
+        return -EINVAL;
+    }
+
+    *out_reading = self->latest_energy_reading;
+    return self->latest_energy_reading.is_valid ? 0 : -ENODATA;
 }

@@ -663,6 +663,14 @@ int app_facade_sensor_set_calibration(uint8_t sensor_idx, int16_t offset_x10)
     return 0;
 }
 
+int app_facade_energy_get_reading(energy_reading_t *out_reading)
+{
+    if (s_app == NULL || out_reading == NULL) {
+        return -EINVAL;
+    }
+    return app_container_get_energy_reading(s_app, out_reading);
+}
+
 /* =========================================================================
  * Digital Input & Telemetry Service APIs
  * ========================================================================= */
@@ -1634,6 +1642,175 @@ const i_storage_fs_t *app_facade_get_sd_storage(void)
     }
 
     return app_container_get_sd_storage(s_app);
+}
+
+/* =========================================================================
+ * SNMP Agent Service Facade Implementations
+ * ========================================================================= */
+
+int app_facade_snmp_get_config(config_snmp_t *out_cfg)
+{
+    if (s_app == NULL || out_cfg == NULL) {
+        return -EINVAL;
+    }
+    const config_snmp_t *cfg = app_container_get_snmp_config(s_app);
+    if (cfg == NULL) {
+        return -ENODEV;
+    }
+    *out_cfg = *cfg;
+    return 0;
+}
+
+int app_facade_snmp_set_config(const config_snmp_t *cfg)
+{
+    if (s_app == NULL || cfg == NULL) {
+        return -EINVAL;
+    }
+    return app_container_set_snmp_config(s_app, cfg);
+}
+
+int app_facade_snmp_set_community(const char *read_comm, const char *write_comm)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+    config_snmp_t cfg = s_app->snmp.config;
+    if (read_comm != NULL) {
+        if (read_comm[0] == '\0' || strlen(read_comm) >= sizeof(cfg.read_community)) {
+            return -EINVAL;
+        }
+        strncpy(cfg.read_community, read_comm, sizeof(cfg.read_community) - 1);
+        cfg.read_community[sizeof(cfg.read_community) - 1] = '\0';
+    }
+    if (write_comm != NULL) {
+        if (strlen(write_comm) >= sizeof(cfg.write_community)) {
+            return -EINVAL;
+        }
+        strncpy(cfg.write_community, write_comm, sizeof(cfg.write_community) - 1);
+        cfg.write_community[sizeof(cfg.write_community) - 1] = '\0';
+    }
+    return app_container_set_snmp_config(s_app, &cfg);
+}
+
+int app_facade_snmp_set_trap_dest(uint8_t slot_idx, const char *target_ip, uint16_t port, uint8_t enabled)
+{
+    if (s_app == NULL || slot_idx >= CONFIG_SNMP_MAX_TRAP_DESTS) {
+        return -EINVAL;
+    }
+    config_snmp_t cfg = s_app->snmp.config;
+    cfg.trap_dests[slot_idx].enabled = enabled ? 1U : 0U;
+    if (port > 0) {
+        cfg.trap_dests[slot_idx].port = port;
+    }
+    if (target_ip != NULL) {
+        strncpy(cfg.trap_dests[slot_idx].target_ip, target_ip, sizeof(cfg.trap_dests[slot_idx].target_ip) - 1);
+        cfg.trap_dests[slot_idx].target_ip[sizeof(cfg.trap_dests[slot_idx].target_ip) - 1] = '\0';
+    }
+    return app_container_set_snmp_config(s_app, &cfg);
+}
+
+int app_facade_snmp_set_enabled(uint8_t enabled)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+    config_snmp_t cfg = s_app->snmp.config;
+    cfg.enabled = enabled ? 1U : 0U;
+    return app_container_set_snmp_config(s_app, &cfg);
+}
+
+int app_facade_snmp_set_port(uint16_t port)
+{
+    if (s_app == NULL || port == 0) {
+        return -EINVAL;
+    }
+    config_snmp_t cfg = s_app->snmp.config;
+    cfg.listen_port = port;
+    return app_container_set_snmp_config(s_app, &cfg);
+}
+
+int app_facade_snmp_set_identity(const char *sys_name, const char *sys_contact, const char *sys_location)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+    config_snmp_t cfg = s_app->snmp.config;
+    if (sys_name != NULL) {
+        strncpy(cfg.sys_name, sys_name, sizeof(cfg.sys_name) - 1);
+        cfg.sys_name[sizeof(cfg.sys_name) - 1] = '\0';
+    }
+    if (sys_contact != NULL) {
+        strncpy(cfg.sys_contact, sys_contact, sizeof(cfg.sys_contact) - 1);
+        cfg.sys_contact[sizeof(cfg.sys_contact) - 1] = '\0';
+    }
+    if (sys_location != NULL) {
+        strncpy(cfg.sys_location, sys_location, sizeof(cfg.sys_location) - 1);
+        cfg.sys_location[sizeof(cfg.sys_location) - 1] = '\0';
+    }
+    return app_container_set_snmp_config(s_app, &cfg);
+}
+
+int app_facade_snmp_send_test_trap(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+#if defined(CONFIG_SNMP_AGENT)
+    if (!s_app->snmp.initialized) {
+        return -ENODEV;
+    }
+    return adapter_snmp_traps_send_test(&s_app->snmp.trap_adapter);
+#else
+    return -ENOTSUP;
+#endif
+}
+
+int app_facade_snmp_save(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+    ao_storage_t *ao = app_container_get_storage_ao(s_app);
+    if (ao == NULL) {
+        return -ENODEV;
+    }
+    return ao_storage_sync_flush(ao);
+}
+
+int app_facade_snmp_reload(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+    const i_config_storage_t *storage = app_container_get_storage(s_app);
+    if (storage == NULL || !i_config_storage_is_bound(storage)) {
+        return -ENODEV;
+    }
+    uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_snmp_t)];
+    size_t loaded_len = 0U;
+    int err = i_config_storage_load(storage, CONFIG_DOMAIN_SNMP, buf, sizeof(buf), &loaded_len);
+    if (err != 0) {
+        return err;
+    }
+    config_snmp_t cfg;
+    size_t unpacked_len = 0U;
+    err = config_envelope_unpack(CONFIG_DOMAIN_SNMP, buf, loaded_len, &cfg, sizeof(cfg), &unpacked_len);
+    if (err != 0) {
+        return err;
+    }
+    return app_container_set_snmp_config(s_app, &cfg);
+}
+
+int app_facade_snmp_reset_defaults(void)
+{
+    if (s_app == NULL) {
+        return -EINVAL;
+    }
+    const config_snmp_t *def = app_defaults_get_snmp_cfg();
+    if (def == NULL) {
+        return -ENODEV;
+    }
+    return app_container_set_snmp_config(s_app, def);
 }
 
 

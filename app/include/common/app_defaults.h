@@ -96,6 +96,28 @@ extern "C"
         .reserved = {0},
     };
 
+    /** Default SNMP Agent Operational Configuration (Domain 7) */
+    static const config_snmp_t k_default_snmp_cfg = {
+        .schema_version = 1U,
+        .enabled = 1U,
+        .version_mask = CONFIG_SNMP_VERSION_MASK_V1 | CONFIG_SNMP_VERSION_MASK_V2C,
+        .listen_port = 161U,
+        .flags = 0U,
+        .read_community = "public",
+        .write_community = "private",
+        .sys_name = "BrightC-V3-Controller",
+        .sys_contact = "admin@example.com",
+        .sys_location = "Server Room Rack 1",
+        .trap_dests = {
+            [0] = { .target_ip = "192.168.1.200", .port = 162U, .enabled = 0U, .reserved = 0U },
+            [1] = { .target_ip = "", .port = 162U, .enabled = 0U, .reserved = 0U },
+            [2] = { .target_ip = "", .port = 162U, .enabled = 0U, .reserved = 0U },
+            [3] = { .target_ip = "", .port = 162U, .enabled = 0U, .reserved = 0U },
+        },
+        .engine_boots = 1U,
+        .reserved = {0},
+    };
+
 #ifndef CONFIG_BRIGHTC_WIFI_DEFAULT_SSID
 #define CONFIG_BRIGHTC_WIFI_DEFAULT_SSID "BrightC-V3-AP"
 #endif
@@ -282,6 +304,11 @@ extern "C"
         return &k_default_thermal_baseline_cfg;
     }
 
+    static inline const config_snmp_t *app_defaults_get_snmp_cfg(void)
+    {
+        return &k_default_snmp_cfg;
+    }
+
     /* ========================================================================= */
     /* Backward Compatibility Aliases                                            */
     /* ========================================================================= */
@@ -325,6 +352,11 @@ extern "C"
     static inline const config_thermal_baseline_t *default_config_get_thermal_baseline_cfg(void)
     {
         return app_defaults_get_thermal_baseline_cfg();
+    }
+
+    static inline const config_snmp_t *default_config_get_snmp_cfg(void)
+    {
+        return app_defaults_get_snmp_cfg();
     }
 
     static inline const modbus_slave_descriptor_t *default_config_get_modbus_slaves(size_t *out_count)

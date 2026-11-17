@@ -41,6 +41,9 @@ target_sources(app PRIVATE
     ${APP_DIR}/app/src/application/active_objects/ao_storage.c
     ${APP_DIR}/app/src/application/active_objects/ao_storage_sd.c
     ${APP_DIR}/app/src/application/active_objects/ao_datalogger.c
+    ${APP_DIR}/app/src/domain/datalogger/datalogger_formatters.c
+    ${APP_DIR}/app/src/application/services/telemetry_sampler.c
+    ${APP_DIR}/app/src/application/services/datalogger_streamer.c
     ${APP_DIR}/app/src/domain/storage/bkpsram_ring.c
     ${APP_DIR}/app/src/application/active_objects/ao_system_indicator.c
     ${APP_DIR}/app/src/application/active_objects/ao_digital_input.c

@@ -1,0 +1,1664 @@
+--
+-- BrightC_SNMP v3.0.0.mib
+--
+--
+-- REVISION HISTORY
+--
+--Bright-C_MIB { iso(1) org(3) dod(6) internet(1) private(4) enterprises(1) daecge(3134) daecgeProduct(1) }
+BRIGHTCv3-v1-0-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    OBJECT-TYPE, NOTIFICATION-TYPE, MODULE-IDENTITY,
+    Integer32, Unsigned32, Gauge32, enterprises, TimeTicks
+        FROM SNMPv2-SMI
+    TEXTUAL-CONVENTION
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF;
+
+daecge MODULE-IDENTITY
+    LAST-UPDATED "202611160000Z"
+    ORGANIZATION "CORPORACION DAECGE S.A.C"
+    CONTACT-INFO    
+        "CORPORACION DAECGE S.A.C contact info:
+        post:  Parinuahuanca 875 Urb. 
+            Parque Naranjal II Etapa, 
+            Los Olivos - Lima, Peru 
+        Telf:       +51 960 326 513
+        email:      emilce.meza@daecge.net"
+		
+    DESCRIPTION
+        "v3.0.1 MIB file for the BRIGHTCv3 industrial telemetry and control module"
+    REVISION "202611160000Z"
+    DESCRIPTION
+        "Expanded temperature sensor matrix and 3-phase AC energy meter telemetry objects"
+    REVISION "202401270000Z"
+    DESCRIPTION
+        "Updated for BRIGHTC v3.0 traps"
+
+    ::={enterprises 3134}
+
+-- ************************************* Product ***************************************
+brightC              OBJECT IDENTIFIER ::= { daecge 2 }
+brightCv3            OBJECT IDENTIFIER ::= { brightC 3 }
+brightCv3Traps       OBJECT IDENTIFIER ::= { brightCv3 0 }
+brightCv3Control     OBJECT IDENTIFIER ::= { brightCv3 1 }
+brightCv3Sensor      OBJECT IDENTIFIER ::= { brightCv3 2 }
+brightCv3HVAC        OBJECT IDENTIFIER ::= { brightCv3 3 }
+brightCv3Alarms      OBJECT IDENTIFIER ::= { brightCv3 4 }
+brightCv3Config      OBJECT IDENTIFIER ::= { brightCv3 5 }
+brightCv3Energy      OBJECT IDENTIFIER ::= { brightCv3 6 }
+brightCTrapsMngr     OBJECT IDENTIFIER ::= { brightCv3 150 }
+brightCv3Conformance OBJECT IDENTIFIER ::= { brightCv3 200 }
+-- ************************************* Instrumentation Section ***********************
+
+-- ************************************* TEXTUAL CONVENTIONS ***************************
+TempDegreesDiv10    ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT    "d-1"
+    STATUS          current
+    DESCRIPTION     "Temperature degrees celcius. Fixed point, one decimal"
+    SYNTAX          Integer32(-500..1500)
+
+CurrentDiv10 ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d-1"
+    STATUS       current
+    DESCRIPTION  "Current. Fixed point, one decimal"
+    SYNTAX       Unsigned32 (0..99999)
+
+ElectricalPotentialDiv10 ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d-1"
+    STATUS       current
+    DESCRIPTION  "Electrical potential. Fixed point, one decimal"
+    SYNTAX       Unsigned32 (0..10000)
+
+PowerFactorDiv100 ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d-2"
+    STATUS       current
+    DESCRIPTION  "Power factor. Fixed point, two decimals"
+    SYNTAX       Integer32 (-100..100)
+
+FrequencyDiv10 ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d-1"
+    STATUS       current
+    DESCRIPTION  "AC line frequency in Hz. Fixed point, one decimal"
+    SYNTAX       Unsigned32 (0..1000)	
+
+-- ************************************* CONTROL DATA DEFINITION **************************************************
+brightCv3KeyControlTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF BrightCv3KeyControlEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION 
+    "Control data table"
+    ::= { brightCv3Control 1 }
+
+brightCv3KeyControlEntry OBJECT-TYPE
+    SYNTAX BrightCv3KeyControlEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+    "Key Control Entry"
+    INDEX { keyControlKeyID }
+    ::= { brightCv3KeyControlTable 1 }
+
+BrightCv3KeyControlEntry ::= SEQUENCE {
+    keyControlKeyID Integer32
+}
+
+keyControlKeyID OBJECT-TYPE
+    SYNTAX Integer32 (1..2147483647)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Control Key ID"
+    ::= { brightCv3KeyControlEntry 1 }
+
+-- ************************************* SENSOR DATA NOTIFICAION ***************************************************
+brightCv3KeySensorTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF BrightCv3KeySensorEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION 
+    "Sensor channels telemetry table"
+    ::= { brightCv3Sensor 1 }
+
+brightCv3KeySensorEntry OBJECT-TYPE
+    SYNTAX BrightCv3KeySensorEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+    "Physical sensor channel entry"
+    INDEX { keySensorKeyID }
+    ::= { brightCv3KeySensorTable 1 }
+
+BrightCv3KeySensorEntry ::= SEQUENCE {
+    keySensorKeyID          Integer32,
+    sensorName              OCTET STRING,
+    sensorPhysicalChannel   Integer32,
+    sensorRole              INTEGER,
+    sensorTemperature       TempDegreesDiv10,
+    sensorStatus            INTEGER
+}
+
+keySensorKeyID OBJECT-TYPE
+    SYNTAX Integer32 (1..64)
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+    "Sequential sensor entry index (1..64)"
+    ::= { brightCv3KeySensorEntry 1 }
+
+sensorName OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (0..32))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Sensor descriptive name (e.g., CWT1_CH01, SupplyAir_1)"
+    ::= { brightCv3KeySensorEntry 2 }
+
+sensorPhysicalChannel OBJECT-TYPE
+    SYNTAX Integer32 (0..79)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Underlying physical hardware channel identifier"
+    ::= { brightCv3KeySensorEntry 3 }
+
+sensorRole OBJECT-TYPE
+    SYNTAX INTEGER {
+        unassigned(1),
+        supplyAir(2),
+        returnAir(3),
+        roomAmbient(4),
+        outdoorAmbient(5),
+        humidityReturn(6)
+    }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Semantic role mapped in the thermal matrix"
+    ::= { brightCv3KeySensorEntry 4 }
+
+sensorTemperature OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Calibrated temperature in tenths of degrees Celsius (e.g. 245 = 24.5 C)"
+    ::= { brightCv3KeySensorEntry 5 }
+
+sensorStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+        normal(1),
+        openProbe(2),
+        shortCircuit(3),
+        commFault(4),
+        disabled(5)
+    }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Sensor hardware probe health and communication status"
+    ::= { brightCv3KeySensorEntry 6 }
+
+-- ************************************* PROCESS TEMPERATURES ******************************************************
+brightCv3SemanticTemps OBJECT IDENTIFIER ::= { brightCv3Sensor 2 }
+
+tempSupplyEvap1 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 1 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 1 }
+
+tempReturnEvap1 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 1 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 2 }
+
+tempDeltaEvap1 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential (T_return - T_supply) for pair 1 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 3 }
+
+tempSupplyEvap2 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 2 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 4 }
+
+tempReturnEvap2 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 2 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 5 }
+
+tempDeltaEvap2 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 2 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 6 }
+
+tempSupplyEvap3 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 3 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 7 }
+
+tempReturnEvap3 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 3 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 8 }
+
+tempDeltaEvap3 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 3 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 9 }
+
+tempSupplyEvap4 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 4 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 10 }
+
+tempReturnEvap4 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 4 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 11 }
+
+tempDeltaEvap4 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 4 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 12 }
+
+tempRoomAmbient1 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Room ambient reference temperature 1 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 13 }
+
+tempRoomAmbient2 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Room ambient reference temperature 2 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 14 }
+
+tempOutdoorAmbient1 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outdoor ambient condenser reference temperature 1 in tenths of deg C"
+    ::= { brightCv3SemanticTemps 15 }
+
+humidityReturnGrille OBJECT-TYPE
+    SYNTAX Unsigned32 (0..1000)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Return air relative humidity in tenths of percent RH (e.g. 550 = 55.0 %RH)"
+    ::= { brightCv3SemanticTemps 16 }
+
+tempControlGroup1 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active control temperature for HVAC Group 1 (Sala 1) governing AC cooling cycle in tenths of deg C"
+    ::= { brightCv3SemanticTemps 17 }
+
+tempControlGroup2 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active control temperature for HVAC Group 2 (Sala 2) governing AC cooling cycle in tenths of deg C"
+    ::= { brightCv3SemanticTemps 18 }
+
+tempControlGroup3 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active control temperature for HVAC Group 3 (Sala 3) governing AC cooling cycle in tenths of deg C"
+    ::= { brightCv3SemanticTemps 19 }
+
+tempControlGroup4 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active control temperature for HVAC Group 4 (Sala 4) governing AC cooling cycle in tenths of deg C"
+    ::= { brightCv3SemanticTemps 20 }
+
+tempSupplyEvap5 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 5 (AC5) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 21 }
+
+tempReturnEvap5 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 5 (AC5) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 22 }
+
+tempDeltaEvap5 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 5 (AC5) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 23 }
+
+tempSupplyEvap6 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 6 (AC6) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 24 }
+
+tempReturnEvap6 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 6 (AC6) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 25 }
+
+tempDeltaEvap6 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 6 (AC6) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 26 }
+
+tempSupplyEvap7 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 7 (AC7) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 27 }
+
+tempReturnEvap7 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 7 (AC7) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 28 }
+
+tempDeltaEvap7 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 7 (AC7) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 29 }
+
+tempSupplyEvap8 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Cold air supply temperature for HVAC pair 8 (AC8) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 30 }
+
+tempReturnEvap8 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Warm air return temperature for HVAC pair 8 (AC8) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 31 }
+
+tempDeltaEvap8 OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Thermal differential for pair 8 (AC8) in tenths of deg C"
+    ::= { brightCv3SemanticTemps 32 }
+-- ************************************* HVAC DATA NOTIFICAION ***************************************************
+brightCv3KeyHVACTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF BrightCv3KeyHVACEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION 
+    "HVAC data table"
+    ::= { brightCv3HVAC 1 }
+
+brightCv3KeyHVACEntry OBJECT-TYPE
+    SYNTAX BrightCv3KeyHVACEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+    "Key HVAC Entry"
+    INDEX { keyHVACKeyID }
+    ::= { brightCv3KeyHVACTable 1 }
+
+BrightCv3KeyHVACEntry ::= SEQUENCE {
+    keyHVACKeyID Integer32
+}
+
+keyHVACKeyID OBJECT-TYPE
+    SYNTAX Integer32 (1..2147483647)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "HVAC Key ID"
+    ::= { brightCv3KeyHVACEntry 1 }
+
+brightCv3HvacGroupTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF BrightCv3HvacGroupEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION 
+        "Table of HVAC thermal coordination groups controlling AC sequencing."
+    ::= { brightCv3HVAC 2 }
+
+brightCv3HvacGroupEntry OBJECT-TYPE
+    SYNTAX BrightCv3HvacGroupEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+        "Entry for an HVAC thermal coordination group (Sala 1..4)"
+    INDEX { hvacGroupIndex }
+    ::= { brightCv3HvacGroupTable 1 }
+
+BrightCv3HvacGroupEntry ::= SEQUENCE {
+    hvacGroupIndex          Integer32,
+    hvacGroupName           OCTET STRING,
+    hvacGroupState          INTEGER,
+    hvacGroupControlTemp    TempDegreesDiv10,
+    hvacGroupTempMin        TempDegreesDiv10,
+    hvacGroupTempMax        TempDegreesDiv10,
+    hvacGroupTempAlarm      TempDegreesDiv10,
+    hvacGroupTempBypass     TempDegreesDiv10,
+    hvacGroupValidSensors   Integer32,
+    hvacGroupActiveUnits    Integer32
+}
+
+hvacGroupIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..4)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "HVAC Group index (1..4)"
+    ::= { brightCv3HvacGroupEntry 1 }
+
+hvacGroupName OBJECT-TYPE
+    SYNTAX OCTET STRING (SIZE (0..32))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Descriptive name of the HVAC group or zone (e.g., Sala 1)"
+    ::= { brightCv3HvacGroupEntry 2 }
+
+hvacGroupState OBJECT-TYPE
+    SYNTAX INTEGER {
+        idle(1),
+        off(2),
+        cooling(3),
+        coolBoost(4),
+        bypass(5),
+        fire(6),
+        manual(7)
+    }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Operational state of the HVAC coordination group"
+    ::= { brightCv3HvacGroupEntry 3 }
+
+hvacGroupControlTemp OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active control temperature driving AC unit sequencing in tenths of deg C"
+    ::= { brightCv3HvacGroupEntry 4 }
+
+hvacGroupTempMin OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Low temperature setpoint where cooling stops in tenths of deg C"
+    ::= { brightCv3HvacGroupEntry 5 }
+
+hvacGroupTempMax OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "High temperature setpoint where cooling starts in tenths of deg C"
+    ::= { brightCv3HvacGroupEntry 6 }
+
+hvacGroupTempAlarm OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Boost setpoint where all reserve units start in tenths of deg C"
+    ::= { brightCv3HvacGroupEntry 7 }
+
+hvacGroupTempBypass OBJECT-TYPE
+    SYNTAX TempDegreesDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Critical setpoint where mechanical bypass trips in tenths of deg C"
+    ::= { brightCv3HvacGroupEntry 8 }
+
+hvacGroupValidSensors OBJECT-TYPE
+    SYNTAX Integer32 (0..16)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Number of healthy temperature sensor probes reporting in this group"
+    ::= { brightCv3HvacGroupEntry 9 }
+
+hvacGroupActiveUnits OBJECT-TYPE
+    SYNTAX Integer32 (0..8)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Number of AC units actively running in turn for this group"
+    ::= { brightCv3HvacGroupEntry 10 }
+
+-- ************************************* ALARMS DATA NOTIFICAION ***************************************************
+brightCv3KeyAlarmsTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF BrightCv3KeyAlarmsEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION 
+    "Alarms data table"
+    ::= { brightCv3Alarms 1 }
+
+brightCv3KeyAlarmsEntry OBJECT-TYPE
+    SYNTAX BrightCv3KeyAlarmsEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+    "Key Alarms Entry"
+    INDEX { keyAlarmsKeyID }
+    ::= { brightCv3KeyAlarmsTable 1 }
+
+BrightCv3KeyAlarmsEntry ::= SEQUENCE {
+    keyAlarmsKeyID Integer32
+}
+
+keyAlarmsKeyID OBJECT-TYPE
+    SYNTAX Integer32 (1..2147483647)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Alarms Key ID"
+    ::= { brightCv3KeyAlarmsEntry 1 }
+-- ************************************* CONFIG DATA NOTIFICAION ***************************************************
+brightCv3KeyConfigTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF BrightCv3KeyConfigEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION 
+    "Config data table"
+    ::= { brightCv3Config 1 }
+
+brightCv3KeyConfigEntry OBJECT-TYPE
+    SYNTAX BrightCv3KeyConfigEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+    "Key Config Entry"
+    INDEX { keyConfigKeyID }
+    ::= { brightCv3KeyConfigTable 1 }
+
+BrightCv3KeyConfigEntry ::= SEQUENCE {
+    keyConfigKeyID Integer32
+}
+
+keyConfigKeyID OBJECT-TYPE
+    SYNTAX Integer32 (1..2147483647)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+    "Config Key ID"
+    ::= { brightCv3KeyConfigEntry 1 }
+
+-- ************************************* ENERGY METER TELEMETRY ****************************************************
+energyCommStatus OBJECT-TYPE
+    SYNTAX INTEGER {
+        ok(1),
+        commFault(2),
+        unconfigured(3)
+    }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Communication status with JSY-MK-339 energy meter"
+    ::= { brightCv3Energy 1 }
+
+energyLineFrequency OBJECT-TYPE
+    SYNTAX FrequencyDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "AC line frequency in tenths of Hz (e.g. 600 = 60.0 Hz)"
+    ::= { brightCv3Energy 2 }
+
+voltagePhaseA OBJECT-TYPE
+    SYNTAX ElectricalPotentialDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase A RMS voltage in tenths of Volt (e.g. 2205 = 220.5 V)"
+    ::= { brightCv3Energy 3 }
+
+voltagePhaseB OBJECT-TYPE
+    SYNTAX ElectricalPotentialDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase B RMS voltage in tenths of Volt"
+    ::= { brightCv3Energy 4 }
+
+voltagePhaseC OBJECT-TYPE
+    SYNTAX ElectricalPotentialDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase C RMS voltage in tenths of Volt"
+    ::= { brightCv3Energy 5 }
+
+currentPhaseA OBJECT-TYPE
+    SYNTAX CurrentDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase A RMS current in tenths of Ampere (e.g. 152 = 15.2 A)"
+    ::= { brightCv3Energy 6 }
+
+currentPhaseB OBJECT-TYPE
+    SYNTAX CurrentDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase B RMS current in tenths of Ampere"
+    ::= { brightCv3Energy 7 }
+
+currentPhaseC OBJECT-TYPE
+    SYNTAX CurrentDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase C RMS current in tenths of Ampere"
+    ::= { brightCv3Energy 8 }
+
+leakageCurrent OBJECT-TYPE
+    SYNTAX CurrentDiv10
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Residual leakage current in tenths of Ampere"
+    ::= { brightCv3Energy 9 }
+
+activePowerPhaseA OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase A active power in Watts"
+    ::= { brightCv3Energy 10 }
+
+activePowerPhaseB OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase B active power in Watts"
+    ::= { brightCv3Energy 11 }
+
+activePowerPhaseC OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase C active power in Watts"
+    ::= { brightCv3Energy 12 }
+
+totalActivePower OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Total active power P_total in Watts"
+    ::= { brightCv3Energy 13 }
+
+totalReactivePower OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Total reactive power Q_total in VAr"
+    ::= { brightCv3Energy 14 }
+
+totalApparentPower OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Total apparent power S_total in VA"
+    ::= { brightCv3Energy 15 }
+
+powerFactorPhaseA OBJECT-TYPE
+    SYNTAX PowerFactorDiv100
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase A power factor (-100 to 100, e.g. 95 = 0.95)"
+    ::= { brightCv3Energy 16 }
+
+powerFactorPhaseB OBJECT-TYPE
+    SYNTAX PowerFactorDiv100
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase B power factor (-100 to 100)"
+    ::= { brightCv3Energy 17 }
+
+powerFactorPhaseC OBJECT-TYPE
+    SYNTAX PowerFactorDiv100
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase C power factor (-100 to 100)"
+    ::= { brightCv3Energy 18 }
+
+totalPowerFactor OBJECT-TYPE
+    SYNTAX PowerFactorDiv100
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Total 3-phase power factor (-100 to 100)"
+    ::= { brightCv3Energy 19 }
+
+totalActiveEnergyKwh OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Accumulated total active energy in kWh"
+    ::= { brightCv3Energy 20 }
+
+totalReactiveEnergyKvarh OBJECT-TYPE
+    SYNTAX Unsigned32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Accumulated total reactive energy in kvarh"
+    ::= { brightCv3Energy 21 }
+    
+-- ************************************* TRAP/NOTIFICATION MANAGEMENT SECTION *************************************
+
+
+brightCAlarmStateTable OBJECT-TYPE
+    SYNTAX          SEQUENCE OF BrightCxxAlarmStateEntry
+    MAX-ACCESS      not-accessible
+    STATUS          current
+    DESCRIPTION
+    "Alarms state table"
+    ::={brightCTrapsMngr  1}
+
+BrightCxxAlarmStateEntry ::= SEQUENCE {
+    brightCxxAlarmKeyID     Integer32,
+    brightCxxTrapID         Integer32,
+    brightCxxTrapState      INTEGER,
+    brightCxxTrapTimeStamp  TimeTicks,
+    brightCxxTrapDsc        OCTET STRING
+}
+
+brightCxxAlarmStateEntry OBJECT-TYPE
+    SYNTAX      BrightCxxAlarmStateEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Entry in the alarms state table,
+        indexed by Key ID (1..100)"
+    INDEX
+        { brightCxxAlarmKeyID }
+    ::= { brightCAlarmStateTable 1 }
+
+brightCxxAlarmKeyID OBJECT-TYPE
+    SYNTAX  Integer32 (1..100)
+    MAX-ACCESS  not-accessible
+    STATUS  current
+    DESCRIPTION "Notification Key ID"
+        ::= { brightCxxAlarmStateEntry 1 }
+
+brightCxxTrapID OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Alarm identification number"
+    ::= { brightCxxAlarmStateEntry 2 }
+
+brightCxxTrapState OBJECT-TYPE
+    SYNTAX      INTEGER {
+                alarmDisable(1),
+                alarmEnable(2)
+            }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Alarm state. Trap 'alarmDisable' clears former alarms."
+    ::= { brightCxxAlarmStateEntry 3 }
+
+brightCxxTrapTimeStamp OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Trap timestamp in UNIX format - seconds since Jan 01 1970. (UTC)."
+    ::= { brightCxxAlarmStateEntry 4 }
+
+brightCxxTrapDsc    OBJECT-TYPE
+    SYNTAX          OCTET STRING (SIZE (0..64))
+    MAX-ACCESS      read-only
+    STATUS          current
+    DESCRIPTION
+        "Trap description"
+    ::= { brightCxxAlarmStateEntry 5 }
+
+alarmSummaryActiveCount OBJECT-TYPE
+    SYNTAX          Gauge32
+    MAX-ACCESS      read-only
+    STATUS          current
+    DESCRIPTION
+        "Number of currently active plant alarms reported in summary notifications."
+    ::= { brightCTrapsMngr 2 }
+
+alarmSummaryActiveMask OBJECT-TYPE
+    SYNTAX          OCTET STRING (SIZE (12))
+    MAX-ACCESS      read-only
+    STATUS          current
+    DESCRIPTION
+        "12-byte (96-bit) bitmask of active alarms indexed by alarm ID (1..96)."
+    ::= { brightCTrapsMngr 3 }
+
+
+
+-- *****************************************************  INIT OF TRAP DEFINITION  *****************************************************
+alarmAc1HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 1 High Pressure Cutout"
+    ::= { brightCv3Traps 1 }
+
+alarmAc1LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 1 Low Pressure Cutout"
+    ::= { brightCv3Traps 2 }
+
+alarmAc1AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 1 Airflow/Fan Failure"
+    ::= { brightCv3Traps 3 }
+
+alarmAc1VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 1 Voltage/Phase Fault"
+    ::= { brightCv3Traps 4 }
+
+alarmAc2HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 2 High Pressure Cutout"
+    ::= { brightCv3Traps 5 }
+
+alarmAc2LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 2 Low Pressure Cutout"
+    ::= { brightCv3Traps 6 }
+
+alarmAc2AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 2 Airflow/Fan Failure"
+    ::= { brightCv3Traps 7 }
+
+alarmAc2VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 2 Voltage/Phase Fault"
+    ::= { brightCv3Traps 8 }
+
+alarmAc3HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 3 High Pressure Cutout"
+    ::= { brightCv3Traps 9 }
+
+alarmAc3LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 3 Low Pressure Cutout"
+    ::= { brightCv3Traps 10 }
+
+alarmAc3AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 3 Airflow/Fan Failure"
+    ::= { brightCv3Traps 11 }
+
+alarmAc3VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 3 Voltage/Phase Fault"
+    ::= { brightCv3Traps 12 }
+
+alarmAc4HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 4 High Pressure Cutout"
+    ::= { brightCv3Traps 13 }
+
+alarmAc4LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 4 Low Pressure Cutout"
+    ::= { brightCv3Traps 14 }
+
+alarmAc4AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 4 Airflow/Fan Failure"
+    ::= { brightCv3Traps 15 }
+
+alarmAc4VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 4 Voltage/Phase Fault"
+    ::= { brightCv3Traps 16 }
+
+alarmAc5HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 5 High Pressure Cutout"
+    ::= { brightCv3Traps 17 }
+
+alarmAc5LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 5 Low Pressure Cutout"
+    ::= { brightCv3Traps 18 }
+
+alarmAc5AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 5 Airflow/Fan Failure"
+    ::= { brightCv3Traps 19 }
+
+alarmAc5VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 5 Voltage/Phase Fault"
+    ::= { brightCv3Traps 20 }
+
+alarmAc6HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 6 High Pressure Cutout"
+    ::= { brightCv3Traps 21 }
+
+alarmAc6LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 6 Low Pressure Cutout"
+    ::= { brightCv3Traps 22 }
+
+alarmAc6AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 6 Airflow/Fan Failure"
+    ::= { brightCv3Traps 23 }
+
+alarmAc6VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 6 Voltage/Phase Fault"
+    ::= { brightCv3Traps 24 }
+
+alarmAc7HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 7 High Pressure Cutout"
+    ::= { brightCv3Traps 25 }
+
+alarmAc7LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 7 Low Pressure Cutout"
+    ::= { brightCv3Traps 26 }
+
+alarmAc7AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 7 Airflow/Fan Failure"
+    ::= { brightCv3Traps 27 }
+
+alarmAc7VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 7 Voltage/Phase Fault"
+    ::= { brightCv3Traps 28 }
+
+alarmAc8HighPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 8 High Pressure Cutout"
+    ::= { brightCv3Traps 29 }
+
+alarmAc8LowPressure NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 8 Low Pressure Cutout"
+    ::= { brightCv3Traps 30 }
+
+alarmAc8AirflowFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 8 Airflow/Fan Failure"
+    ::= { brightCv3Traps 31 }
+
+alarmAc8VoltageFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 8 Voltage/Phase Fault"
+    ::= { brightCv3Traps 32 }
+
+alarmFacilityFire NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Facility Smoke/Fire Alarm"
+    ::= { brightCv3Traps 33 }
+
+alarmFacilityDoorOpen NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Containment Door Open"
+    ::= { brightCv3Traps 34 }
+
+alarmFacilityWaterLeak NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Raised Floor Water Leak"
+    ::= { brightCv3Traps 35 }
+
+alarmFacilitySurgeProt NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Surge Protective Device Trip"
+    ::= { brightCv3Traps 36 }
+
+alarmFacilityPhaseMon NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Main 3-Phase Monitor Relay"
+    ::= { brightCv3Traps 37 }
+
+alarmAc1SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 1 Consolidated Summary Fault"
+    ::= { brightCv3Traps 38 }
+
+alarmAc2SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 2 Consolidated Summary Fault"
+    ::= { brightCv3Traps 39 }
+
+alarmAc3SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 3 Consolidated Summary Fault"
+    ::= { brightCv3Traps 40 }
+
+alarmAc4SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 4 Consolidated Summary Fault"
+    ::= { brightCv3Traps 41 }
+
+alarmAc5SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 5 Consolidated Summary Fault"
+    ::= { brightCv3Traps 42 }
+
+alarmAc6SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 6 Consolidated Summary Fault"
+    ::= { brightCv3Traps 43 }
+
+alarmAc7SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 7 Consolidated Summary Fault"
+    ::= { brightCv3Traps 44 }
+
+alarmAc8SummaryFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 8 Consolidated Summary Fault"
+    ::= { brightCv3Traps 45 }
+
+alarmGroup1TempLow NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 1 Low Temperature Alarm"
+    ::= { brightCv3Traps 48 }
+
+alarmGroup1TempHigh NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 1 High Temperature Alarm"
+    ::= { brightCv3Traps 49 }
+
+alarmGroup1TempBoost NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 1 Cooling Boost State"
+    ::= { brightCv3Traps 50 }
+
+alarmGroup2TempLow NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 2 Low Temperature Alarm"
+    ::= { brightCv3Traps 51 }
+
+alarmGroup2TempHigh NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 2 High Temperature Alarm"
+    ::= { brightCv3Traps 52 }
+
+alarmGroup2TempBoost NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 2 Cooling Boost State"
+    ::= { brightCv3Traps 53 }
+
+alarmGroup3TempLow NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 3 Low Temperature Alarm"
+    ::= { brightCv3Traps 54 }
+
+alarmGroup3TempHigh NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 3 High Temperature Alarm"
+    ::= { brightCv3Traps 55 }
+
+alarmGroup3TempBoost NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 3 Cooling Boost State"
+    ::= { brightCv3Traps 56 }
+
+alarmGroup4TempLow NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 4 Low Temperature Alarm"
+    ::= { brightCv3Traps 57 }
+
+alarmGroup4TempHigh NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 4 High Temperature Alarm"
+    ::= { brightCv3Traps 58 }
+
+alarmGroup4TempBoost NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 4 Cooling Boost State"
+    ::= { brightCv3Traps 59 }
+
+alarmLineUnderVoltage NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Line Under-Voltage (< -8%)"
+    ::= { brightCv3Traps 64 }
+
+alarmLineOverVoltage NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Line Over-Voltage (> +8%)"
+    ::= { brightCv3Traps 65 }
+
+alarmEnergyMeterCommFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "JSY-MK-339 Meter Comm Fault"
+    ::= { brightCv3Traps 66 }
+
+alarmHvacG1BypassActive NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "HVAC Group 1 Bypass Operation"
+    ::= { brightCv3Traps 80 }
+
+alarmHvacG2BypassActive NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "HVAC Group 2 Bypass Operation"
+    ::= { brightCv3Traps 89 }
+
+alarmHvacG3BypassActive NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "HVAC Group 3 Bypass Operation"
+    ::= { brightCv3Traps 90 }
+
+alarmHvacG4BypassActive NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "HVAC Group 4 Bypass Operation"
+    ::= { brightCv3Traps 91 }
+
+alarmHvacUnit1Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 1 Safety Lockout"
+    ::= { brightCv3Traps 81 }
+
+alarmHvacUnit2Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 2 Safety Lockout"
+    ::= { brightCv3Traps 82 }
+
+alarmHvacUnit3Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 3 Safety Lockout"
+    ::= { brightCv3Traps 83 }
+
+alarmHvacUnit4Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 4 Safety Lockout"
+    ::= { brightCv3Traps 84 }
+
+alarmHvacUnit5Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 5 Safety Lockout"
+    ::= { brightCv3Traps 85 }
+
+alarmHvacUnit6Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 6 Safety Lockout"
+    ::= { brightCv3Traps 86 }
+
+alarmHvacUnit7Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 7 Safety Lockout"
+    ::= { brightCv3Traps 87 }
+
+alarmHvacUnit8Lockout NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "AC Unit 8 Safety Lockout"
+    ::= { brightCv3Traps 88 }
+
+alarmSensorGroup1Fault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 1 Control Sensor Fault"
+    ::= { brightCv3Traps 96 }
+
+alarmSensorGroup2Fault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 2 Control Sensor Fault"
+    ::= { brightCv3Traps 97 }
+
+alarmSensorGroup3Fault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 3 Control Sensor Fault"
+    ::= { brightCv3Traps 98 }
+
+alarmSensorGroup4Fault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "Group 4 Control Sensor Fault"
+    ::= { brightCv3Traps 99 }
+
+alarmInfraEthernetDown NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "RMII Ethernet Link Down"
+    ::= { brightCv3Traps 112 }
+
+alarmInfraSdCardFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "MicroSD Card Disconnected/Fault"
+    ::= { brightCv3Traps 113 }
+
+alarmInfraModbusFault NOTIFICATION-TYPE
+    OBJECTS { brightCxxTrapID, brightCxxTrapState, brightCxxTrapTimeStamp, brightCxxTrapDsc }
+    STATUS current
+    DESCRIPTION
+        "RS-485 Modbus Telemetry Bus Fault"
+    ::= { brightCv3Traps 114 }
+
+alarmSummaryTrap NOTIFICATION-TYPE
+    OBJECTS { alarmSummaryActiveCount, alarmSummaryActiveMask }
+    STATUS current
+    DESCRIPTION
+        "Aggregated alarm burst overflow summary trap"
+    ::= { brightCv3Traps 200 }
+
+-- ************************************* CONFORMANCE DEFINITIONS *************************************
+brightCv3Compliances OBJECT IDENTIFIER ::= { brightCv3Conformance 1 }
+brightCv3Groups      OBJECT IDENTIFIER ::= { brightCv3Conformance 2 }
+
+brightCv3SensorGroup OBJECT-GROUP
+    OBJECTS {
+        sensorName,
+        sensorPhysicalChannel,
+        sensorRole,
+        sensorTemperature,
+        sensorStatus
+    }
+    STATUS current
+    DESCRIPTION
+        "Physical sensor channels telemetry objects."
+    ::= { brightCv3Groups 1 }
+
+brightCv3SemanticTempsGroup OBJECT-GROUP
+    OBJECTS {
+        tempSupplyEvap1,
+        tempReturnEvap1,
+        tempDeltaEvap1,
+        tempSupplyEvap2,
+        tempReturnEvap2,
+        tempDeltaEvap2,
+        tempSupplyEvap3,
+        tempReturnEvap3,
+        tempDeltaEvap3,
+        tempSupplyEvap4,
+        tempReturnEvap4,
+        tempDeltaEvap4,
+        tempRoomAmbient1,
+        tempRoomAmbient2,
+        tempOutdoorAmbient1,
+        humidityReturnGrille,
+        tempControlGroup1,
+        tempControlGroup2,
+        tempControlGroup3,
+        tempControlGroup4,
+        tempSupplyEvap5,
+        tempReturnEvap5,
+        tempDeltaEvap5,
+        tempSupplyEvap6,
+        tempReturnEvap6,
+        tempDeltaEvap6,
+        tempSupplyEvap7,
+        tempReturnEvap7,
+        tempDeltaEvap7,
+        tempSupplyEvap8,
+        tempReturnEvap8,
+        tempDeltaEvap8
+    }
+    STATUS current
+    DESCRIPTION
+        "Semantic thermal and HVAC process temperature metrics."
+    ::= { brightCv3Groups 2 }
+
+brightCv3HvacGroupGroup OBJECT-GROUP
+    OBJECTS {
+        hvacGroupIndex,
+        hvacGroupName,
+        hvacGroupState,
+        hvacGroupControlTemp,
+        hvacGroupTempMin,
+        hvacGroupTempMax,
+        hvacGroupTempAlarm,
+        hvacGroupTempBypass,
+        hvacGroupValidSensors,
+        hvacGroupActiveUnits
+    }
+    STATUS current
+    DESCRIPTION
+        "HVAC thermal coordination group parameters and runtime metrics."
+    ::= { brightCv3Groups 7 }
+
+brightCv3EnergyGroup OBJECT-GROUP
+    OBJECTS {
+        energyCommStatus,
+        energyLineFrequency,
+        voltagePhaseA,
+        voltagePhaseB,
+        voltagePhaseC,
+        currentPhaseA,
+        currentPhaseB,
+        currentPhaseC,
+        leakageCurrent,
+        activePowerPhaseA,
+        activePowerPhaseB,
+        activePowerPhaseC,
+        totalActivePower,
+        totalReactivePower,
+        totalApparentPower,
+        powerFactorPhaseA,
+        powerFactorPhaseB,
+        powerFactorPhaseC,
+        totalPowerFactor,
+        totalActiveEnergyKwh,
+        totalReactiveEnergyKvarh
+    }
+    STATUS current
+    DESCRIPTION
+        "3-Phase AC electrical energy and power telemetry objects."
+    ::= { brightCv3Groups 3 }
+
+brightCv3AlarmObjectsGroup OBJECT-GROUP
+    OBJECTS {
+        brightCxxTrapID,
+        brightCxxTrapState,
+        brightCxxTrapTimeStamp,
+        brightCxxTrapDsc,
+        alarmSummaryActiveCount,
+        alarmSummaryActiveMask
+    }
+    STATUS current
+    DESCRIPTION
+        "Alarm notification payload objects."
+    ::= { brightCv3Groups 4 }
+
+brightCv3LegacyTablesGroup OBJECT-GROUP
+    OBJECTS {
+        keyControlKeyID,
+        keyHVACKeyID,
+        keyAlarmsKeyID,
+        keyConfigKeyID
+    }
+    STATUS current
+    DESCRIPTION
+        "Legacy placeholder table identifier objects."
+    ::= { brightCv3Groups 5 }
+
+brightCv3NotificationsGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+        alarmAc1HighPressure,
+        alarmAc1LowPressure,
+        alarmAc1AirflowFault,
+        alarmAc1VoltageFault,
+        alarmAc2HighPressure,
+        alarmAc2LowPressure,
+        alarmAc2AirflowFault,
+        alarmAc2VoltageFault,
+        alarmAc3HighPressure,
+        alarmAc3LowPressure,
+        alarmAc3AirflowFault,
+        alarmAc3VoltageFault,
+        alarmAc4HighPressure,
+        alarmAc4LowPressure,
+        alarmAc4AirflowFault,
+        alarmAc4VoltageFault,
+        alarmAc5HighPressure,
+        alarmAc5LowPressure,
+        alarmAc5AirflowFault,
+        alarmAc5VoltageFault,
+        alarmAc6HighPressure,
+        alarmAc6LowPressure,
+        alarmAc6AirflowFault,
+        alarmAc6VoltageFault,
+        alarmAc7HighPressure,
+        alarmAc7LowPressure,
+        alarmAc7AirflowFault,
+        alarmAc7VoltageFault,
+        alarmAc8HighPressure,
+        alarmAc8LowPressure,
+        alarmAc8AirflowFault,
+        alarmAc8VoltageFault,
+        alarmFacilityFire,
+        alarmFacilityDoorOpen,
+        alarmFacilityWaterLeak,
+        alarmFacilitySurgeProt,
+        alarmFacilityPhaseMon,
+        alarmAc1SummaryFault,
+        alarmAc2SummaryFault,
+        alarmAc3SummaryFault,
+        alarmAc4SummaryFault,
+        alarmAc5SummaryFault,
+        alarmAc6SummaryFault,
+        alarmAc7SummaryFault,
+        alarmAc8SummaryFault,
+        alarmGroup1TempLow,
+        alarmGroup1TempHigh,
+        alarmGroup1TempBoost,
+        alarmGroup2TempLow,
+        alarmGroup2TempHigh,
+        alarmGroup2TempBoost,
+        alarmGroup3TempLow,
+        alarmGroup3TempHigh,
+        alarmGroup3TempBoost,
+        alarmGroup4TempLow,
+        alarmGroup4TempHigh,
+        alarmGroup4TempBoost,
+        alarmLineUnderVoltage,
+        alarmLineOverVoltage,
+        alarmEnergyMeterCommFault,
+        alarmHvacG1BypassActive,
+        alarmHvacG2BypassActive,
+        alarmHvacG3BypassActive,
+        alarmHvacG4BypassActive,
+        alarmHvacUnit1Lockout,
+        alarmHvacUnit2Lockout,
+        alarmHvacUnit3Lockout,
+        alarmHvacUnit4Lockout,
+        alarmHvacUnit5Lockout,
+        alarmHvacUnit6Lockout,
+        alarmHvacUnit7Lockout,
+        alarmHvacUnit8Lockout,
+        alarmSensorGroup1Fault,
+        alarmSensorGroup2Fault,
+        alarmSensorGroup3Fault,
+        alarmSensorGroup4Fault,
+        alarmInfraEthernetDown,
+        alarmInfraSdCardFault,
+        alarmInfraModbusFault,
+        alarmSummaryTrap
+    }
+    STATUS current
+    DESCRIPTION
+        "Enterprise notifications generated by the BrightC v3 controller."
+    ::= { brightCv3Groups 6 }
+
+brightCv3Compliance MODULE-COMPLIANCE
+    STATUS current
+    DESCRIPTION
+        "The compliance statement for SNMP entities implementing BRIGHTCv3 MIB."
+    MODULE -- this module
+        MANDATORY-GROUPS {
+            brightCv3SensorGroup,
+            brightCv3SemanticTempsGroup,
+            brightCv3EnergyGroup,
+            brightCv3AlarmObjectsGroup,
+            brightCv3LegacyTablesGroup,
+            brightCv3HvacGroupGroup,
+            brightCv3NotificationsGroup
+        }
+    ::= { brightCv3Compliances 1 }
+
+END

@@ -30,7 +30,11 @@
 
 #include "infrastructure/adapters/adapter_alarm_detector_di.h"
 #include "infrastructure/adapters/adapter_alarm_detector_temp.h"
+#include "infrastructure/adapters/adapter_alarm_detector_volt.h"
 #include "infrastructure/adapters/adapter_alarm_detector_hvac.h"
+#if defined(CONFIG_SNMP_AGENT)
+#include "infrastructure/adapters/adapter_snmp_traps.h"
+#endif
 
 LOG_MODULE_REGISTER(app_event_mediator, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -294,6 +298,12 @@ static void on_alarm_transition_logger_cb(const struct zbus_channel *chan)
         envelope.payload.alarm = *ev;
         (void)ao_datalogger_post_event(&s_active_container->datalogger.ao, &envelope);
     }
+
+#if defined(CONFIG_SNMP_AGENT)
+    if (s_active_container != NULL && s_active_container->snmp.initialized && s_active_container->snmp.running) {
+        (void)adapter_snmp_traps_post_event(&s_active_container->snmp.trap_adapter, ev);
+    }
+#endif
 }
 
 ZBUS_LISTENER_DEFINE(lis_alarm_logger, on_alarm_transition_logger_cb);

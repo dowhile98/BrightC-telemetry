@@ -27,6 +27,7 @@
 #include "common/modbus_tcp_types.h"
 #include "common/network_types.h"
 #include "common/sensor_types.h"
+#include "common/energy_types.h"
 #include "common/thermal_energy_types.h"
 #include "common/rtc_types.h"
 #include "common/storage_fs_types.h"
@@ -474,6 +475,14 @@ int app_facade_sensor_get_snapshot(sensor_snapshot_msg_t *out_snapshot);
  * @return 0 on success, negative errno on error.
  */
 int app_facade_sensor_set_calibration(uint8_t sensor_idx, int16_t offset_x10);
+
+/**
+ * @brief Retrieve latest 3-phase AC electrical energy reading.
+ *
+ * @param[out] out_reading Destination energy reading structure.
+ * @return 0 on success, -ENODATA if not yet acquired, -EINVAL on invalid arguments.
+ */
+int app_facade_energy_get_reading(energy_reading_t *out_reading);
 
 /* =========================================================================
  * Digital Input & Telemetry Service APIs
@@ -935,6 +944,100 @@ int app_facade_sd_eject(void);
  * @return Pointer to storage fs port, or NULL if uninitialized.
  */
 const i_storage_fs_t *app_facade_get_sd_storage(void);
+
+/* =========================================================================
+ * SNMP Agent Service APIs
+ * ========================================================================= */
+
+/**
+ * @brief Retrieve copy of active in-memory SNMP configuration.
+ *
+ * @param[out] out_cfg Destination pointer.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_get_config(config_snmp_t *out_cfg);
+
+/**
+ * @brief Update entire in-memory SNMP configuration and mark storage dirty.
+ *
+ * @param[in] cfg Source configuration.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_set_config(const config_snmp_t *cfg);
+
+/**
+ * @brief Set read and/or write community strings.
+ *
+ * @param[in] read_comm  New read community (or NULL to leave unchanged).
+ * @param[in] write_comm New write community (or NULL to leave unchanged).
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_set_community(const char *read_comm, const char *write_comm);
+
+/**
+ * @brief Configure a trap destination slot (0..3).
+ *
+ * @param[in] slot_idx  Slot index (0..CONFIG_SNMP_MAX_TRAP_DESTS-1).
+ * @param[in] target_ip IPv4 string.
+ * @param[in] port      Destination port (162).
+ * @param[in] enabled   1=enabled, 0=disabled.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_set_trap_dest(uint8_t slot_idx, const char *target_ip, uint16_t port, uint8_t enabled);
+
+/**
+ * @brief Set master enable flag for SNMP agent.
+ *
+ * @param[in] enabled 1=enabled, 0=disabled.
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_set_enabled(uint8_t enabled);
+
+/**
+ * @brief Set SNMP UDP listening port.
+ *
+ * @param[in] port UDP port (default 161).
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_set_port(uint16_t port);
+
+/**
+ * @brief Set MIB-II system identity strings.
+ *
+ * @param[in] sys_name     System name (or NULL to leave unchanged).
+ * @param[in] sys_contact  System contact (or NULL to leave unchanged).
+ * @param[in] sys_location System location (or NULL to leave unchanged).
+ * @return 0 on success, -EINVAL or -ENODEV on error.
+ */
+int app_facade_snmp_set_identity(const char *sys_name, const char *sys_contact, const char *sys_location);
+
+/**
+ * @brief Send immediate test trap to all active trap destinations.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_snmp_send_test_trap(void);
+
+/**
+ * @brief Force immediate write of dirty SNMP configuration to EEPROM.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_snmp_save(void);
+
+/**
+ * @brief Reload SNMP configuration from EEPROM into RAM.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_snmp_reload(void);
+
+/**
+ * @brief Reset SNMP configuration to defaults in RAM and mark storage dirty.
+ *
+ * @return 0 on success, negative errno on error.
+ */
+int app_facade_snmp_reset_defaults(void);
 
 #ifdef __cplusplus
 }

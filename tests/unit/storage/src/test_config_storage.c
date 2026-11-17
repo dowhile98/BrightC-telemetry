@@ -29,7 +29,8 @@ ZTEST(storage_suite, test_config_domain_enum_and_validation)
     zassert_equal(CONFIG_DOMAIN_CALIBRATION, 4, "CONFIG_DOMAIN_CALIBRATION should be 4");
     zassert_equal(CONFIG_DOMAIN_THERMAL_SITE, 5, "CONFIG_DOMAIN_THERMAL_SITE should be 5");
     zassert_equal(CONFIG_DOMAIN_THERMAL_BASELINE, 6, "CONFIG_DOMAIN_THERMAL_BASELINE should be 6");
-    zassert_equal(CONFIG_DOMAIN_MAX, 7, "CONFIG_DOMAIN_MAX should be 7");
+    zassert_equal(CONFIG_DOMAIN_SNMP, 7, "CONFIG_DOMAIN_SNMP should be 7");
+    zassert_equal(CONFIG_DOMAIN_MAX, 8, "CONFIG_DOMAIN_MAX should be 8");
 
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_DEVICE), "DEVICE must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_NET_ETH), "NET_ETH must be valid");
@@ -38,6 +39,7 @@ ZTEST(storage_suite, test_config_domain_enum_and_validation)
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_CALIBRATION), "CALIBRATION must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_THERMAL_SITE), "THERMAL_SITE must be valid");
     zassert_true(config_domain_is_valid(CONFIG_DOMAIN_THERMAL_BASELINE), "THERMAL_BASELINE must be valid");
+    zassert_true(config_domain_is_valid(CONFIG_DOMAIN_SNMP), "SNMP must be valid");
 
     zassert_false(config_domain_is_valid(CONFIG_DOMAIN_MAX), "MAX must be invalid");
     zassert_false(config_domain_is_valid((config_domain_t)-1), "-1 must be invalid");
@@ -104,6 +106,12 @@ ZTEST(storage_suite, test_config_domain_layout)
     zassert_equal(base, 0x1000, "THERMAL_BASELINE base");
     zassert_equal(total, 1024, "THERMAL_BASELINE total");
     zassert_equal(slot, 512, "THERMAL_BASELINE slot");
+
+    /* SNMP: 0x1400, 1024, 512 */
+    zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_SNMP, &base, &total, &slot), 0, "SNMP layout error");
+    zassert_equal(base, 0x1400, "SNMP base");
+    zassert_equal(total, 1024, "SNMP total");
+    zassert_equal(slot, 512, "SNMP slot");
 
     /* Invalid domain */
     zassert_equal(config_domain_get_layout(CONFIG_DOMAIN_MAX, &base, &total, &slot), -EINVAL, "MAX invalid");
@@ -520,4 +528,84 @@ ZTEST(storage_suite, test_thermal_baseline_config_defaults_and_validation)
                                          &unpacked_base, sizeof(unpacked_base), &unpacked_len), 0, "Unpack failed");
     zassert_equal(unpacked_len, sizeof(config_thermal_baseline_t), "Unpacked size mismatch");
     zassert_mem_equal(&unpacked_base, &trained_base, sizeof(config_thermal_baseline_t), "Unpacked data mismatch");
+}
+
+ZTEST(storage_suite, test_config_snmp_validation_and_persistence)
+{
+    /* Sizing checks */
+    zassert_equal(sizeof(config_snmp_trap_dest_t), 20U, "Trap dest size must be 20 B");
+    zassert_equal(sizeof(config_snmp_t), 412U, "SNMP config size must be 412 B");
+
+    /* Default configuration validation */
+    const config_snmp_t *def = app_defaults_get_snmp_cfg();
+    zassert_not_null(def, "Default SNMP config must not be null");
+    zassert_true(config_snmp_is_valid(def), "Default SNMP config must be valid");
+    zassert_equal(def->schema_version, 1U, "Default schema version must be 1");
+    zassert_equal(def->enabled, 1U, "Default enabled must be 1");
+    zassert_equal(def->listen_port, 161U, "Default port must be 161");
+    zassert_str_equal(def->read_community, "public", "Default read community");
+    zassert_str_equal(def->write_community, "private", "Default write community");
+
+    /* Validation failure cases */
+    zassert_false(config_snmp_is_valid(NULL), "NULL config must be invalid");
+
+    config_snmp_t bad_cfg = *def;
+    bad_cfg.schema_version = 2U;
+    zassert_false(config_snmp_is_valid(&bad_cfg), "Unknown schema version must be invalid");
+
+    bad_cfg = *def;
+    bad_cfg.enabled = 2U;
+    zassert_false(config_snmp_is_valid(&bad_cfg), "enabled > 1 must be invalid");
+
+    bad_cfg = *def;
+    bad_cfg.version_mask = 0U;
+    zassert_false(config_snmp_is_valid(&bad_cfg), "version_mask == 0 must be invalid");
+
+    bad_cfg = *def;
+    bad_cfg.listen_port = 0U;
+    zassert_false(config_snmp_is_valid(&bad_cfg), "listen_port == 0 must be invalid");
+
+    bad_cfg = *def;
+    bad_cfg.read_community[0] = '\0';
+    zassert_false(config_snmp_is_valid(&bad_cfg), "empty read_community must be invalid");
+
+    bad_cfg = *def;
+    bad_cfg.trap_dests[0].enabled = 2U;
+    zassert_false(config_snmp_is_valid(&bad_cfg), "trap dest enabled > 1 must be invalid");
+
+    bad_cfg = *def;
+    bad_cfg.trap_dests[0].enabled = 1U;
+    bad_cfg.trap_dests[0].port = 0U;
+    zassert_false(config_snmp_is_valid(&bad_cfg), "active trap dest with port 0 must be invalid");
+
+    /* Envelope pack / unpack and fake storage save / load */
+    fake_config_storage_reset();
+    i_config_storage_t port = fake_config_storage_get_port();
+    zassert_equal(i_config_storage_init(&port), 0, "Init failed");
+
+    config_snmp_t snmp_custom = *def;
+    strncpy(snmp_custom.sys_name, "BrightC-Custom-Node", sizeof(snmp_custom.sys_name) - 1);
+    snmp_custom.trap_dests[0].enabled = 1U;
+    strncpy(snmp_custom.trap_dests[0].target_ip, "192.168.1.150", sizeof(snmp_custom.trap_dests[0].target_ip) - 1);
+    snmp_custom.trap_dests[0].port = 1162U;
+
+    uint8_t pack_buf[sizeof(config_envelope_header_t) + sizeof(config_snmp_t)];
+    size_t packed_len = 0U;
+    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_SNMP, &snmp_custom, sizeof(snmp_custom),
+                                       pack_buf, sizeof(pack_buf), &packed_len), 0, "Pack failed");
+    zassert_equal(packed_len, sizeof(config_envelope_header_t) + sizeof(config_snmp_t), "Packed len mismatch");
+
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_SNMP, pack_buf, packed_len), 0, "Save failed");
+
+    uint8_t load_buf[sizeof(pack_buf)];
+    size_t loaded_len = 0U;
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_SNMP, load_buf, sizeof(load_buf), &loaded_len), 0, "Load failed");
+    zassert_equal(loaded_len, packed_len, "Loaded len mismatch");
+
+    config_snmp_t unpacked_snmp;
+    size_t unpacked_len = 0U;
+    zassert_equal(config_envelope_unpack(CONFIG_DOMAIN_SNMP, load_buf, loaded_len,
+                                         &unpacked_snmp, sizeof(unpacked_snmp), &unpacked_len), 0, "Unpack failed");
+    zassert_equal(unpacked_len, sizeof(config_snmp_t), "Unpacked size mismatch");
+    zassert_mem_equal(&unpacked_snmp, &snmp_custom, sizeof(config_snmp_t), "Unpacked SNMP data mismatch");
 }
