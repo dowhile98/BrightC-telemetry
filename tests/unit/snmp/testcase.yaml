@@ -1,0 +1,7 @@
+tests:
+  unit.snmp:
+    tags:
+      - snmp
+      - unit
+    platform_allow:
+      - native_sim

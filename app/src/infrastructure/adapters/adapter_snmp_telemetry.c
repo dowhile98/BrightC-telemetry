@@ -534,7 +534,7 @@ static snmp_table_get_cb_t s_sensor_get_cbs[] = {
 static struct snmp_table_row s_sensor_rows[16];
 
 static struct snmp_mib_table s_sensor_table = {
-    .table_oid = {.len = 10,
+    .table_oid = {.len = 12,
                   .ids = {SNMP_OID_BRIGHTCV3_BASE, 2, 1, 1}},
     .column_cnt = 6,
     .column_subids = s_sensor_cols,
@@ -543,10 +543,231 @@ static struct snmp_mib_table s_sensor_table = {
     .set_cbs = NULL,
 };
 
-/* Scalar Nodes for Process Temperatures (1..16) */
+/* =========================================================================
+ * HVAC Group Table Callbacks (1.3.6.1.4.1.3134.2.3.3.2.1.<col>.<row>)
+ * ========================================================================= */
+
+static int cb_table_hvac_grp_col1_idx(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                      uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    vb->val.int_val = (int32_t)row->index;
+    return 0;
+}
+
+static int cb_table_hvac_grp_col2_name(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                       uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_OCTET_STRING;
+    snprintf((char *)vb->val.octet_str.data, sizeof(vb->val.octet_str.data),
+             "HVAC Group %u (Sala %u)", (unsigned int)row->index, (unsigned int)row->index);
+    vb->val.octet_str.len = (uint16_t)strlen((char *)vb->val.octet_str.data);
+    return 0;
+}
+
+static int cb_table_hvac_grp_col3_state(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                        uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        /* MIB enum: idle(1), off(2), cooling(3), coolBoost(4), bypass(5), fire(6), manual(7) */
+        vb->val.int_val = (int32_t)(hstat.groups[g].state + 1);
+        return 0;
+    }
+    vb->val.int_val = 1; /* idle(1) */
+    return 0;
+}
+
+static int cb_table_hvac_grp_col4_control_temp(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                               uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        float t = hstat.groups[g].highest_temp;
+        if (t > -100.0f && t < 150.0f)
+        {
+            vb->val.int_val = (int32_t)(t * 10.0f + (t >= 0.0f ? 0.5f : -0.5f));
+            return 0;
+        }
+    }
+    vb->val.int_val = -9999;
+    return 0;
+}
+
+static int cb_table_hvac_grp_col5_tmin(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                       uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        float t = hstat.groups[g].temp_min;
+        vb->val.int_val = (int32_t)(t * 10.0f + (t >= 0.0f ? 0.5f : -0.5f));
+        return 0;
+    }
+    vb->val.int_val = 180; /* default 18.0 C */
+    return 0;
+}
+
+static int cb_table_hvac_grp_col6_tmax(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                       uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        float t = hstat.groups[g].temp_max;
+        vb->val.int_val = (int32_t)(t * 10.0f + (t >= 0.0f ? 0.5f : -0.5f));
+        return 0;
+    }
+    vb->val.int_val = 240; /* default 24.0 C */
+    return 0;
+}
+
+static int cb_table_hvac_grp_col7_talarm(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                         uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        float t = hstat.groups[g].temp_alarm;
+        vb->val.int_val = (int32_t)(t * 10.0f + (t >= 0.0f ? 0.5f : -0.5f));
+        return 0;
+    }
+    vb->val.int_val = 260; /* default 26.0 C */
+    return 0;
+}
+
+static int cb_table_hvac_grp_col8_tbypass(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                          uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        float t = hstat.groups[g].temp_bypass;
+        vb->val.int_val = (int32_t)(t * 10.0f + (t >= 0.0f ? 0.5f : -0.5f));
+        return 0;
+    }
+    vb->val.int_val = 280; /* default 28.0 C */
+    return 0;
+}
+
+static int cb_table_hvac_grp_col9_valid_sensors(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                                uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        if (hstat.groups[g].sensor_start > 0U && hstat.groups[g].sensor_end >= hstat.groups[g].sensor_start) {
+            vb->val.int_val = (int32_t)(hstat.groups[g].sensor_end - hstat.groups[g].sensor_start + 1U);
+        } else {
+            vb->val.int_val = (int32_t)hstat.groups[g].active_turn_count;
+        }
+        return 0;
+    }
+    vb->val.int_val = 0;
+    return 0;
+}
+
+static int cb_table_hvac_grp_col10_active_units(struct snmp_agent *agent, const struct snmp_table_row *row,
+                                                uint8_t column, struct snmp_varbind *vb)
+{
+    ARG_UNUSED(agent);
+    ARG_UNUSED(column);
+    vb->type = ASN1_TAG_INTEGER;
+    app_facade_hvac_status_t hstat;
+    memset(&hstat, 0, sizeof(hstat));
+    if (app_facade_hvac_get_status(&hstat) == 0 && row->index >= 1U && row->index <= HVAC_MAX_GROUPS)
+    {
+        uint8_t g = (uint8_t)(row->index - 1U);
+        vb->val.int_val = (int32_t)hstat.groups[g].active_turn_count;
+        return 0;
+    }
+    vb->val.int_val = 0;
+    return 0;
+}
+
+static const uint8_t s_hvac_group_cols[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+static const uint8_t s_hvac_group_types[] = {
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_OCTET_STRING,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER,
+    ASN1_TAG_INTEGER
+};
+static snmp_table_get_cb_t s_hvac_group_get_cbs[] = {
+    cb_table_hvac_grp_col1_idx,
+    cb_table_hvac_grp_col2_name,
+    cb_table_hvac_grp_col3_state,
+    cb_table_hvac_grp_col4_control_temp,
+    cb_table_hvac_grp_col5_tmin,
+    cb_table_hvac_grp_col6_tmax,
+    cb_table_hvac_grp_col7_talarm,
+    cb_table_hvac_grp_col8_tbypass,
+    cb_table_hvac_grp_col9_valid_sensors,
+    cb_table_hvac_grp_col10_active_units
+};
+
+static struct snmp_table_row s_hvac_group_rows[HVAC_MAX_GROUPS];
+
+static struct snmp_mib_table s_hvac_group_table = {
+    .table_oid = {.len = 12,
+                  .ids = {SNMP_OID_BRIGHTCV3_BASE, 3, 2, 1}},
+    .column_cnt = 10,
+    .column_subids = s_hvac_group_cols,
+    .column_types = s_hvac_group_types,
+    .get_cbs = s_hvac_group_get_cbs,
+    .set_cbs = NULL,
+};
+
+/* Scalar Nodes for Process Temperatures (1..32) */
 #define NODE_PROCESS_TEMP(subid, tag) \
     { \
-        .oid = {.len = 12, .ids = {SNMP_OID_BRIGHTCV3_BASE, 2, 2, subid, 0}}, \
+        .oid = {.len = 13, .ids = {SNMP_OID_BRIGHTCV3_BASE, 2, 2, subid, 0}}, \
         .type = tag, \
         .get_cb = cb_get_process_temp, \
         .set_cb = NULL, \
@@ -555,7 +776,7 @@ static struct snmp_mib_table s_sensor_table = {
 /* Scalar Nodes for Energy Meter Telemetry (1..21) */
 #define NODE_ENERGY(subid, tag) \
     { \
-        .oid = {.len = 11, .ids = {SNMP_OID_BRIGHTCV3_BASE, 6, subid, 0}}, \
+        .oid = {.len = 12, .ids = {SNMP_OID_BRIGHTCV3_BASE, 6, subid, 0}}, \
         .type = tag, \
         .get_cb = cb_get_energy_telemetry, \
         .set_cb = NULL, \
@@ -579,6 +800,22 @@ static const struct snmp_mib_node s_telemetry_nodes[] = {
     NODE_PROCESS_TEMP(14, ASN1_TAG_INTEGER),
     NODE_PROCESS_TEMP(15, ASN1_TAG_INTEGER),
     NODE_PROCESS_TEMP(16, SNMP_TAG_GAUGE32),
+    NODE_PROCESS_TEMP(17, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(18, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(19, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(20, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(21, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(22, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(23, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(24, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(25, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(26, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(27, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(28, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(29, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(30, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(31, ASN1_TAG_INTEGER),
+    NODE_PROCESS_TEMP(32, ASN1_TAG_INTEGER),
 
     /* 3-Phase AC Energy Meter */
     NODE_ENERGY(1,  ASN1_TAG_INTEGER),
@@ -613,7 +850,7 @@ int adapter_snmp_telemetry_init(struct snmp_agent *agent)
 
     /* 1. Set Device Enterprise OID (1.3.6.1.4.1.3134.2.3) */
     struct snmp_oid ent_oid = {
-        .len = 8,
+        .len = 9,
         .ids = {SNMP_OID_BRIGHTCV3_BASE}
     };
     int ret = snmp_set_device_enterprise_oid(agent, &ent_oid);
@@ -646,7 +883,23 @@ int adapter_snmp_telemetry_init(struct snmp_agent *agent)
         }
     }
 
-    LOG_INF("registered %u scalar telemetry nodes + 16-channel sensor table",
+    /* 4. Register HVAC Coordination Group Table */
+    ret = snmp_mib_register_table(agent, &s_hvac_group_table);
+    if (ret != 0)
+    {
+        LOG_WRN("failed to register HVAC group table: %d", ret);
+    }
+    else
+    {
+        for (uint32_t i = 0; i < HVAC_MAX_GROUPS; i++)
+        {
+            s_hvac_group_rows[i].index = i + 1U;
+            s_hvac_group_rows[i].user_data = NULL;
+            (void)snmp_mib_table_add_row(agent, &s_hvac_group_table, &s_hvac_group_rows[i]);
+        }
+    }
+
+    LOG_INF("registered %u scalar telemetry nodes + 16-channel sensor table + 4 HVAC groups",
             (unsigned int)ARRAY_SIZE(s_telemetry_nodes));
     return 0;
 }
