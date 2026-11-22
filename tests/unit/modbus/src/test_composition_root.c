@@ -251,6 +251,36 @@ ZTEST(composition_root_suite, test_phase2_init_domain)
     zassert_false(test_app.is_running, "Container must not be running");
 }
 
+ZTEST(composition_root_suite, test_phase3_init_orchestration)
+{
+    app_container_t test_app;
+    composition_root_reset(&test_app);
+    fake_config_storage_reset();
+
+    zassert_equal(composition_root_init_ports(&test_app), 0, "Phase 1 ports init must succeed");
+    zassert_equal(composition_root_init_domain(&test_app), 0, "Phase 2 domain init must succeed");
+
+    zassert_equal(composition_root_init_orchestration(NULL), -EINVAL, "NULL container must return -EINVAL");
+    zassert_equal(composition_root_init_orchestration(&test_app), 0, "Phase 3 orchestration init must succeed");
+
+    /* Subsystems and Active Objects are initialized */
+    zassert_true(test_app.storage.initialized, "storage must be initialized");
+    zassert_true(test_app.modbus.initialized, "modbus must be initialized");
+    zassert_true(test_app.indicators.initialized, "indicators must be initialized");
+    zassert_true(test_app.di.initialized, "di must be initialized");
+    zassert_true(test_app.alarm.initialized, "alarm must be initialized");
+    zassert_true(test_app.network.initialized, "network must be initialized");
+    zassert_true(test_app.sd_storage.initialized, "sd_storage must be initialized");
+    zassert_true(test_app.datalogger.initialized, "datalogger must be initialized");
+
+    /* Container is NOT started yet in Phase 3 */
+    zassert_false(test_app.is_running, "Container must not be running yet");
+
+    /* Clean up threads/queues */
+    test_app.is_initialized = true;
+    (void)composition_root_deinit(&test_app);
+}
+
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 {
     (void) composition_root_deinit(&s_app);

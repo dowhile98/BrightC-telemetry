@@ -2434,6 +2434,314 @@ int composition_root_init_domain(app_container_t *self)
     return 0;
 }
 
+int composition_root_init_orchestration(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    /* 1. Storage Active Object */
+    k_msgq_init(&self->storage.queue, self->storage.queue_buf,
+                sizeof(ao_storage_event_t), AO_STORAGE_QUEUE_DEPTH);
+    int err = ao_storage_init(&self->storage.ao, &self->storage.port,
+                              &self->storage.queue, s_ao_store_stack,
+                              K_THREAD_STACK_SIZEOF(s_ao_store_stack));
+    if (err != 0)
+    {
+        LOG_ERR("ao_storage_init failed: %d", err);
+        return err;
+    }
+    self->storage.initialized = true;
+
+    /* 2. Modbus Active Objects (one per bus) */
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
+#if !defined(CONFIG_ZTEST)
+        if (!self->modbus.available[bus])
+        {
+            continue;
+        }
+#endif
+        k_msgq_init(&self->modbus.ao_queue[bus], self->modbus.ao_queue_buf[bus],
+                    sizeof(modbus_event_t), AO_MODBUS_QUEUE_DEPTH);
+
+        err = ao_modbus_init(&self->modbus.ao[bus], bus, &self->modbus.registry_port,
+                             &self->modbus.client_port[bus], &self->modbus.ao_queue[bus],
+                             g_ao_stacks[bus], AO_MODBUS_STACK_SIZE);
+        if (err != 0)
+        {
+            LOG_ERR("ao_modbus_init bus %u failed: %d", bus, err);
+            return err;
+        }
+    }
+    self->modbus.initialized = true;
+
+    /* 3. System Indicators Active Object */
+    k_msgq_init(&self->indicators.queue, self->indicators.queue_buf,
+                sizeof(ao_indicator_event_t), AO_INDICATOR_QUEUE_DEPTH);
+    err = ao_system_indicator_init(&self->indicators.ao,
+                                   &self->indicators.led_port,
+                                   &self->indicators.buzzer_port,
+                                   &self->indicators.queue,
+                                   s_ao_indicator_stack,
+                                   K_THREAD_STACK_SIZEOF(s_ao_indicator_stack));
+    if (err != 0)
+    {
+        LOG_ERR("ao_system_indicator_init failed: %d", err);
+        return err;
+    }
+    self->indicators.initialized = true;
+
+    /* 4. Digital Input Active Object */
+    k_msgq_init(&self->di.queue, self->di.queue_buf,
+                sizeof(ao_di_event_t), AO_DI_QUEUE_DEPTH);
+    err = ao_digital_input_init(&self->di.ao,
+                                &self->di.aggregator,
+                                &self->di.queue,
+                                s_ao_di_stack,
+                                K_THREAD_STACK_SIZEOF(s_ao_di_stack));
+    if (err != 0)
+    {
+        LOG_ERR("ao_digital_input_init failed: %d", err);
+        return err;
+    }
+    self->di.initialized = true;
+
+    /* 5. Industrial HVAC Active Object */
+    if (IS_ENABLED(CONFIG_APP_HVAC_SUBSYSTEM))
+    {
+        k_msgq_init(&self->hvac.queue, (char *)self->hvac.queue_buf,
+                    sizeof(ao_hvac_event_t), AO_HVAC_QUEUE_DEPTH);
+        err = ao_hvac_init(&self->hvac.ao,
+                           &self->hvac.config,
+                           &self->hvac.actuator_port,
+                           &self->hvac.queue,
+                           s_ao_hvac_stack,
+                           K_THREAD_STACK_SIZEOF(s_ao_hvac_stack));
+        if (err != 0)
+        {
+            LOG_ERR("ao_hvac_init failed: %d", err);
+            return err;
+        }
+        ao_hvac_set_actuator_adapter(&self->hvac.ao, &self->hvac.actuator_adapter);
+        self->hvac.initialized = true;
+    }
+    else
+    {
+        self->hvac.initialized = false;
+    }
+
+    /* 6. Central Alarm Manager Active Object & Detectors */
+    err = ao_alarm_manager_init(&self->alarm.ao,
+                                s_ao_alarm_stack,
+                                K_THREAD_STACK_SIZEOF(s_ao_alarm_stack),
+                                7);
+    if (err != 0)
+    {
+        LOG_ERR("ao_alarm_manager_init failed: %d", err);
+        return err;
+    }
+    self->alarm.query_port = ao_alarm_manager_get_query_port(&self->alarm.ao);
+    adapter_alarm_detector_di_init(&self->alarm.det_di, &self->alarm.ao);
+    adapter_alarm_detector_temp_init(&self->alarm.det_temp, &self->alarm.ao);
+    if (self->hvac.initialized)
+    {
+        (void)adapter_alarm_detector_temp_apply_hvac_config(&self->alarm.det_temp, &self->hvac.config);
+    }
+    adapter_alarm_detector_volt_init(&self->alarm.det_volt, &self->alarm.ao,
+                                     220.0f, 8.0f, 2.0f);
+    adapter_alarm_detector_hvac_init(&self->alarm.det_hvac, &self->alarm.ao);
+    if (self->hvac.initialized && self->indicators.initialized)
+    {
+        (void)ao_system_indicator_set_buzzer_muted(&self->indicators.ao,
+                                                   self->hvac.config.alarm_buzzer_muted != 0U);
+    }
+    self->alarm.initialized = true;
+
+    /* 7. Sensor Matrix Active Object */
+    if (IS_ENABLED(CONFIG_APP_THERMAL_SUBSYSTEM))
+    {
+        sensor_channel_cfg_t s_configs[SENSOR_PHYS_CH_MAX];
+        (void)sensor_matrix_init_default_pilot_config(s_configs, SENSOR_PHYS_CH_MAX);
+        for (size_t i = 0U; i < SENSOR_PHYS_CH_MAX; i++)
+        {
+            if (s_configs[i].role != (uint8_t)SENSOR_ROLE_DISABLED)
+            {
+                (void)i_sensor_matrix_set_channel_config(&self->sensor.port,
+                                                         (physical_channel_id_t)i,
+                                                         &s_configs[i]);
+            }
+        }
+
+        k_msgq_init(&self->sensor.queue, self->sensor.queue_buf,
+                    sizeof(ao_sensor_matrix_event_t),
+                    AO_SENSOR_MATRIX_QUEUE_DEPTH);
+        const ao_sensor_matrix_config_t ao_cfg = {
+            .matrix = &self->sensor.port,
+            .poll_period_ms = AO_SENSOR_MATRIX_PERIOD_MS,
+            .stack = s_ao_sensor_stack,
+            .stack_size = K_THREAD_STACK_SIZEOF(s_ao_sensor_stack),
+        };
+        err = ao_sensor_matrix_init(&self->sensor.ao, &ao_cfg, &self->sensor.queue);
+        if (err != 0)
+        {
+            LOG_ERR("ao_sensor_matrix_init failed: %d", err);
+            return err;
+        }
+        self->sensor.initialized = true;
+
+        /* 8. Thermal Energy Active Object */
+        hvac_operation_mode_t th_op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
+        err = ao_thermal_energy_init(&self->thermal_energy.ao,
+                                     &self->thermal_site_cfg,
+                                     &self->thermal_baseline_cfg,
+                                     th_op_mode,
+                                     s_ao_thermal_energy_stack,
+                                     K_THREAD_STACK_SIZEOF(s_ao_thermal_energy_stack),
+                                     AO_THERMAL_ENERGY_PRIORITY);
+        if (err != 0)
+        {
+            LOG_ERR("ao_thermal_energy_init failed: %d", err);
+            return err;
+        }
+        self->thermal_energy.port = ao_thermal_energy_get_port(&self->thermal_energy.ao);
+        self->thermal_energy.initialized = true;
+    }
+    else
+    {
+        self->sensor.initialized = false;
+        self->thermal_energy.initialized = false;
+    }
+
+    /* 9. Network Active Object */
+    k_msgq_init(&self->network.queue, self->network.queue_buf,
+                sizeof(ao_network_event_t), AO_NETWORK_QUEUE_DEPTH);
+    const net_eth_config_t *eth_cfg_ptr = default_config_get_net_eth_cfg();
+    const net_wifi_config_t *wifi_cfg_ptr = default_config_get_net_wifi_cfg();
+    err = ao_network_init(&self->network.ao, &self->network.eth_port, &self->network.wifi_port,
+                          eth_cfg_ptr, wifi_cfg_ptr,
+                          &self->network.queue, s_ao_net_stack,
+                          K_THREAD_STACK_SIZEOF(s_ao_net_stack));
+    if (err != 0)
+    {
+        LOG_ERR("ao_network_init failed: %d", err);
+        return err;
+    }
+    self->network.initialized = true;
+
+    /* 10. Real-Time Clock */
+    self->rtc.initialized = true;
+
+    /* 11. MicroSD Storage Pipeline Active Object */
+    k_msgq_init(&self->sd_storage.queue,
+                (char *)self->sd_storage.queue_buf,
+                sizeof(ao_storage_sd_event_t),
+                AO_STORAGE_SD_QUEUE_DEPTH);
+    err = ao_storage_sd_init(&self->sd_storage.ao,
+                             &self->sd_storage.port,
+                             &self->sd_storage.queue,
+                             s_ao_storage_sd_stack,
+                             K_THREAD_STACK_SIZEOF(s_ao_storage_sd_stack),
+                             AO_STORAGE_SD_PRIORITY);
+    if (err != 0)
+    {
+        LOG_ERR("ao_storage_sd_init failed: %d", err);
+        return err;
+    }
+    self->sd_storage.initialized = true;
+
+    /* 12. Modbus TCP Server Active Object */
+#if defined(CONFIG_NANOMODBUS) && defined(CONFIG_NANOMODBUS_SERVER_TCP)
+    const nmbs_callbacks *cbs = adapter_modbus_tcp_server_get_callbacks(&self->modbus_tcp.adapter);
+    err = ao_modbus_tcp_init(&self->modbus_tcp.ao,
+                             &self->modbus_tcp.config,
+                             cbs);
+    if (err != 0)
+    {
+        LOG_ERR("ao_modbus_tcp_init failed: %d", err);
+        return err;
+    }
+    self->modbus_tcp.port = ao_modbus_tcp_get_port(&self->modbus_tcp.ao);
+    self->modbus_tcp.initialized = true;
+#endif
+
+    /* 13. Unified Forensic Datalogger Active Object */
+    k_msgq_init(&self->datalogger.queue,
+                (char *)self->datalogger.queue_buf,
+                sizeof(datalogger_event_envelope_t),
+                AO_DATALOGGER_QUEUE_DEPTH);
+    err = ao_datalogger_init(&self->datalogger.ao,
+                             &self->sd_storage.port,
+                             &self->datalogger.bkp_port,
+                             &self->datalogger.queue,
+                             s_ao_datalogger_stack,
+                             K_THREAD_STACK_SIZEOF(s_ao_datalogger_stack),
+                             AO_DATALOGGER_PRIORITY);
+    if (err != 0)
+    {
+        LOG_ERR("ao_datalogger_init failed: %d", err);
+        return err;
+    }
+    i_hvac_status_t hvac_port = {
+        .api = &s_hvac_status_api,
+        .impl = &self->hvac.ao,
+    };
+    (void)telemetry_sampler_init(&self->datalogger.sampler,
+                                 &self->datalogger.ao,
+                                 &self->thermal_energy.port,
+                                 &self->alarm.query_port,
+                                 &self->rtc.port,
+                                 &hvac_port,
+                                 TELEMETRY_SAMPLER_DEFAULT_INTERVAL_S);
+    (void)datalogger_streamer_init(&self->datalogger.streamer,
+                                  &self->sd_storage.port,
+                                  &self->datalogger.ao,
+                                  "/SD:");
+    self->datalogger.initialized = true;
+
+    /* 14. SNMP Agent */
+#if defined(CONFIG_SNMP_AGENT)
+    struct snmp_agent_cfg agent_cfg = {
+        .port = self->snmp.config.listen_port,
+        .iface = NULL,
+        .read_community = self->snmp.config.read_community,
+        .write_community = self->snmp.config.write_community,
+        .sys_name = self->snmp.config.sys_name,
+        .sys_contact = self->snmp.config.sys_contact,
+        .sys_location = self->snmp.config.sys_location,
+        .sys_descr = "BrightC V3 Industrial HVAC Controller",
+        .engine_boots = self->snmp.config.engine_boots,
+        .user_data = self,
+    };
+    err = snmp_agent_init(&self->snmp.agent, &agent_cfg);
+    if (err == 0)
+    {
+        snmp_trap_clear_destinations(&self->snmp.agent);
+        for (uint8_t i = 0; i < CONFIG_SNMP_MAX_TRAP_DESTS; i++)
+        {
+            if (self->snmp.config.trap_dests[i].enabled &&
+                self->snmp.config.trap_dests[i].target_ip[0] != '\0')
+            {
+                snmp_trap_add_destination_port(&self->snmp.agent,
+                                               self->snmp.config.trap_dests[i].target_ip,
+                                               self->snmp.config.trap_dests[i].port);
+            }
+        }
+        i_alarm_query_t query_port = {0};
+        if (self->alarm.initialized)
+        {
+            query_port = self->alarm.query_port;
+        }
+        (void)adapter_snmp_traps_init(&self->snmp.trap_adapter, &self->snmp.agent, query_port);
+        (void)adapter_snmp_telemetry_init(&self->snmp.agent);
+        self->snmp.initialized = true;
+    }
+#endif
+
+    return 0;
+}
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)
