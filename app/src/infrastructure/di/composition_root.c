@@ -2025,7 +2025,7 @@ int composition_root_init_ports(app_container_t *self)
     int led_err = adapter_led_gpio_init(&self->indicators.led_adapter, &s_led_spec);
     if (led_err == 0)
     {
-        self->indicators.led_port = adapter_led_gpio_port(&self->indicators.led_adapter);
+        (void)adapter_led_gpio_port(&self->indicators.led_adapter, &self->indicators.led_port);
     }
     else
     {
@@ -2040,7 +2040,7 @@ int composition_root_init_ports(app_container_t *self)
     int buzzer_err = adapter_buzzer_pwm_init(&self->indicators.buzzer_adapter, &s_buzzer_spec);
     if (buzzer_err == 0)
     {
-        self->indicators.buzzer_port = adapter_buzzer_pwm_port(&self->indicators.buzzer_adapter);
+        (void)adapter_buzzer_pwm_port(&self->indicators.buzzer_adapter, &self->indicators.buzzer_port);
     }
     else
     {
@@ -2059,11 +2059,7 @@ int composition_root_init_ports(app_container_t *self)
     mcp_dev1 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_1));
 #endif
     int di_adp_err = adapter_di_gpio_init(&self->di.di_adapter, mcp_dev0, mcp_dev1);
-    if (di_adp_err == 0)
-    {
-        self->di.port = adapter_di_gpio_port(&self->di.di_adapter);
-    }
-    else
+    if (di_adp_err != 0)
     {
         LOG_WRN("adapter_di_gpio_init failed (%d)", di_adp_err);
     }
@@ -2111,10 +2107,11 @@ int composition_root_init_ports(app_container_t *self)
 #endif
     if (adc_dma_dev != NULL && device_is_ready(adc_dma_dev))
     {
-        adapter_sensor_zephyr_cfg_t s_cfg = { .adc_dev = adc_dma_dev };
-        if (adapter_sensor_zephyr_init(&self->sensor.adapter, &s_cfg) == 0)
+        if (adapter_sensor_zephyr_init(&self->sensor.adapter,
+                                       adc_dma_dev,
+                                       AO_SENSOR_MATRIX_PERIOD_MS) == 0)
         {
-            self->sensor.port = adapter_sensor_zephyr_port(&self->sensor.adapter);
+            (void)adapter_sensor_zephyr_port(&self->sensor.adapter, &self->sensor.port);
         }
     }
 #endif
@@ -2203,15 +2200,12 @@ int composition_root_init_ports(app_container_t *self)
     }
 #endif
 
-    /* 11. Modbus TCP Server port */
+    /* 11. Modbus TCP Server adapter */
 #if defined(CONFIG_NANOMODBUS) && defined(CONFIG_NANOMODBUS_SERVER_TCP)
     self->modbus_tcp.config.port = MODBUS_TCP_DEFAULT_PORT;
     self->modbus_tcp.config.max_clients = MODBUS_TCP_MAX_CLIENTS;
     self->modbus_tcp.config.inactivity_timeout_ms = MODBUS_TCP_INACTIVITY_TIMEOUT_MS;
-    if (adapter_modbus_tcp_server_init(&self->modbus_tcp.adapter, &self->modbus_tcp.config) == 0)
-    {
-        self->modbus_tcp.port = adapter_modbus_tcp_server_port(&self->modbus_tcp.adapter);
-    }
+    (void)adapter_modbus_tcp_server_init(&self->modbus_tcp.adapter, &self->modbus_tcp.config);
 #endif
 
     return 0;
