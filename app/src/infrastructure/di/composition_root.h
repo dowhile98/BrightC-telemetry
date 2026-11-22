@@ -284,6 +284,53 @@ struct app_container {
 };
 
 /* =========================================================================
+ * Phased Lifecycle Architecture (Phases 0 - 5)
+ * ========================================================================= */
+
+/**
+ * @brief Phase 0: Reset container to clean, zeroed state.
+ *
+ * @param[out] self Container instance to reset.
+ */
+void composition_root_reset(app_container_t *self);
+
+/**
+ * @brief Phase 1: Initialize all hardware adapters and abstract interface ports.
+ *
+ * Configures all low-level hardware drivers and adapters (storage, digital inputs,
+ * indicators, relays, modbus transports, sensor matrix ADC, RTC, MicroSD, BKPSRAM,
+ * network interfaces, modbus TCP server).
+ * Zero threads are started, zero message queues are initialized, and no domain
+ * business logic is executed.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_ports(app_container_t *self);
+
+/**
+ * @brief Phase 2: Load persistent configuration and initialize domain services.
+ *
+ * Loads configs from storage into container RAM structs and initializes
+ * pure domain evaluators, registries, and aggregators.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_domain(app_container_t *self);
+
+/**
+ * @brief Phase 3: Initialize orchestration message queues and Active Objects.
+ *
+ * Configures all k_msgq structures and invokes ao_*_init() for all active objects.
+ * Threads remain in unstarted/dormant state.
+ *
+ * @param[in,out] self Container instance.
+ * @return 0 on success, negative errno on failure.
+ */
+int composition_root_init_orchestration(app_container_t *self);
+
+/* =========================================================================
  * Modular Subsystem Initializers
  * ========================================================================= */
 

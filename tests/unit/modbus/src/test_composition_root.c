@@ -185,6 +185,38 @@ ZTEST(composition_root_suite, test_init_rejects_bad_arguments)
     zassert_is_null(app_container_get_wifi_control(NULL), "NULL container must yield NULL wifi_control");
 }
 
+ZTEST(composition_root_suite, test_phase1_init_ports)
+{
+    app_container_t test_app;
+    composition_root_reset(&test_app);
+
+    zassert_equal(composition_root_init_ports(NULL), -EINVAL, "NULL container must return -EINVAL");
+    zassert_equal(composition_root_init_ports(&test_app), 0, "Phase 1 ports init must succeed");
+
+    /* Storage port is bound */
+    zassert_true(i_config_storage_is_bound(&test_app.storage.port), "Storage port must be bound");
+
+    /* Indicators ports are bound */
+    zassert_true(i_led_is_bound(&test_app.indicators.led_port), "LED port must be bound");
+    zassert_true(i_buzzer_is_bound(&test_app.indicators.buzzer_port), "Buzzer port must be bound");
+
+    /* Network ports are bound */
+    zassert_true(i_network_is_bound(&test_app.network.eth_port), "Eth port must be bound");
+    zassert_true(i_network_is_bound(&test_app.network.wifi_port), "Wifi port must be bound");
+
+    /* RTC, SD, BKPSRAM ports are bound */
+    zassert_true(i_rtc_is_bound(&test_app.rtc.port), "RTC port must be bound");
+    zassert_true(i_storage_fs_is_bound(&test_app.sd_storage.port), "SD FS port must be bound");
+    zassert_true(i_bkpsram_is_bound(&test_app.datalogger.bkp_port), "BKPSRAM port must be bound");
+
+    /* Sensor matrix port is bound */
+    zassert_true(i_sensor_matrix_is_bound(&test_app.sensor.port), "Sensor matrix port must be bound");
+
+    /* Active Objects must NOT be initialized yet in Phase 1 */
+    zassert_false(test_app.is_initialized, "Container must not be fully initialized yet");
+    zassert_false(test_app.is_running, "Container must not be running");
+}
+
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 {
     (void) composition_root_deinit(&s_app);

@@ -1888,6 +1888,291 @@ int composition_root_stop_snmp(app_container_t *self)
 
 
 
+void composition_root_reset(app_container_t *self)
+{
+    if (self != NULL)
+    {
+        (void)memset(self, 0, sizeof(*self));
+    }
+}
+
+int composition_root_init_ports(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    /* 1. Storage port */
+#if defined(CONFIG_ZTEST)
+    if (!i_config_storage_is_bound(&self->storage.port))
+    {
+        self->storage.port = fake_config_storage_get_port();
+    }
+#else
+    const struct device *eeprom_dev = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(eeprom0))
+    eeprom_dev = DEVICE_DT_GET(DT_NODELABEL(eeprom0));
+#endif
+    if (eeprom_dev != NULL)
+    {
+        int store_err = adapter_storage_microconf_init(&self->storage.storage_adapter, eeprom_dev);
+        if (store_err == 0)
+        {
+            self->storage.port = adapter_storage_microconf_port(&self->storage.storage_adapter);
+        }
+        else
+        {
+            LOG_WRN("adapter_storage_microconf_init failed (%d)", store_err);
+        }
+    }
+#endif
+
+    /* 2. Modbus Transport ports & topology */
+    const modbus_bus_cfg_t unavailable_cfg = MODBUS_BUS_CFG_UNAVAILABLE_INIT;
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
+        self->modbus.bus_cfg[bus] = unavailable_cfg;
+    }
+    (void)memset(self->modbus.available, 0, sizeof(self->modbus.available));
+
+#ifdef CONFIG_NANOMODBUS
+    for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
+    {
+        int err = adapter_modbus_nmbs_init(&self->modbus.nmbs[bus], &k_bus_transport_cfg[bus]);
+        if (err == 0)
+        {
+            err = adapter_modbus_nmbs_port(&self->modbus.nmbs[bus], &self->modbus.client_port[bus]);
+        }
+        if (err == 0)
+        {
+            err = i_modbus_client_get_bus_cfg(&self->modbus.client_port[bus], &self->modbus.bus_cfg[bus]);
+        }
+        if (err == 0)
+        {
+            self->modbus.available[bus] = true;
+        }
+        else
+        {
+            self->modbus.client_port[bus].api = NULL;
+            self->modbus.client_port[bus].impl = NULL;
+        }
+    }
+#endif
+
+    /* 3. Indicators ports (LED & Buzzer) */
+#if defined(CONFIG_ZTEST)
+    if (!i_led_is_bound(&self->indicators.led_port))
+    {
+        self->indicators.led_port = fake_led_get_port();
+    }
+    if (!i_buzzer_is_bound(&self->indicators.buzzer_port))
+    {
+        self->indicators.buzzer_port = fake_buzzer_get_port();
+    }
+#else
+#if DT_NODE_EXISTS(DT_ALIAS(led0))
+    static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+#elif DT_NODE_EXISTS(DT_NODELABEL(user_led))
+    static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_NODELABEL(user_led), gpios);
+#else
+    static const struct gpio_dt_spec s_led_spec = {0};
+#endif
+    int led_err = adapter_led_gpio_init(&self->indicators.led_adapter, &s_led_spec);
+    if (led_err == 0)
+    {
+        self->indicators.led_port = adapter_led_gpio_port(&self->indicators.led_adapter);
+    }
+    else
+    {
+        LOG_WRN("adapter_led_gpio_init failed (%d)", led_err);
+    }
+
+#if DT_NODE_EXISTS(DT_NODELABEL(pwm_buzzer))
+    static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_NODELABEL(pwm_buzzer));
+#else
+    static const struct pwm_dt_spec s_buzzer_spec = {0};
+#endif
+    int buzzer_err = adapter_buzzer_pwm_init(&self->indicators.buzzer_adapter, &s_buzzer_spec);
+    if (buzzer_err == 0)
+    {
+        self->indicators.buzzer_port = adapter_buzzer_pwm_port(&self->indicators.buzzer_adapter);
+    }
+    else
+    {
+        LOG_WRN("adapter_buzzer_pwm_init failed (%d)", buzzer_err);
+    }
+#endif
+
+    /* 4. Digital Input port */
+#if !defined(CONFIG_ZTEST)
+    const struct device *mcp_dev0 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_0))
+    mcp_dev0 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_0));
+#endif
+    const struct device *mcp_dev1 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_1))
+    mcp_dev1 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_1));
+#endif
+    int di_adp_err = adapter_di_gpio_init(&self->di.di_adapter, mcp_dev0, mcp_dev1);
+    if (di_adp_err == 0)
+    {
+        self->di.port = adapter_di_gpio_port(&self->di.di_adapter);
+    }
+    else
+    {
+        LOG_WRN("adapter_di_gpio_init failed (%d)", di_adp_err);
+    }
+#endif
+
+    /* 5. Relays ports */
+#if !defined(CONFIG_ZTEST)
+    const struct device *mcp_dev2 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_2))
+    mcp_dev2 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_2));
+#endif
+    const struct device *mcp_dev3 = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mcp23s17_3))
+    mcp_dev3 = DEVICE_DT_GET(DT_NODELABEL(mcp23s17_3));
+#endif
+    int local_relay_err = adapter_relay_gpio_init(&self->hvac.local_relay_adapter, mcp_dev2, mcp_dev3);
+    if (local_relay_err != 0)
+    {
+        LOG_WRN("adapter_relay_gpio_init failed (%d)", local_relay_err);
+    }
+#else
+    int local_relay_err = adapter_relay_gpio_init(&self->hvac.local_relay_adapter, NULL, NULL);
+    if (local_relay_err != 0)
+    {
+        LOG_WRN("adapter_relay_gpio_init failed (%d)", local_relay_err);
+    }
+#endif
+    (void)adapter_relay_gpio_port(&self->hvac.local_relay_adapter, &self->hvac.local_relay_port);
+    self->modbus.relay_int_port = self->hvac.local_relay_port;
+
+    /* Waveshare external relay port */
+    (void)adapter_relay_modbus_port(&self->modbus.waveshare_relay, &self->modbus.relay_ext_port);
+
+    /* 6. Sensor Matrix port */
+#if defined(CONFIG_ZTEST)
+    if (!i_sensor_matrix_is_bound(&self->sensor.port))
+    {
+        self->sensor.port = fake_sensor_matrix_get_port();
+    }
+#else
+#if DT_NODE_EXISTS(DT_NODELABEL(adc_dma_engine))
+    const struct device *adc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(adc_dma_engine));
+#else
+    const struct device *adc_dma_dev = NULL;
+#endif
+    if (adc_dma_dev != NULL && device_is_ready(adc_dma_dev))
+    {
+        adapter_sensor_zephyr_cfg_t s_cfg = { .adc_dev = adc_dma_dev };
+        if (adapter_sensor_zephyr_init(&self->sensor.adapter, &s_cfg) == 0)
+        {
+            self->sensor.port = adapter_sensor_zephyr_port(&self->sensor.adapter);
+        }
+    }
+#endif
+
+    /* 7. RTC port */
+#if defined(CONFIG_ZTEST)
+    if (!i_rtc_is_bound(&self->rtc.port))
+    {
+        self->rtc.port = fake_rtc_get_port();
+    }
+#else
+    const struct device *rtc_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(rtc));
+    if (rtc_dev != NULL && device_is_ready(rtc_dev))
+    {
+        (void)adapter_rtc_zephyr_init(&self->rtc.zephyr_adapter, rtc_dev);
+    }
+    self->rtc.port = adapter_rtc_zephyr_bind(&self->rtc.zephyr_adapter);
+#endif
+
+    /* 8. MicroSD Storage port */
+#if defined(CONFIG_ZTEST)
+    if (!i_storage_fs_is_bound(&self->sd_storage.port))
+    {
+        self->sd_storage.port = fake_storage_fs_get_port();
+    }
+#else
+    if (adapter_storage_sd_zephyr_init(&self->sd_storage.zephyr_adapter, "SD", "/SD:") == 0)
+    {
+        self->sd_storage.port = adapter_storage_sd_zephyr_bind(&self->sd_storage.zephyr_adapter);
+    }
+#endif
+
+    /* 9. Backup SRAM port */
+#if defined(CONFIG_ZTEST)
+    if (!i_bkpsram_is_bound(&self->datalogger.bkp_port))
+    {
+        self->datalogger.bkp_port = fake_bkpsram_get_port();
+    }
+#else
+    if (adapter_bkpsram_stm32_init(&self->datalogger.bkpsram_adapter,
+                                   (void *)STM32H7_BKPSRAM_BASE_ADDR,
+                                   STM32H7_BKPSRAM_SIZE) == 0)
+    {
+        self->datalogger.bkp_port = adapter_bkpsram_stm32_port(&self->datalogger.bkpsram_adapter);
+    }
+#endif
+
+    /* 10. Network ports (Ethernet & Wi-Fi) */
+#if defined(CONFIG_ZTEST)
+    if (!i_network_is_bound(&self->network.eth_port))
+    {
+        self->network.eth_port = fake_network_get_eth_port();
+    }
+    if (!i_network_is_bound(&self->network.wifi_port))
+    {
+        self->network.wifi_port = fake_network_get_wifi_port();
+    }
+    if (!i_wifi_control_is_bound(&self->network.wifi_ctrl_port))
+    {
+        self->network.wifi_ctrl_port = fake_network_get_wifi_control_port();
+    }
+#else
+    const struct device *eth_dev = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(mac))
+    eth_dev = DEVICE_DT_GET(DT_NODELABEL(mac));
+#endif
+    if (eth_dev != NULL && device_is_ready(eth_dev))
+    {
+        if (adapter_eth_stm32_init(&self->network.eth_adapter, eth_dev) == 0)
+        {
+            self->network.eth_port = adapter_eth_stm32_port(&self->network.eth_adapter);
+        }
+    }
+
+    const struct device *wifi_dev = NULL;
+#if DT_NODE_EXISTS(DT_NODELABEL(esp_hosted_mcu_wifi))
+    wifi_dev = DEVICE_DT_GET(DT_NODELABEL(esp_hosted_mcu_wifi));
+#endif
+    if (wifi_dev != NULL && device_is_ready(wifi_dev))
+    {
+        if (adapter_wifi_esp_hosted_init(&self->network.wifi_adapter, wifi_dev) == 0)
+        {
+            self->network.wifi_port = adapter_wifi_esp_hosted_port(&self->network.wifi_adapter);
+            self->network.wifi_ctrl_port = adapter_wifi_esp_hosted_wifi_control_port(&self->network.wifi_adapter);
+        }
+    }
+#endif
+
+    /* 11. Modbus TCP Server port */
+#if defined(CONFIG_NANOMODBUS) && defined(CONFIG_NANOMODBUS_SERVER_TCP)
+    self->modbus_tcp.config.port = MODBUS_TCP_DEFAULT_PORT;
+    self->modbus_tcp.config.max_clients = MODBUS_TCP_MAX_CLIENTS;
+    self->modbus_tcp.config.inactivity_timeout_ms = MODBUS_TCP_INACTIVITY_TIMEOUT_MS;
+    if (adapter_modbus_tcp_server_init(&self->modbus_tcp.adapter, &self->modbus_tcp.config) == 0)
+    {
+        self->modbus_tcp.port = adapter_modbus_tcp_server_port(&self->modbus_tcp.adapter);
+    }
+#endif
+
+    return 0;
+}
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)
