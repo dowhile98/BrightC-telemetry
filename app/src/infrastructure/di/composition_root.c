@@ -92,6 +92,77 @@ static K_THREAD_STACK_DEFINE(s_ao_thermal_energy_stack, AO_THERMAL_ENERGY_STACK_
 static K_THREAD_STACK_DEFINE(s_ao_storage_sd_stack, AO_STORAGE_SD_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(s_ao_datalogger_stack, AO_DATALOGGER_STACK_SIZE);
 
+#if !defined(CONFIG_ZTEST)
+static int dummy_led_set_state(void *impl, led_state_t state)
+{
+    ARG_UNUSED(impl);
+    ARG_UNUSED(state);
+    return 0;
+}
+
+static int dummy_led_get_state(void *impl, led_state_t *out_state)
+{
+    ARG_UNUSED(impl);
+    if (out_state != NULL)
+    {
+        *out_state = LED_STATE_OFF;
+    }
+    return 0;
+}
+
+static int dummy_led_set_blink_rate(void *impl, uint32_t period_ms, uint32_t duty_cycle_pct)
+{
+    ARG_UNUSED(impl);
+    ARG_UNUSED(period_ms);
+    ARG_UNUSED(duty_cycle_pct);
+    return 0;
+}
+
+static const i_led_api_t s_dummy_led_api = {
+    .set_state = dummy_led_set_state,
+    .get_state = dummy_led_get_state,
+    .set_blink_rate = dummy_led_set_blink_rate,
+};
+
+static int dummy_buzzer_play_tone(void *impl, uint32_t frequency_hz, uint32_t duration_ms)
+{
+    ARG_UNUSED(impl);
+    ARG_UNUSED(frequency_hz);
+    ARG_UNUSED(duration_ms);
+    return 0;
+}
+
+static int dummy_buzzer_play_pattern(void *impl, buzzer_pattern_t pattern, uint32_t frequency_hz)
+{
+    ARG_UNUSED(impl);
+    ARG_UNUSED(pattern);
+    ARG_UNUSED(frequency_hz);
+    return 0;
+}
+
+static int dummy_buzzer_stop(void *impl)
+{
+    ARG_UNUSED(impl);
+    return 0;
+}
+
+static int dummy_buzzer_get_active_pattern(void *impl, buzzer_pattern_t *out_pattern)
+{
+    ARG_UNUSED(impl);
+    if (out_pattern != NULL)
+    {
+        *out_pattern = BUZZER_PATTERN_SILENT;
+    }
+    return 0;
+}
+
+static const i_buzzer_api_t s_dummy_buzzer_api = {
+    .play_tone = dummy_buzzer_play_tone,
+    .play_pattern = dummy_buzzer_play_pattern,
+    .stop = dummy_buzzer_stop,
+    .get_active_pattern = dummy_buzzer_get_active_pattern,
+};
+#endif
 
 static int storage_provider_eth(void *ctx, config_domain_t domain,
                                 void *out_buf, size_t max_size, size_t *out_size)
@@ -887,11 +958,17 @@ int composition_root_init_indicators(app_container_t *self)
     }
     else
     {
-        LOG_WRN("adapter_led_gpio_init failed (%d)", led_err);
+        LOG_WRN("adapter_led_gpio_init failed (%d); binding dummy fallback LED port", led_err);
+        self->indicators.led_port.api = &s_dummy_led_api;
+        self->indicators.led_port.impl = self;
     }
 
 #if DT_NODE_EXISTS(DT_NODELABEL(buzzer_pwm))
     static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_NODELABEL(buzzer_pwm));
+#elif DT_NODE_EXISTS(DT_ALIAS(buzzer_pwm))
+    static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_ALIAS(buzzer_pwm));
+#elif DT_NODE_EXISTS(DT_NODELABEL(pwm_buzzer))
+    static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_NODELABEL(pwm_buzzer));
 #else
     static const struct pwm_dt_spec s_buzzer_spec = {0};
 #endif
@@ -903,7 +980,9 @@ int composition_root_init_indicators(app_container_t *self)
     }
     else
     {
-        LOG_WRN("adapter_buzzer_pwm_init failed (%d)", buzzer_err);
+        LOG_WRN("adapter_buzzer_pwm_init failed (%d); binding dummy fallback buzzer port", buzzer_err);
+        self->indicators.buzzer_port.api = &s_dummy_buzzer_api;
+        self->indicators.buzzer_port.impl = self;
     }
 #endif
 
@@ -2019,6 +2098,8 @@ int composition_root_init_ports(app_container_t *self)
     static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 #elif DT_NODE_EXISTS(DT_NODELABEL(user_led))
     static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_NODELABEL(user_led), gpios);
+#elif DT_NODE_EXISTS(DT_NODELABEL(led_0))
+    static const struct gpio_dt_spec s_led_spec = GPIO_DT_SPEC_GET(DT_NODELABEL(led_0), gpios);
 #else
     static const struct gpio_dt_spec s_led_spec = {0};
 #endif
@@ -2029,10 +2110,16 @@ int composition_root_init_ports(app_container_t *self)
     }
     else
     {
-        LOG_WRN("adapter_led_gpio_init failed (%d)", led_err);
+        LOG_WRN("adapter_led_gpio_init failed (%d); binding dummy fallback LED port", led_err);
+        self->indicators.led_port.api = &s_dummy_led_api;
+        self->indicators.led_port.impl = self;
     }
 
-#if DT_NODE_EXISTS(DT_NODELABEL(pwm_buzzer))
+#if DT_NODE_EXISTS(DT_NODELABEL(buzzer_pwm))
+    static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_NODELABEL(buzzer_pwm));
+#elif DT_NODE_EXISTS(DT_ALIAS(buzzer_pwm))
+    static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_ALIAS(buzzer_pwm));
+#elif DT_NODE_EXISTS(DT_NODELABEL(pwm_buzzer))
     static const struct pwm_dt_spec s_buzzer_spec = PWM_DT_SPEC_GET(DT_NODELABEL(pwm_buzzer));
 #else
     static const struct pwm_dt_spec s_buzzer_spec = {0};
@@ -2044,7 +2131,9 @@ int composition_root_init_ports(app_container_t *self)
     }
     else
     {
-        LOG_WRN("adapter_buzzer_pwm_init failed (%d)", buzzer_err);
+        LOG_WRN("adapter_buzzer_pwm_init failed (%d); binding dummy fallback buzzer port", buzzer_err);
+        self->indicators.buzzer_port.api = &s_dummy_buzzer_api;
+        self->indicators.buzzer_port.impl = self;
     }
 #endif
 
