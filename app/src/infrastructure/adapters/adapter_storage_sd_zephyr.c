@@ -24,7 +24,14 @@ static bool adapter_is_card_present(void *impl)
     }
 
 #if DT_NODE_HAS_PROP(DT_NODELABEL(sdmmc1), cd_gpios)
-    if (device_is_ready(s_sdmmc_cd_gpio.port)) {
+    if (gpio_is_ready_dt(&s_sdmmc_cd_gpio)) {
+        /*
+         * Upstream Zephyr sdmmc_stm32 driver calls card_detect_uninit which
+         * configures the pin to GPIO_DISCONNECTED on access_deinit or mount failure.
+         * We ensure GPIO_INPUT mode is active so that the Schmitt trigger buffer
+         * is turned on and the IDR register reflects physical pin level accurately.
+         */
+        (void)gpio_pin_configure_dt(&s_sdmmc_cd_gpio, GPIO_INPUT);
         int val = gpio_pin_get_dt(&s_sdmmc_cd_gpio);
         if (val >= 0) {
             return (val != 0);
@@ -77,6 +84,11 @@ static int adapter_mount(void *impl, const char *mount_pt)
         LOG_INF("MicroSD successfully mounted on %s", self->mount_point);
     } else {
         LOG_ERR("Failed to mount MicroSD on %s: %d", self->mount_point, rc);
+#if DT_NODE_HAS_PROP(DT_NODELABEL(sdmmc1), cd_gpios)
+        if (gpio_is_ready_dt(&s_sdmmc_cd_gpio)) {
+            (void)gpio_pin_configure_dt(&s_sdmmc_cd_gpio, GPIO_INPUT);
+        }
+#endif
     }
 
     k_mutex_unlock(&self->lock);
@@ -125,6 +137,12 @@ static int adapter_unmount(void *impl, const char *mount_pt)
     } else {
         LOG_INF("MicroSD unmounted successfully from %s", self->mount_point);
     }
+
+#if DT_NODE_HAS_PROP(DT_NODELABEL(sdmmc1), cd_gpios)
+    if (gpio_is_ready_dt(&s_sdmmc_cd_gpio)) {
+        (void)gpio_pin_configure_dt(&s_sdmmc_cd_gpio, GPIO_INPUT);
+    }
+#endif
 
     k_mutex_unlock(&self->lock);
     return rc;
@@ -619,6 +637,19 @@ int adapter_storage_sd_zephyr_init(adapter_storage_sd_zephyr_t *self,
 
     const char *m = (mount_point != NULL) ? mount_point : ADAPTER_STORAGE_SD_DEFAULT_MOUNT_POINT;
     strncpy(self->mount_point, m, sizeof(self->mount_point) - 1);
+
+#if DT_NODE_HAS_PROP(DT_NODELABEL(sdmmc1), cd_gpios)
+    if (gpio_is_ready_dt(&s_sdmmc_cd_gpio)) {
+        int rc = gpio_pin_configure_dt(&s_sdmmc_cd_gpio, GPIO_INPUT);
+        if (rc == 0) {
+            LOG_INF("Card-detect GPIO (PG5) configured as input");
+        } else {
+            LOG_ERR("Failed to configure card-detect GPIO (PG5): %d", rc);
+        }
+    } else {
+        LOG_WRN("Card-detect GPIO device not ready");
+    }
+#endif
 
     self->is_initialized = true;
     return 0;
