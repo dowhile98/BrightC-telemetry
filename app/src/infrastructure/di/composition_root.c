@@ -1285,6 +1285,24 @@ int composition_root_wire(app_container_t *self)
 
     if (self->modbus.initialized)
     {
+        modbus_slave_descriptor_t ws_desc;
+        if (modbus_registry_find_by_type(&self->modbus.registry_impl,
+                                         MODBUS_DEV_TYPE_WAVESHARE_RELAY_32CH,
+                                         &ws_desc) == 0)
+        {
+            uint8_t waveshare_bus = ws_desc.bus_id;
+            if (waveshare_bus >= (uint8_t)MODBUS_BUS_MAX)
+            {
+                waveshare_bus = (uint8_t)MODBUS_BUS_RS485_1;
+            }
+
+            (void)adapter_relay_modbus_init(&self->modbus.waveshare_relay,
+                                            &self->modbus.ao[waveshare_bus],
+                                            ws_desc.slave_addr,
+                                            (int32_t)ws_desc.timeout_ms);
+            (void)adapter_relay_modbus_port(&self->modbus.waveshare_relay, &self->modbus.relay_ext_port);
+        }
+
         for (uint8_t bus = 0U; bus < (uint8_t)MODBUS_BUS_MAX; bus++)
         {
             ao_modbus_set_mbsl32di_callback(&self->modbus.ao[bus], on_modbus_mbsl32di_reading, self);
@@ -1292,6 +1310,29 @@ int composition_root_wire(app_container_t *self)
             ao_modbus_set_jsy_mk339_callback(&self->modbus.ao[bus], on_modbus_jsy_mk339_reading, self);
             ao_modbus_set_bus_fault_callback(&self->modbus.ao[bus], on_modbus_bus_fault, self);
         }
+    }
+
+    if (self->hvac.initialized)
+    {
+        hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
+        hvac_unit_hw_config_t hw_units[HVAC_MAX_UNITS_TOTAL];
+        for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++)
+        {
+            const hvac_unit_hw_config_t *u_cfg = hardware_pin_map_get_unit_for_mode(op_mode, u);
+            if (u_cfg != NULL)
+            {
+                hw_units[u] = *u_cfg;
+            }
+            else
+            {
+                (void)memset(&hw_units[u], 0, sizeof(hw_units[u]));
+            }
+        }
+        (void)adapter_hvac_actuator_init(&self->hvac.actuator_adapter,
+                                         hw_units,
+                                         HVAC_MAX_UNITS_TOTAL,
+                                         i_relay_is_bound(&self->modbus.relay_ext_port) ? &self->modbus.relay_ext_port : NULL,
+                                         i_relay_is_bound(&self->hvac.local_relay_port) ? &self->hvac.local_relay_port : NULL);
     }
 
     if (self->thermal_energy.initialized)
@@ -2757,144 +2798,44 @@ int composition_root_init(app_container_t *self)
         return 0;
     }
 
-    (void)memset(self, 0, sizeof(*self));
-    (void)app_event_mediator_bind(self);
+    BOOT_INF("composition root: starting phased boot sequence");
 
-    BOOT_INF("composition root: initialization started (dependency order enforced)");
+    /* Phase 0: Pristine container reset */
+    composition_root_reset(self);
 
-    BOOT_INF("phase 01/12: initializing persistent storage and loading configuration");
-    int err = composition_root_init_storage(self);
+    /* Phase 1: Initialize hardware adapters and interface ports */
+    BOOT_INF("[Phase 1/4] Initializing hardware adapters and interface ports");
+    int err = composition_root_init_ports(self);
     if (err != 0)
     {
-        BOOT_ERR("phase 01/12 failed: storage/configuration rc=%d", err);
+        BOOT_ERR("Phase 1 ports initialization failed: %d", err);
         return err;
     }
 
-    BOOT_INF("phase 02/12: initializing Modbus RTU buses and device registry");
-    err = composition_root_init_modbus(self);
+    /* Phase 2: Load persistent configuration & initialize domain services */
+    BOOT_INF("[Phase 2/4] Loading persistent configs and initializing domain services");
+    err = composition_root_init_domain(self);
     if (err != 0)
     {
-        BOOT_ERR("phase 02/12 failed: Modbus RTU rc=%d", err);
+        BOOT_ERR("Phase 2 domain initialization failed: %d", err);
         return err;
     }
 
-    BOOT_INF("phase 03/12: initializing system indicators");
-    err = composition_root_init_indicators(self);
+    /* Phase 3: Initialize message queues and Active Objects */
+    BOOT_INF("[Phase 3/4] Initializing message queues and Active Objects");
+    err = composition_root_init_orchestration(self);
     if (err != 0)
     {
-        BOOT_ERR("phase 03/12 failed: indicators rc=%d", err);
+        BOOT_ERR("Phase 3 orchestration initialization failed: %d", err);
         return err;
     }
 
-    BOOT_INF("phase 04/12: initializing digital inputs");
-    err = composition_root_init_digital_inputs(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 04/12 failed: digital inputs rc=%d", err);
-        return err;
-    }
-
-    if (IS_ENABLED(CONFIG_APP_HVAC_SUBSYSTEM))
-    {
-        BOOT_INF("phase 05/12: initializing HVAC control");
-        err = composition_root_init_hvac(self);
-        if (err != 0)
-        {
-            BOOT_ERR("phase 05/12 failed: HVAC rc=%d", err);
-            return err;
-        }
-    }
-    else
-    {
-        BOOT_INF("phase 05/12: HVAC control disabled by active profile");
-        self->hvac.initialized = false;
-    }
-
-    BOOT_INF("phase 06/12: initializing alarm manager");
-    err = composition_root_init_alarm(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 06/12 failed: alarm manager rc=%d", err);
-        return err;
-    }
-
-    if (IS_ENABLED(CONFIG_APP_THERMAL_SUBSYSTEM))
-    {
-        BOOT_INF("phase 07/12: initializing sensor matrix");
-        err = composition_root_init_sensor_matrix(self);
-        if (err != 0)
-        {
-            BOOT_ERR("phase 07/12 failed: sensor matrix rc=%d", err);
-            return err;
-        }
-
-        BOOT_INF("phase 08/12: initializing thermal-energy processing");
-        err = composition_root_init_thermal_energy(self);
-        if (err != 0)
-        {
-            BOOT_ERR("phase 08/12 failed: thermal energy rc=%d", err);
-            return err;
-        }
-    }
-    else
-    {
-        BOOT_INF("phase 07-08/12: sensor matrix & thermal energy disabled by active profile");
-        self->sensor.initialized = false;
-        self->thermal_energy.initialized = false;
-    }
-
-    BOOT_INF("phase 09/12: initializing Ethernet and Wi-Fi networking");
-    err = composition_root_init_network(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 09/12 failed: network rc=%d", err);
-        return err;
-    }
-
-    BOOT_INF("phase 10/12: initializing real-time clock");
-    err = composition_root_init_rtc(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 10/12 failed: RTC rc=%d", err);
-        return err;
-    }
-
-    BOOT_INF("phase 11/12: initializing MicroSD storage pipeline");
-    err = composition_root_init_sd_storage(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 11/12 failed: MicroSD rc=%d", err);
-        return err;
-    }
-
-    BOOT_INF("phase 12/13: initializing Modbus TCP server");
-    err = composition_root_init_modbus_tcp(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 12/13 failed: Modbus TCP rc=%d", err);
-        return err;
-    }
-
-    BOOT_INF("phase 13/13: initializing unified event & forensic datalogger");
-    err = composition_root_init_datalogger(self);
-    if (err != 0)
-    {
-        BOOT_ERR("phase 13/13 failed: Datalogger rc=%d", err);
-        return err;
-    }
-
-    BOOT_INF("phase 14/14: initializing SNMP agent");
-    err = composition_root_init_snmp(self);
-    if (err != 0)
-    {
-        BOOT_WRN("phase 14/14 failed: SNMP agent rc=%d (continuing boot)", err);
-    }
-
-    BOOT_INF("wiring cross-subsystem callbacks, storage providers and ports");
+    /* Phase 4: Cross-wiring & event mediation */
+    BOOT_INF("[Phase 4/4] Wiring event mediator, storage providers and Zbus channels");
     err = composition_root_wire(self);
     if (err != 0)
     {
-        BOOT_ERR("composition-root wiring failed: rc=%d", err);
+        BOOT_ERR("Phase 4 wiring failed: %d", err);
         return err;
     }
 
