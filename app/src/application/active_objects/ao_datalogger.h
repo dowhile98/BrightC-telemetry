@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-#define AO_DATALOGGER_STACK_SIZE        4096U
+#define AO_DATALOGGER_STACK_SIZE        8192U
 #define AO_DATALOGGER_PRIORITY          9
 #define AO_DATALOGGER_QUEUE_DEPTH       64U
 #define AO_DATALOGGER_SECTOR_SIZE       512U

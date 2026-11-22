@@ -351,11 +351,11 @@ static void check_storage_low_watermark(ao_datalogger_t *self)
     LOG_WRN("Storage low-watermark reached (%u MB <= %u MB). Initiating prune.",
             (unsigned int)free_mb, (unsigned int)AO_DATALOGGER_LOW_WATERMARK_MB);
 
-    char logs_dir[FS_MAX_PATH_LEN];
-    snprintf(logs_dir, sizeof(logs_dir), "%s/logs", self->mount_point);
+    char path_buf[FS_MAX_PATH_LEN];
+    snprintf(path_buf, sizeof(path_buf), "%s/logs", self->mount_point);
 
     void *dir_handle = NULL;
-    if (i_storage_fs_opendir(&self->fs, &dir_handle, logs_dir) != 0) {
+    if (i_storage_fs_opendir(&self->fs, &dir_handle, path_buf) != 0) {
         return;
     }
 
@@ -373,20 +373,19 @@ static void check_storage_low_watermark(ao_datalogger_t *self)
     (void)i_storage_fs_closedir(&self->fs, dir_handle);
 
     if (oldest_dir[0] != '\0') {
-        char target_dir[FS_MAX_PATH_LEN];
-        snprintf(target_dir, sizeof(target_dir), "%s/logs/%s", self->mount_point, oldest_dir);
+        snprintf(path_buf, sizeof(path_buf), "%s/logs/%s", self->mount_point, oldest_dir);
 
         /* Delete files inside target directory first (FAT requirement) */
-        if (i_storage_fs_opendir(&self->fs, &dir_handle, target_dir) == 0) {
+        if (i_storage_fs_opendir(&self->fs, &dir_handle, path_buf) == 0) {
             while (i_storage_fs_readdir(&self->fs, dir_handle, &entry) == 0 && entry.name[0] != '\0') {
                 if (entry.type == STORAGE_FS_ENTRY_FILE) {
                     char file_to_del[FS_MAX_PATH_LEN];
-                    size_t tlen = strlen(target_dir);
+                    size_t plen = strlen(path_buf);
                     size_t nlen = strlen(entry.name);
-                    if (tlen + 1U + nlen < sizeof(file_to_del)) {
-                        memcpy(file_to_del, target_dir, tlen);
-                        file_to_del[tlen] = '/';
-                        memcpy(file_to_del + tlen + 1U, entry.name, nlen + 1U);
+                    if (plen + 1U + nlen < sizeof(file_to_del)) {
+                        memcpy(file_to_del, path_buf, plen);
+                        file_to_del[plen] = '/';
+                        memcpy(file_to_del + plen + 1U, entry.name, nlen + 1U);
                         (void)i_storage_fs_unlink(&self->fs, file_to_del);
                     }
                 }
@@ -395,8 +394,8 @@ static void check_storage_low_watermark(ao_datalogger_t *self)
         }
 
         /* Unlink empty directory */
-        (void)i_storage_fs_unlink(&self->fs, target_dir);
-        LOG_INF("Pruned oldest logs directory: %s", target_dir);
+        (void)i_storage_fs_unlink(&self->fs, path_buf);
+        LOG_INF("Pruned oldest logs directory: %s", path_buf);
     }
 }
 
