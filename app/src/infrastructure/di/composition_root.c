@@ -1204,6 +1204,9 @@ int composition_root_wire(app_container_t *self)
         return -EINVAL;
     }
 
+    /* Bind Zbus event mediator */
+    (void)app_event_mediator_bind(self);
+
     if (self->storage.initialized)
     {
         DI_INF("binding storage providers for persisted configuration domains");

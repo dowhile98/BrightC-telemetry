@@ -281,6 +281,43 @@ ZTEST(composition_root_suite, test_phase3_init_orchestration)
     (void)composition_root_deinit(&test_app);
 }
 
+ZTEST(composition_root_suite, test_phase4_wire)
+{
+    app_container_t test_app;
+    composition_root_reset(&test_app);
+    fake_config_storage_reset();
+
+    zassert_equal(composition_root_init_ports(&test_app), 0, "Phase 1 ports init must succeed");
+    zassert_equal(composition_root_init_domain(&test_app), 0, "Phase 2 domain init must succeed");
+    zassert_equal(composition_root_init_orchestration(&test_app), 0, "Phase 3 orchestration init must succeed");
+
+    zassert_equal(composition_root_wire(NULL), -EINVAL, "NULL container must return -EINVAL");
+    zassert_equal(composition_root_wire(&test_app), 0, "Phase 4 wiring must succeed");
+
+    /* Verify all storage providers were wired */
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_DEVICE].fn, "DEVICE provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_CALIBRATION].fn, "CALIBRATION provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_HVAC].fn, "HVAC provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_THERMAL_SITE].fn, "THERMAL_SITE provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_THERMAL_BASELINE].fn, "THERMAL_BASELINE provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_SNMP].fn, "SNMP provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_NET_ETH].fn, "NET_ETH provider must be wired");
+    zassert_not_null(test_app.storage.ao.providers[CONFIG_DOMAIN_NET_WIFI].fn, "NET_WIFI provider must be wired");
+
+    /* Invoke a wired provider to confirm data extraction */
+    uint8_t buf[sizeof(config_device_t)];
+    size_t out_sz = 0U;
+    int rc = test_app.storage.ao.providers[CONFIG_DOMAIN_DEVICE].fn(
+        test_app.storage.ao.providers[CONFIG_DOMAIN_DEVICE].ctx,
+        CONFIG_DOMAIN_DEVICE, buf, sizeof(buf), &out_sz);
+    zassert_equal(rc, 0, "Provider execution must succeed");
+    zassert_equal(out_sz, sizeof(config_device_t), "Provider output size must match");
+
+    /* Clean up */
+    test_app.is_initialized = true;
+    (void)composition_root_deinit(&test_app);
+}
+
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 {
     (void) composition_root_deinit(&s_app);
