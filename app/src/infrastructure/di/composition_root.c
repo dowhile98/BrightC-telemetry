@@ -2173,6 +2173,267 @@ int composition_root_init_ports(app_container_t *self)
     return 0;
 }
 
+int composition_root_init_domain(app_container_t *self)
+{
+    if (self == NULL)
+    {
+        return -EINVAL;
+    }
+
+    /* 1. Initialize RAM defaults for persistent configuration domains */
+    self->device_cfg = *default_config_get_device_cfg();
+    self->calibration_cfg = *default_config_get_calibration_cfg();
+#if defined(CONFIG_BRIGHTC_PROFILE_THERMAL_ONLY)
+    self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY);
+#elif defined(CONFIG_BRIGHTC_PROFILE_CONTROLLER_ONLY)
+    self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HVAC_CONTROL_ONLY);
+#else
+    self->hvac.config = *default_config_get_hvac_profile(HVAC_MODE_HYBRID_FULL);
+#endif
+    self->thermal_site_cfg = *default_config_get_thermal_site_cfg();
+    self->thermal_baseline_cfg = *default_config_get_thermal_baseline_cfg();
+    self->snmp.config = *default_config_get_snmp_cfg();
+
+    /* 2. Load configurations from persistent storage if port is bound */
+    if (i_config_storage_is_bound(&self->storage.port))
+    {
+        /* 1. DEVICE */
+        {
+            config_device_t dev_cfg;
+            memset(&dev_cfg, 0, sizeof(dev_cfg));
+            size_t dev_size = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_DEVICE,
+                                      &dev_cfg, sizeof(dev_cfg), &dev_size) == 0 &&
+                dev_size >= sizeof(config_device_t))
+            {
+                self->device_cfg = dev_cfg;
+                CFG_INF("DEVICE loaded from EEPROM; payload=%u bytes", (unsigned int)dev_size);
+            }
+            else
+            {
+                CFG_WRN("DEVICE record absent or invalid; retaining compiled defaults");
+            }
+        }
+
+        /* 2. CALIBRATION */
+        {
+            config_calibration_t cal_cfg;
+            memset(&cal_cfg, 0, sizeof(cal_cfg));
+            size_t cal_size = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_CALIBRATION,
+                                      &cal_cfg, sizeof(cal_cfg), &cal_size) == 0 &&
+                cal_size >= sizeof(config_calibration_t))
+            {
+                self->calibration_cfg = cal_cfg;
+                CFG_INF("CALIBRATION loaded from EEPROM; payload=%u bytes", (unsigned int)cal_size);
+            }
+            else
+            {
+                CFG_WRN("CALIBRATION record absent or invalid; retaining compiled defaults");
+            }
+        }
+
+        /* 3. HVAC */
+        {
+            config_hvac_t hvac_cfg;
+            memset(&hvac_cfg, 0, sizeof(hvac_cfg));
+            size_t hvac_size = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                      &hvac_cfg, sizeof(hvac_cfg), &hvac_size) == 0 &&
+                hvac_size >= sizeof(config_hvac_t) &&
+                config_hvac_is_valid(&hvac_cfg))
+            {
+                self->hvac.config = hvac_cfg;
+                CFG_INF("HVAC loaded from EEPROM; mode=%u, total_units=%u",
+                        (unsigned int)self->hvac.config.operation_mode,
+                        (unsigned int)self->hvac.config.total_units);
+            }
+            else
+            {
+                CFG_WRN("HVAC record absent or invalid; applying compiled defaults and persisting them");
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                                    &self->hvac.config, sizeof(self->hvac.config));
+                if (save_rc != 0)
+                {
+                    BOOT_ERR("CFG HVAC default persist failed: rc=%d", save_rc);
+                }
+            }
+        }
+
+        /* 4. THERMAL_SITE */
+        {
+            config_thermal_site_t site_cfg;
+            memset(&site_cfg, 0, sizeof(site_cfg));
+            size_t site_size = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
+                                      &site_cfg, sizeof(site_cfg), &site_size) == 0 &&
+                site_size >= sizeof(config_thermal_site_t) &&
+                config_thermal_site_is_valid(&site_cfg))
+            {
+                self->thermal_site_cfg = site_cfg;
+                CFG_INF("THERMAL_SITE loaded from EEPROM; configured_pairs=%u, altitude_m=%d",
+                        (unsigned int)self->thermal_site_cfg.configured_pairs_count,
+                        (int)self->thermal_site_cfg.site_altitude_m);
+            }
+            else
+            {
+                CFG_WRN("THERMAL_SITE record absent or invalid; applying compiled defaults and persisting them");
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
+                                                    &self->thermal_site_cfg, sizeof(self->thermal_site_cfg));
+                if (save_rc != 0)
+                {
+                    BOOT_ERR("CFG THERMAL_SITE default persist failed: rc=%d", save_rc);
+                }
+            }
+        }
+
+        /* 5. THERMAL_BASELINE */
+        {
+            config_thermal_baseline_t base_cfg;
+            memset(&base_cfg, 0, sizeof(base_cfg));
+            size_t base_size = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
+                                      &base_cfg, sizeof(base_cfg), &base_size) == 0 &&
+                base_size >= sizeof(config_thermal_baseline_t) &&
+                config_thermal_baseline_is_valid(&base_cfg))
+            {
+                self->thermal_baseline_cfg = base_cfg;
+                CFG_INF("THERMAL_BASELINE loaded from EEPROM; valid=%u, training_hours=%u",
+                        (unsigned int)self->thermal_baseline_cfg.is_valid,
+                        (unsigned int)self->thermal_baseline_cfg.training_hours_accumulated);
+            }
+            else
+            {
+                CFG_WRN("THERMAL_BASELINE record absent or invalid; applying compiled defaults and persisting them");
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
+                                                    &self->thermal_baseline_cfg, sizeof(self->thermal_baseline_cfg));
+                if (save_rc != 0)
+                {
+                    BOOT_ERR("CFG THERMAL_BASELINE default persist failed: rc=%d", save_rc);
+                }
+            }
+        }
+
+        /* 6. SNMP */
+        {
+            config_snmp_t snmp_cfg;
+            memset(&snmp_cfg, 0, sizeof(snmp_cfg));
+            size_t snmp_size = 0U;
+            if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_SNMP,
+                                      &snmp_cfg, sizeof(snmp_cfg), &snmp_size) == 0 &&
+                snmp_size >= sizeof(config_snmp_t) &&
+                config_snmp_is_valid(&snmp_cfg))
+            {
+                self->snmp.config = snmp_cfg;
+                CFG_INF("SNMP loaded from EEPROM; port=%u, enabled=%u",
+                        (unsigned int)self->snmp.config.listen_port,
+                        (unsigned int)self->snmp.config.enabled);
+            }
+            else
+            {
+                CFG_WRN("SNMP record absent or invalid; applying compiled defaults and persisting them");
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_SNMP,
+                                                    &self->snmp.config, sizeof(self->snmp.config));
+                if (save_rc != 0)
+                {
+                    BOOT_ERR("CFG SNMP default persist failed: rc=%d", save_rc);
+                }
+            }
+        }
+    }
+
+    /* 3. Initialize Modbus Registry implementation & port */
+    int err = modbus_registry_init(&self->modbus.registry_impl, self->modbus.bus_cfg);
+    if (err != 0)
+    {
+        LOG_ERR("registry init failed (%d)", err);
+        return err;
+    }
+
+    err = modbus_registry_port(&self->modbus.registry_impl, &self->modbus.registry_port);
+    if (err != 0)
+    {
+        LOG_ERR("registry port binding failed (%d)", err);
+        return err;
+    }
+
+    size_t slave_count = 0U;
+    const modbus_slave_descriptor_t *compiled_slaves = modbus_device_table_get_slaves(&slave_count);
+
+    for (size_t i = 0U; i < slave_count; i++)
+    {
+        if (!compiled_slaves[i].is_enabled)
+        {
+            continue;
+        }
+
+#if !defined(CONFIG_ZTEST)
+        if (!self->modbus.available[compiled_slaves[i].bus_id])
+        {
+            continue;
+        }
+#endif
+
+        err = modbus_registry_register(&self->modbus.registry_impl, &compiled_slaves[i]);
+        if (err != 0)
+        {
+            LOG_ERR("registering device %u failed (%d)", compiled_slaves[i].device_id, err);
+            return err;
+        }
+    }
+
+    /* 4. Initialize Digital Input Aggregator */
+    hvac_operation_mode_t op_mode = (hvac_operation_mode_t)self->hvac.config.operation_mode;
+    size_t di_count = 0U;
+    const di_channel_config_t *di_cfg = hardware_pin_map_get_di_profile(op_mode, &di_count);
+#if !defined(CONFIG_ZTEST)
+    err = di_aggregator_init(&self->di.aggregator, di_cfg, di_count,
+                             adapter_di_gpio_read, &self->di.di_adapter);
+#else
+    err = di_aggregator_init(&self->di.aggregator, di_cfg, di_count,
+                             NULL, NULL);
+#endif
+    if (err != 0)
+    {
+        LOG_ERR("di aggregator init failed (%d)", err);
+        return err;
+    }
+    self->di.port = di_aggregator_port(&self->di.aggregator);
+
+    /* 5. Initialize HVAC Actuator domain routing */
+    hvac_unit_hw_config_t hw_units[HVAC_MAX_UNITS_TOTAL];
+    for (uint8_t u = 0U; u < HVAC_MAX_UNITS_TOTAL; u++)
+    {
+        const hvac_unit_hw_config_t *u_cfg = hardware_pin_map_get_unit_for_mode(op_mode, u);
+        if (u_cfg != NULL)
+        {
+            hw_units[u] = *u_cfg;
+        }
+        else
+        {
+            (void)memset(&hw_units[u], 0, sizeof(hw_units[u]));
+        }
+    }
+
+    err = adapter_hvac_actuator_init(&self->hvac.actuator_adapter,
+                                     hw_units,
+                                     HVAC_MAX_UNITS_TOTAL,
+                                     i_relay_is_bound(&self->modbus.relay_ext_port) ? &self->modbus.relay_ext_port : NULL,
+                                     i_relay_is_bound(&self->hvac.local_relay_port) ? &self->hvac.local_relay_port : NULL);
+    if (err != 0)
+    {
+        LOG_ERR("adapter_hvac_actuator_init failed (%d)", err);
+        return err;
+    }
+    (void)adapter_hvac_actuator_apply_mode(&self->hvac.actuator_adapter, op_mode);
+    (void)adapter_hvac_actuator_set_bypass_alarm_contact_type(
+        &self->hvac.actuator_adapter,
+        (hvac_alarm_contact_type_t)self->hvac.config.bypass_alarm_contact_type);
+    self->hvac.actuator_port = adapter_hvac_actuator_port(&self->hvac.actuator_adapter);
+
+    return 0;
+}
+
 int composition_root_init(app_container_t *self)
 {
     if (self == NULL)

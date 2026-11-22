@@ -217,6 +217,40 @@ ZTEST(composition_root_suite, test_phase1_init_ports)
     zassert_false(test_app.is_running, "Container must not be running");
 }
 
+ZTEST(composition_root_suite, test_phase2_init_domain)
+{
+    app_container_t test_app;
+    composition_root_reset(&test_app);
+    fake_config_storage_reset();
+
+    zassert_equal(composition_root_init_ports(&test_app), 0, "Phase 1 ports init must succeed");
+
+    zassert_equal(composition_root_init_domain(NULL), -EINVAL, "NULL container must return -EINVAL");
+    zassert_equal(composition_root_init_domain(&test_app), 0, "Phase 2 domain init must succeed");
+
+    /* Configurations are loaded into RAM */
+    zassert_true(strlen(test_app.device_cfg.serial_number) > 0, "serial_number must be set");
+    zassert_true(config_hvac_is_valid(&test_app.hvac.config), "hvac config must be valid");
+    zassert_true(config_thermal_site_is_valid(&test_app.thermal_site_cfg), "thermal site cfg must be valid");
+    zassert_true(config_thermal_baseline_is_valid(&test_app.thermal_baseline_cfg), "thermal baseline cfg must be valid");
+    zassert_true(config_snmp_is_valid(&test_app.snmp.config), "snmp config must be valid");
+
+    /* Domain services are initialized */
+    zassert_true(i_slave_registry_is_bound(&test_app.modbus.registry_port), "Registry port must be bound");
+    modbus_slave_snapshot_t snap_bus1[5];
+    size_t count_bus1 = 0U;
+    zassert_equal(i_slave_registry_snapshot(&test_app.modbus.registry_port, MODBUS_BUS_RS485_1, snap_bus1, 5U, &count_bus1),
+                  0, "Snapshot bus 1 failed");
+    zassert_equal(count_bus1, 2U, "Bus 1 devices (JSY + CWT #1; CWT #2 is disabled)");
+
+    zassert_true(i_digital_input_is_bound(&test_app.di.port), "DI port must be bound to aggregator");
+    zassert_true(i_hvac_unit_is_bound(&test_app.hvac.actuator_port), "HVAC actuator port must be bound");
+
+    /* Active Objects must NOT be initialized yet in Phase 2 */
+    zassert_false(test_app.is_initialized, "Container must not be marked initialized yet");
+    zassert_false(test_app.is_running, "Container must not be running");
+}
+
 ZTEST(composition_root_suite, test_init_wires_registry_and_default_device)
 {
     (void) composition_root_deinit(&s_app);
