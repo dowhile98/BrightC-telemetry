@@ -13,7 +13,7 @@
 #include "application/zbus/alarm_channels.h"
 #include "application/zbus/storage_channels.h"
 #include "application/zbus/system_channels.h"
-#include "common/config_envelope.h"
+#include "common/crc16.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
 #include "common/hardware_pin_map.h"
@@ -46,18 +46,18 @@ LOG_MODULE_REGISTER(composition_root, LOG_LEVEL_INF);
 #define RUN_INF(fmt, ...)  LOG_INF("[RUN] " fmt, ##__VA_ARGS__)
 
 /* Compile-time assertions for persistent storage layout (5 domains per ADR-6) */
-BUILD_ASSERT(sizeof(config_hvac_t) + sizeof(config_envelope_header_t) <= 576 - 32,
-             "config_hvac_t envelope exceeds storage slot size (576 - 32 bytes)");
-BUILD_ASSERT(sizeof(net_eth_config_t) + sizeof(config_envelope_header_t) <= 64 - 32,
-             "net_eth_config_t envelope exceeds storage slot size (64 - 32 bytes)");
-BUILD_ASSERT(sizeof(net_wifi_config_t) + sizeof(config_envelope_header_t) <= 320 - 32,
-             "net_wifi_config_t envelope exceeds storage slot size (320 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_hvac_t) <= 576 - 32,
+             "config_hvac_t exceeds storage slot size (576 - 32 bytes)");
+BUILD_ASSERT(sizeof(net_eth_config_t) <= 64 - 32,
+             "net_eth_config_t exceeds storage slot size (64 - 32 bytes)");
+BUILD_ASSERT(sizeof(net_wifi_config_t) <= 320 - 32,
+             "net_wifi_config_t exceeds storage slot size (320 - 32 bytes)");
 #include "common/storage_eeprom_map.h"
 
-BUILD_ASSERT(sizeof(config_device_t) + sizeof(config_envelope_header_t) <= EEPROM_SLOT_DEVICE - 32,
-             "config_device_t envelope exceeds storage slot size (128 - 32 bytes)");
-BUILD_ASSERT(sizeof(config_calibration_t) + sizeof(config_envelope_header_t) <= EEPROM_SLOT_CALIBRATION - 32,
-             "config_calibration_t envelope exceeds storage slot size (192 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_device_t) <= EEPROM_SLOT_DEVICE - 32,
+             "config_device_t exceeds storage slot size (128 - 32 bytes)");
+BUILD_ASSERT(sizeof(config_calibration_t) <= EEPROM_SLOT_CALIBRATION - 32,
+             "config_calibration_t exceeds storage slot size (192 - 32 bytes)");
 
 BUILD_ASSERT(EEPROM_ADDR_CALIBRATION + EEPROM_SIZE_CALIBRATION <= EEPROM_AT24C256C_CAPACITY_BYTES,
              "Storage domains exceed physical EEPROM capacity (32KB)");
@@ -101,13 +101,22 @@ static int storage_provider_eth(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
+    if (max_size < sizeof(net_eth_config_t))
+    {
+        return -ENOSPC;
+    }
     net_eth_config_t cfg;
     int err = ao_network_get_eth_config(&app->network.ao, &cfg);
     if (err != 0)
     {
         return err;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_NET_ETH, &cfg, sizeof(cfg), out_buf, max_size, out_size);
+    memcpy(out_buf, &cfg, sizeof(cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(cfg);
+    }
+    return 0;
 }
 
 static int storage_provider_wifi(void *ctx, config_domain_t domain,
@@ -118,16 +127,23 @@ static int storage_provider_wifi(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
+    if (max_size < sizeof(net_wifi_config_t))
+    {
+        return -ENOSPC;
+    }
     net_wifi_config_t cfg;
     int err = ao_network_get_wifi_config(&app->network.ao, &cfg);
     if (err != 0)
     {
         return err;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, &cfg, sizeof(cfg), out_buf, max_size, out_size);
+    memcpy(out_buf, &cfg, sizeof(cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(cfg);
+    }
+    return 0;
 }
-
-
 
 static int storage_provider_hvac(void *ctx, config_domain_t domain,
                                  void *out_buf, size_t max_size, size_t *out_size)
@@ -137,13 +153,22 @@ static int storage_provider_hvac(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
+    if (max_size < sizeof(config_hvac_t))
+    {
+        return -ENOSPC;
+    }
     config_hvac_t cfg;
     int err = ao_hvac_get_config(&app->hvac.ao, &cfg);
     if (err != 0)
     {
         return err;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_HVAC, &cfg, sizeof(cfg), out_buf, max_size, out_size);
+    memcpy(out_buf, &cfg, sizeof(cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(cfg);
+    }
+    return 0;
 }
 
 static int storage_provider_device(void *ctx, config_domain_t domain,
@@ -154,7 +179,16 @@ static int storage_provider_device(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_DEVICE, &self->device_cfg, sizeof(self->device_cfg), out_buf, max_size, out_size);
+    if (max_size < sizeof(self->device_cfg))
+    {
+        return -ENOSPC;
+    }
+    memcpy(out_buf, &self->device_cfg, sizeof(self->device_cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(self->device_cfg);
+    }
+    return 0;
 }
 
 static int storage_provider_calibration(void *ctx, config_domain_t domain,
@@ -165,7 +199,16 @@ static int storage_provider_calibration(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_CALIBRATION, &self->calibration_cfg, sizeof(self->calibration_cfg), out_buf, max_size, out_size);
+    if (max_size < sizeof(self->calibration_cfg))
+    {
+        return -ENOSPC;
+    }
+    memcpy(out_buf, &self->calibration_cfg, sizeof(self->calibration_cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(self->calibration_cfg);
+    }
+    return 0;
 }
 
 static int storage_provider_thermal_site(void *ctx, config_domain_t domain,
@@ -176,8 +219,16 @@ static int storage_provider_thermal_site(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, &self->thermal_site_cfg,
-                                sizeof(self->thermal_site_cfg), out_buf, max_size, out_size);
+    if (max_size < sizeof(self->thermal_site_cfg))
+    {
+        return -ENOSPC;
+    }
+    memcpy(out_buf, &self->thermal_site_cfg, sizeof(self->thermal_site_cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(self->thermal_site_cfg);
+    }
+    return 0;
 }
 
 static int storage_provider_thermal_baseline(void *ctx, config_domain_t domain,
@@ -188,8 +239,16 @@ static int storage_provider_thermal_baseline(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &self->thermal_baseline_cfg,
-                                sizeof(self->thermal_baseline_cfg), out_buf, max_size, out_size);
+    if (max_size < sizeof(self->thermal_baseline_cfg))
+    {
+        return -ENOSPC;
+    }
+    memcpy(out_buf, &self->thermal_baseline_cfg, sizeof(self->thermal_baseline_cfg));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(self->thermal_baseline_cfg);
+    }
+    return 0;
 }
 
 static int storage_provider_snmp(void *ctx, config_domain_t domain,
@@ -200,8 +259,16 @@ static int storage_provider_snmp(void *ctx, config_domain_t domain,
     {
         return -EINVAL;
     }
-    return config_envelope_pack(CONFIG_DOMAIN_SNMP, &self->snmp.config,
-                                sizeof(self->snmp.config), out_buf, max_size, out_size);
+    if (max_size < sizeof(self->snmp.config))
+    {
+        return -ENOSPC;
+    }
+    memcpy(out_buf, &self->snmp.config, sizeof(self->snmp.config));
+    if (out_size != NULL)
+    {
+        *out_size = sizeof(self->snmp.config);
+    }
+    return 0;
 }
 
 
@@ -494,19 +561,15 @@ int composition_root_init_storage(app_container_t *self)
     {
         /* 1. DEVICE */
         {
-            uint8_t dev_buf[sizeof(config_envelope_header_t) + sizeof(config_device_t)];
-            size_t dev_size = 0U;
             config_device_t dev_cfg;
             memset(&dev_cfg, 0, sizeof(dev_cfg));
-            size_t dev_unpacked = 0U;
+            size_t dev_size = 0U;
             if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_DEVICE,
-                                      dev_buf, sizeof(dev_buf), &dev_size) == 0 &&
-                config_envelope_unpack(CONFIG_DOMAIN_DEVICE, dev_buf, dev_size,
-                                       &dev_cfg, sizeof(dev_cfg), &dev_unpacked) == 0 &&
-                dev_unpacked == sizeof(config_device_t))
+                                      &dev_cfg, sizeof(dev_cfg), &dev_size) == 0 &&
+                dev_size >= sizeof(config_device_t))
             {
                 self->device_cfg = dev_cfg;
-                CFG_INF("DEVICE loaded from EEPROM; payload=%u bytes", (unsigned int)dev_unpacked);
+                CFG_INF("DEVICE loaded from EEPROM; payload=%u bytes", (unsigned int)dev_size);
             }
             else
             {
@@ -516,19 +579,15 @@ int composition_root_init_storage(app_container_t *self)
 
         /* 2. CALIBRATION */
         {
-            uint8_t cal_buf[sizeof(config_envelope_header_t) + sizeof(config_calibration_t)];
-            size_t cal_size = 0U;
             config_calibration_t cal_cfg;
             memset(&cal_cfg, 0, sizeof(cal_cfg));
-            size_t cal_unpacked = 0U;
+            size_t cal_size = 0U;
             if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_CALIBRATION,
-                                      cal_buf, sizeof(cal_buf), &cal_size) == 0 &&
-                config_envelope_unpack(CONFIG_DOMAIN_CALIBRATION, cal_buf, cal_size,
-                                       &cal_cfg, sizeof(cal_cfg), &cal_unpacked) == 0 &&
-                cal_unpacked == sizeof(config_calibration_t))
+                                      &cal_cfg, sizeof(cal_cfg), &cal_size) == 0 &&
+                cal_size >= sizeof(config_calibration_t))
             {
                 self->calibration_cfg = cal_cfg;
-                CFG_INF("CALIBRATION loaded from EEPROM; payload=%u bytes", (unsigned int)cal_unpacked);
+                CFG_INF("CALIBRATION loaded from EEPROM; payload=%u bytes", (unsigned int)cal_size);
             }
             else
             {
@@ -538,16 +597,12 @@ int composition_root_init_storage(app_container_t *self)
 
         /* 3. HVAC */
         {
-            uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-            size_t hvac_size = 0U;
             config_hvac_t hvac_cfg;
             memset(&hvac_cfg, 0, sizeof(hvac_cfg));
-            size_t hvac_unpacked = 0U;
+            size_t hvac_size = 0U;
             if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                      hvac_buf, sizeof(hvac_buf), &hvac_size) == 0 &&
-                config_envelope_unpack(CONFIG_DOMAIN_HVAC, hvac_buf, hvac_size,
-                                       &hvac_cfg, sizeof(hvac_cfg), &hvac_unpacked) == 0 &&
-                hvac_unpacked == sizeof(config_hvac_t) &&
+                                      &hvac_cfg, sizeof(hvac_cfg), &hvac_size) == 0 &&
+                hvac_size >= sizeof(config_hvac_t) &&
                 config_hvac_is_valid(&hvac_cfg))
             {
                 self->hvac.config = hvac_cfg;
@@ -558,33 +613,23 @@ int composition_root_init_storage(app_container_t *self)
             else
             {
                 CFG_WRN("HVAC record absent or invalid; applying compiled defaults and persisting them");
-                size_t pack_len = 0U;
-                if (config_envelope_pack(CONFIG_DOMAIN_HVAC, &self->hvac.config,
-                                         sizeof(self->hvac.config), hvac_buf,
-                                         sizeof(hvac_buf), &pack_len) == 0)
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
+                                                    &self->hvac.config, sizeof(self->hvac.config));
+                if (save_rc != 0)
                 {
-                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_HVAC,
-                                                        hvac_buf, pack_len);
-                    if (save_rc != 0)
-                    {
-                        BOOT_ERR("CFG HVAC default persist failed: rc=%d", save_rc);
-                    }
+                    BOOT_ERR("CFG HVAC default persist failed: rc=%d", save_rc);
                 }
             }
         }
 
         /* 4. THERMAL_SITE */
         {
-            uint8_t site_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
-            size_t site_size = 0U;
             config_thermal_site_t site_cfg;
             memset(&site_cfg, 0, sizeof(site_cfg));
-            size_t site_unpacked = 0U;
+            size_t site_size = 0U;
             if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
-                                      site_buf, sizeof(site_buf), &site_size) == 0 &&
-                config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, site_buf, site_size,
-                                       &site_cfg, sizeof(site_cfg), &site_unpacked) == 0 &&
-                site_unpacked == sizeof(config_thermal_site_t) &&
+                                      &site_cfg, sizeof(site_cfg), &site_size) == 0 &&
+                site_size >= sizeof(config_thermal_site_t) &&
                 config_thermal_site_is_valid(&site_cfg))
             {
                 self->thermal_site_cfg = site_cfg;
@@ -595,33 +640,23 @@ int composition_root_init_storage(app_container_t *self)
             else
             {
                 CFG_WRN("THERMAL_SITE record absent or invalid; applying compiled defaults and persisting them");
-                size_t pack_len = 0U;
-                if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, &self->thermal_site_cfg,
-                                         sizeof(self->thermal_site_cfg), site_buf,
-                                         sizeof(site_buf), &pack_len) == 0)
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
+                                                    &self->thermal_site_cfg, sizeof(self->thermal_site_cfg));
+                if (save_rc != 0)
                 {
-                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
-                                                        site_buf, pack_len);
-                    if (save_rc != 0)
-                    {
-                        BOOT_ERR("CFG THERMAL_SITE default persist failed: rc=%d", save_rc);
-                    }
+                    BOOT_ERR("CFG THERMAL_SITE default persist failed: rc=%d", save_rc);
                 }
             }
         }
 
         /* 5. THERMAL_BASELINE */
         {
-            uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
-            size_t base_size = 0U;
             config_thermal_baseline_t base_cfg;
             memset(&base_cfg, 0, sizeof(base_cfg));
-            size_t base_unpacked = 0U;
+            size_t base_size = 0U;
             if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
-                                      base_buf, sizeof(base_buf), &base_size) == 0 &&
-                config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, base_buf, base_size,
-                                       &base_cfg, sizeof(base_cfg), &base_unpacked) == 0 &&
-                base_unpacked == sizeof(config_thermal_baseline_t) &&
+                                      &base_cfg, sizeof(base_cfg), &base_size) == 0 &&
+                base_size >= sizeof(config_thermal_baseline_t) &&
                 config_thermal_baseline_is_valid(&base_cfg))
             {
                 self->thermal_baseline_cfg = base_cfg;
@@ -632,33 +667,23 @@ int composition_root_init_storage(app_container_t *self)
             else
             {
                 CFG_WRN("THERMAL_BASELINE record absent or invalid; applying compiled defaults and persisting them");
-                size_t pack_len = 0U;
-                if (config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &self->thermal_baseline_cfg,
-                                         sizeof(self->thermal_baseline_cfg), base_buf,
-                                         sizeof(base_buf), &pack_len) == 0)
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
+                                                    &self->thermal_baseline_cfg, sizeof(self->thermal_baseline_cfg));
+                if (save_rc != 0)
                 {
-                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
-                                                        base_buf, pack_len);
-                    if (save_rc != 0)
-                    {
-                        BOOT_ERR("CFG THERMAL_BASELINE default persist failed: rc=%d", save_rc);
-                    }
+                    BOOT_ERR("CFG THERMAL_BASELINE default persist failed: rc=%d", save_rc);
                 }
             }
         }
 
         /* 6. SNMP */
         {
-            uint8_t snmp_buf[sizeof(config_envelope_header_t) + sizeof(config_snmp_t)];
-            size_t snmp_size = 0U;
             config_snmp_t snmp_cfg;
             memset(&snmp_cfg, 0, sizeof(snmp_cfg));
-            size_t snmp_unpacked = 0U;
+            size_t snmp_size = 0U;
             if (i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_SNMP,
-                                      snmp_buf, sizeof(snmp_buf), &snmp_size) == 0 &&
-                config_envelope_unpack(CONFIG_DOMAIN_SNMP, snmp_buf, snmp_size,
-                                       &snmp_cfg, sizeof(snmp_cfg), &snmp_unpacked) == 0 &&
-                snmp_unpacked == sizeof(config_snmp_t) &&
+                                      &snmp_cfg, sizeof(snmp_cfg), &snmp_size) == 0 &&
+                snmp_size >= sizeof(config_snmp_t) &&
                 config_snmp_is_valid(&snmp_cfg))
             {
                 self->snmp.config = snmp_cfg;
@@ -668,17 +693,11 @@ int composition_root_init_storage(app_container_t *self)
             else
             {
                 CFG_WRN("SNMP record absent or invalid; applying compiled defaults and persisting them");
-                size_t pack_len = 0U;
-                if (config_envelope_pack(CONFIG_DOMAIN_SNMP, &self->snmp.config,
-                                         sizeof(self->snmp.config), snmp_buf,
-                                         sizeof(snmp_buf), &pack_len) == 0)
+                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_SNMP,
+                                                    &self->snmp.config, sizeof(self->snmp.config));
+                if (save_rc != 0)
                 {
-                    int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_SNMP,
-                                                        snmp_buf, pack_len);
-                    if (save_rc != 0)
-                    {
-                        BOOT_ERR("CFG SNMP default persist failed: rc=%d", save_rc);
-                    }
+                    BOOT_ERR("CFG SNMP default persist failed: rc=%d", save_rc);
                 }
             }
         }
@@ -760,14 +779,11 @@ int composition_root_init_network(app_container_t *self)
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
-        uint8_t eth_buf[sizeof(config_envelope_header_t) + sizeof(net_eth_config_t)];
         size_t loaded_eth_size = 0;
         int eth_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                                 eth_buf, sizeof(eth_buf),
+                                                 &loaded_eth_cfg, sizeof(loaded_eth_cfg),
                                                  &loaded_eth_size);
-        if (eth_load_res == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, eth_buf, loaded_eth_size,
-                                   &loaded_eth_cfg, sizeof(loaded_eth_cfg), NULL) == 0 &&
+        if (eth_load_res == 0 && loaded_eth_size >= sizeof(net_eth_config_t) &&
             net_eth_config_is_valid(&loaded_eth_cfg))
         {
             CFG_INF("NET_ETH loaded from EEPROM; address_mode=%u, dhcp=%u",
@@ -778,16 +794,11 @@ int composition_root_init_network(app_container_t *self)
         else
         {
             CFG_WRN("NET_ETH unavailable or invalid (rc=%d); applying compiled defaults", eth_load_res);
-            size_t pack_len = 0;
-            if (config_envelope_pack(CONFIG_DOMAIN_NET_ETH, eth_cfg_ptr, sizeof(*eth_cfg_ptr),
-                                     eth_buf, sizeof(eth_buf), &pack_len) == 0)
+            int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
+                                                eth_cfg_ptr, sizeof(*eth_cfg_ptr));
+            if (save_rc != 0)
             {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                                    eth_buf, pack_len);
-                if (save_rc != 0)
-                {
-                    BOOT_ERR("CFG NET_ETH default persist failed: rc=%d", save_rc);
-                }
+                BOOT_ERR("CFG NET_ETH default persist failed: rc=%d", save_rc);
             }
         }
     }
@@ -797,14 +808,11 @@ int composition_root_init_network(app_container_t *self)
 
     if (i_config_storage_is_bound(&self->storage.port))
     {
-        uint8_t wifi_buf[sizeof(config_envelope_header_t) + sizeof(net_wifi_config_t)];
         size_t loaded_wifi_size = 0;
         int wifi_load_res = i_config_storage_load(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                                  wifi_buf, sizeof(wifi_buf),
+                                                  &loaded_wifi_cfg, sizeof(loaded_wifi_cfg),
                                                   &loaded_wifi_size);
-        if (wifi_load_res == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_NET_WIFI, wifi_buf, loaded_wifi_size,
-                                   &loaded_wifi_cfg, sizeof(loaded_wifi_cfg), NULL) == 0 &&
+        if (wifi_load_res == 0 && loaded_wifi_size >= sizeof(net_wifi_config_t) &&
             net_wifi_config_is_valid(&loaded_wifi_cfg))
         {
             CFG_INF("NET_WIFI loaded from EEPROM; mode=%u, security=%u, ssid=%s",
@@ -816,16 +824,11 @@ int composition_root_init_network(app_container_t *self)
         else
         {
             CFG_WRN("NET_WIFI unavailable or invalid (rc=%d); applying compiled defaults", wifi_load_res);
-            size_t pack_len = 0;
-            if (config_envelope_pack(CONFIG_DOMAIN_NET_WIFI, wifi_cfg_ptr, sizeof(*wifi_cfg_ptr),
-                                     wifi_buf, sizeof(wifi_buf), &pack_len) == 0)
+            int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
+                                                wifi_cfg_ptr, sizeof(*wifi_cfg_ptr));
+            if (save_rc != 0)
             {
-                int save_rc = i_config_storage_save(&self->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                                    wifi_buf, pack_len);
-                if (save_rc != 0)
-                {
-                    BOOT_ERR("CFG NET_WIFI default persist failed: rc=%d", save_rc);
-                }
+                BOOT_ERR("CFG NET_WIFI default persist failed: rc=%d", save_rc);
             }
         }
     }

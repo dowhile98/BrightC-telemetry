@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "common/config_types.h"
+#include "common/crc16.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,32 +50,11 @@ typedef struct __attribute__((packed)) {
 #define CONFIG_ENVELOPE_HEADER_SIZE sizeof(config_envelope_header_t)
 
 /**
- * @brief Pure C CRC-16-CCITT computation (poly: 0x1021, init: 0xFFFF).
- *
- * @param data Pointer to buffer.
- * @param len  Length of buffer in bytes.
- * @return 16-bit CRC checksum.
+ * @brief CRC-16-CCITT computation alias.
  */
 static inline uint16_t config_envelope_crc16(const uint8_t *data, size_t len)
 {
-    uint16_t crc = 0xFFFFU;
-
-    if (data == NULL) {
-        return 0U;
-    }
-
-    for (size_t i = 0U; i < len; i++) {
-        crc ^= (uint16_t)((uint16_t)data[i] << 8U);
-        for (uint8_t bit = 0U; bit < 8U; bit++) {
-            if ((crc & 0x8000U) != 0U) {
-                crc = (uint16_t)((crc << 1U) ^ 0x1021U);
-            } else {
-                crc = (uint16_t)(crc << 1U);
-            }
-        }
-    }
-
-    return crc;
+    return crc16_ccitt(data, len);
 }
 
 /**

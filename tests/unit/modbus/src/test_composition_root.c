@@ -572,12 +572,8 @@ ZTEST(composition_root_suite, test_modbus_static_topology_initialization)
     (void)memset(&s_app, 0, sizeof(s_app));
     fake_config_storage_reset();
 
-    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-    size_t packed_len = 0U;
     const config_hvac_t *telem_cfg = default_config_get_hvac_profile(HVAC_MODE_TELEMETRY_ONLY);
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_HVAC, telem_cfg, sizeof(*telem_cfg),
-                                       hvac_buf, sizeof(hvac_buf), &packed_len), 0);
-    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, hvac_buf, packed_len), 0);
+    zassert_equal(fake_config_storage_seed_domain(CONFIG_DOMAIN_HVAC, telem_cfg, sizeof(*telem_cfg)), 0);
 
     zassert_equal(composition_root_init(&s_app), 0, "Init with Telemetry-Only failed");
 

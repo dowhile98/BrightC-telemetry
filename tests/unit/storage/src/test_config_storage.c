@@ -451,30 +451,18 @@ ZTEST(storage_suite, test_thermal_site_config_defaults_and_validation)
     bad_site.nominal_airflow_m3h[0] = 100.0f;
     zassert_false(config_thermal_site_is_valid(&bad_site), "Airflow < 500 must be invalid");
 
-    /* Envelope pack / unpack and fake storage save / load */
+    /* Direct storage save / load */
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
     zassert_equal(i_config_storage_init(&port), 0, "Init failed");
 
-    uint8_t pack_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
-    size_t packed_len = 0U;
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_THERMAL_SITE, def_site, sizeof(*def_site),
-                                       pack_buf, sizeof(pack_buf), &packed_len), 0, "Pack failed");
-    zassert_equal(packed_len, sizeof(config_envelope_header_t) + sizeof(*def_site), "Packed len mismatch");
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_THERMAL_SITE, def_site, sizeof(*def_site)), 0, "Save failed");
 
-    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_THERMAL_SITE, pack_buf, packed_len), 0, "Save failed");
-
-    uint8_t load_buf[sizeof(pack_buf)];
+    config_thermal_site_t loaded_site;
     size_t loaded_len = 0U;
-    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_THERMAL_SITE, load_buf, sizeof(load_buf), &loaded_len), 0, "Load failed");
-    zassert_equal(loaded_len, packed_len, "Loaded len mismatch");
-
-    config_thermal_site_t unpacked_site;
-    size_t unpacked_len = 0U;
-    zassert_equal(config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, load_buf, loaded_len,
-                                         &unpacked_site, sizeof(unpacked_site), &unpacked_len), 0, "Unpack failed");
-    zassert_equal(unpacked_len, sizeof(config_thermal_site_t), "Unpacked size mismatch");
-    zassert_mem_equal(&unpacked_site, def_site, sizeof(config_thermal_site_t), "Unpacked data mismatch");
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_THERMAL_SITE, &loaded_site, sizeof(loaded_site), &loaded_len), 0, "Load failed");
+    zassert_equal(loaded_len, sizeof(config_thermal_site_t), "Loaded len mismatch");
+    zassert_mem_equal(&loaded_site, def_site, sizeof(config_thermal_site_t), "Loaded data mismatch");
 }
 
 ZTEST(storage_suite, test_thermal_baseline_config_defaults_and_validation)
@@ -506,28 +494,18 @@ ZTEST(storage_suite, test_thermal_baseline_config_defaults_and_validation)
     bad_base.is_valid = 5U;
     zassert_false(config_thermal_baseline_is_valid(&bad_base), "is_valid != 0 and != 1 must be invalid");
 
-    /* Envelope pack / unpack and fake storage save / load */
+    /* Direct storage save / load */
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
     zassert_equal(i_config_storage_init(&port), 0, "Init failed");
 
-    uint8_t pack_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
-    size_t packed_len = 0U;
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_THERMAL_BASELINE, &trained_base, sizeof(trained_base),
-                                       pack_buf, sizeof(pack_buf), &packed_len), 0, "Pack failed");
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_THERMAL_BASELINE, &trained_base, sizeof(trained_base)), 0, "Save failed");
 
-    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_THERMAL_BASELINE, pack_buf, packed_len), 0, "Save failed");
-
-    uint8_t load_buf[sizeof(pack_buf)];
+    config_thermal_baseline_t loaded_base;
     size_t loaded_len = 0U;
-    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_THERMAL_BASELINE, load_buf, sizeof(load_buf), &loaded_len), 0, "Load failed");
-
-    config_thermal_baseline_t unpacked_base;
-    size_t unpacked_len = 0U;
-    zassert_equal(config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, load_buf, loaded_len,
-                                         &unpacked_base, sizeof(unpacked_base), &unpacked_len), 0, "Unpack failed");
-    zassert_equal(unpacked_len, sizeof(config_thermal_baseline_t), "Unpacked size mismatch");
-    zassert_mem_equal(&unpacked_base, &trained_base, sizeof(config_thermal_baseline_t), "Unpacked data mismatch");
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_THERMAL_BASELINE, &loaded_base, sizeof(loaded_base), &loaded_len), 0, "Load failed");
+    zassert_equal(loaded_len, sizeof(config_thermal_baseline_t), "Loaded size mismatch");
+    zassert_mem_equal(&loaded_base, &trained_base, sizeof(config_thermal_baseline_t), "Loaded data mismatch");
 }
 
 ZTEST(storage_suite, test_config_snmp_validation_and_persistence)
@@ -578,7 +556,7 @@ ZTEST(storage_suite, test_config_snmp_validation_and_persistence)
     bad_cfg.trap_dests[0].port = 0U;
     zassert_false(config_snmp_is_valid(&bad_cfg), "active trap dest with port 0 must be invalid");
 
-    /* Envelope pack / unpack and fake storage save / load */
+    /* Direct storage save / load */
     fake_config_storage_reset();
     i_config_storage_t port = fake_config_storage_get_port();
     zassert_equal(i_config_storage_init(&port), 0, "Init failed");
@@ -589,23 +567,11 @@ ZTEST(storage_suite, test_config_snmp_validation_and_persistence)
     strncpy(snmp_custom.trap_dests[0].target_ip, "192.168.1.150", sizeof(snmp_custom.trap_dests[0].target_ip) - 1);
     snmp_custom.trap_dests[0].port = 1162U;
 
-    uint8_t pack_buf[sizeof(config_envelope_header_t) + sizeof(config_snmp_t)];
-    size_t packed_len = 0U;
-    zassert_equal(config_envelope_pack(CONFIG_DOMAIN_SNMP, &snmp_custom, sizeof(snmp_custom),
-                                       pack_buf, sizeof(pack_buf), &packed_len), 0, "Pack failed");
-    zassert_equal(packed_len, sizeof(config_envelope_header_t) + sizeof(config_snmp_t), "Packed len mismatch");
+    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_SNMP, &snmp_custom, sizeof(snmp_custom)), 0, "Save failed");
 
-    zassert_equal(i_config_storage_save(&port, CONFIG_DOMAIN_SNMP, pack_buf, packed_len), 0, "Save failed");
-
-    uint8_t load_buf[sizeof(pack_buf)];
+    config_snmp_t loaded_snmp;
     size_t loaded_len = 0U;
-    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_SNMP, load_buf, sizeof(load_buf), &loaded_len), 0, "Load failed");
-    zassert_equal(loaded_len, packed_len, "Loaded len mismatch");
-
-    config_snmp_t unpacked_snmp;
-    size_t unpacked_len = 0U;
-    zassert_equal(config_envelope_unpack(CONFIG_DOMAIN_SNMP, load_buf, loaded_len,
-                                         &unpacked_snmp, sizeof(unpacked_snmp), &unpacked_len), 0, "Unpack failed");
-    zassert_equal(unpacked_len, sizeof(config_snmp_t), "Unpacked size mismatch");
-    zassert_mem_equal(&unpacked_snmp, &snmp_custom, sizeof(config_snmp_t), "Unpacked SNMP data mismatch");
+    zassert_equal(i_config_storage_load(&port, CONFIG_DOMAIN_SNMP, &loaded_snmp, sizeof(loaded_snmp), &loaded_len), 0, "Load failed");
+    zassert_equal(loaded_len, sizeof(config_snmp_t), "Loaded size mismatch");
+    zassert_mem_equal(&loaded_snmp, &snmp_custom, sizeof(config_snmp_t), "Loaded SNMP data mismatch");
 }

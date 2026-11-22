@@ -9,7 +9,7 @@
 # build
 *build*
 /twister-out*
-
+graphify-out*
 __pycache__/
 
 # docs

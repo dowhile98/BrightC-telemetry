@@ -11,7 +11,7 @@
 #include "application/zbus/digital_input_channels.h"
 #include "application/zbus/thermal_channels.h"
 #include "common/app_defaults.h"
-#include "common/config_envelope.h"
+#include "common/crc16.h"
 #include "domain/thermal_energy/humidity_transducer.h"
 #include "domain/thermal_energy/psychrometrics.h"
 #include "domain/thermal_energy/thermodynamics.h"
@@ -478,7 +478,7 @@ int ao_thermal_energy_record_hour(ao_thermal_energy_t *self)
     rec.comp_starts_count = cumulative_starts;
 
     /* Compute CRC-16-CCITT across preceding fields */
-    rec.crc16 = config_envelope_crc16((const uint8_t *)&rec, offsetof(thermal_hourly_record_t, crc16));
+    rec.crc16 = crc16_ccitt((const uint8_t *)&rec, offsetof(thermal_hourly_record_t, crc16));
 
     /* Insert into RAM circular buffer */
     k_mutex_lock(&self->result_mutex, K_FOREVER);

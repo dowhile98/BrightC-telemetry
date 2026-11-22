@@ -21,7 +21,6 @@
 #include "interfaces/i_thermal_energy.h"
 #include "interfaces/i_rtc.h"
 #include "domain/time/rtc_time_calc.h"
-#include "common/config_envelope.h"
 #include "common/app_defaults.h"
 #include "common/modbus_device_table.h"
 #include "interfaces/i_modbus_tcp_server.h"
@@ -512,22 +511,11 @@ int app_facade_hvac_reset_eeprom(void)
         return -EINVAL;
     }
 
-    /* 1. Pack k_default_hvac_config_hybrid_4units into CONFIG_DOMAIN_HVAC envelope */
-    uint8_t hvac_buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
-    size_t pack_len = 0;
-    int pack_rc = config_envelope_pack(CONFIG_DOMAIN_HVAC,
-                                       &k_default_hvac_config_hybrid_4units,
-                                       sizeof(k_default_hvac_config_hybrid_4units),
-                                       hvac_buf, sizeof(hvac_buf), &pack_len);
-    if (pack_rc != 0) {
-        LOG_ERR("Failed to pack default HVAC envelope: %d", pack_rc);
-        return pack_rc;
-    }
-
-    /* 2. Save directly to EEPROM storage */
+    /* Save directly to EEPROM storage */
     if (s_app->storage.initialized && i_config_storage_is_bound(&s_app->storage.port)) {
         int save_rc = i_config_storage_save(&s_app->storage.port, CONFIG_DOMAIN_HVAC,
-                                            hvac_buf, pack_len);
+                                            &k_default_hvac_config_hybrid_4units,
+                                            sizeof(k_default_hvac_config_hybrid_4units));
         if (save_rc != 0) {
             LOG_ERR("Failed to save default HVAC config to EEPROM: %d", save_rc);
             return save_rc;
@@ -853,17 +841,12 @@ int app_facade_storage_reload_all(void)
 
     /* 1. HVAC */
     if (s_app->hvac.initialized) {
-        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_hvac_t)];
         config_hvac_t hvac_cfg;
         memset(&hvac_cfg, 0, sizeof(hvac_cfg));
         size_t loaded_size = 0;
-        size_t unpacked_size = 0;
         int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_HVAC,
-                                        buf, sizeof(buf), &loaded_size);
-        if (ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_HVAC, buf, loaded_size,
-                                   &hvac_cfg, sizeof(hvac_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(config_hvac_t) &&
+                                        &hvac_cfg, sizeof(hvac_cfg), &loaded_size);
+        if (ret == 0 && loaded_size >= sizeof(config_hvac_t) &&
             config_hvac_is_valid(&hvac_cfg)) {
             (void)app_container_set_hvac_config(s_app, &hvac_cfg);
         } else {
@@ -875,15 +858,10 @@ int app_facade_storage_reload_all(void)
     if (s_app->network.initialized) {
         net_eth_config_t eth_cfg;
         memset(&eth_cfg, 0, sizeof(eth_cfg));
-        uint8_t eth_buf[sizeof(config_envelope_header_t) + sizeof(net_eth_config_t)];
         size_t loaded_size = 0;
-        size_t unpacked_size = 0;
         int load_res = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_NET_ETH,
-                                             eth_buf, sizeof(eth_buf), &loaded_size);
-        if (load_res == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_NET_ETH, eth_buf, loaded_size,
-                                   &eth_cfg, sizeof(eth_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(net_eth_config_t) &&
+                                             &eth_cfg, sizeof(eth_cfg), &loaded_size);
+        if (load_res == 0 && loaded_size >= sizeof(net_eth_config_t) &&
             net_eth_config_is_valid(&eth_cfg)) {
             if (i_network_is_bound(&s_app->network.eth_port)) {
                 (void)i_network_set_config(&s_app->network.eth_port, &eth_cfg, sizeof(eth_cfg));
@@ -897,15 +875,10 @@ int app_facade_storage_reload_all(void)
     if (s_app->network.initialized) {
         net_wifi_config_t wifi_cfg;
         memset(&wifi_cfg, 0, sizeof(wifi_cfg));
-        uint8_t wifi_buf[sizeof(config_envelope_header_t) + sizeof(net_wifi_config_t)];
         size_t loaded_size = 0;
-        size_t unpacked_size = 0;
         int load_res = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_NET_WIFI,
-                                             wifi_buf, sizeof(wifi_buf), &loaded_size);
-        if (load_res == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_NET_WIFI, wifi_buf, loaded_size,
-                                   &wifi_cfg, sizeof(wifi_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(net_wifi_config_t) &&
+                                             &wifi_cfg, sizeof(wifi_cfg), &loaded_size);
+        if (load_res == 0 && loaded_size >= sizeof(net_wifi_config_t) &&
             net_wifi_config_is_valid(&wifi_cfg)) {
             if (i_network_is_bound(&s_app->network.wifi_port)) {
                 (void)i_network_set_config(&s_app->network.wifi_port, &wifi_cfg, sizeof(wifi_cfg));
@@ -917,17 +890,12 @@ int app_facade_storage_reload_all(void)
 
     /* 5. Device */
     {
-        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_device_t)];
         config_device_t dev_cfg;
         memset(&dev_cfg, 0, sizeof(dev_cfg));
         size_t loaded_size = 0;
-        size_t unpacked_size = 0;
         int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_DEVICE,
-                                        buf, sizeof(buf), &loaded_size);
-        if (ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_DEVICE, buf, loaded_size,
-                                   &dev_cfg, sizeof(dev_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(config_device_t)) {
+                                        &dev_cfg, sizeof(dev_cfg), &loaded_size);
+        if (ret == 0 && loaded_size >= sizeof(config_device_t)) {
             s_app->device_cfg = dev_cfg;
         } else {
             reload_err = -EIO;
@@ -936,17 +904,12 @@ int app_facade_storage_reload_all(void)
 
     /* 6. Calibration */
     {
-        uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_calibration_t)];
         config_calibration_t cal_cfg;
         memset(&cal_cfg, 0, sizeof(cal_cfg));
         size_t loaded_size = 0;
-        size_t unpacked_size = 0;
         int ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_CALIBRATION,
-                                        buf, sizeof(buf), &loaded_size);
-        if (ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_CALIBRATION, buf, loaded_size,
-                                   &cal_cfg, sizeof(cal_cfg), &unpacked_size) == 0 &&
-            unpacked_size == sizeof(config_calibration_t)) {
+                                        &cal_cfg, sizeof(cal_cfg), &loaded_size);
+        if (ret == 0 && loaded_size >= sizeof(config_calibration_t)) {
             s_app->calibration_cfg = cal_cfg;
         } else {
             reload_err = -EIO;
@@ -955,17 +918,12 @@ int app_facade_storage_reload_all(void)
 
     /* 7. THERMAL_SITE */
     {
-        uint8_t site_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_site_t)];
         config_thermal_site_t site_cfg;
         memset(&site_cfg, 0, sizeof(site_cfg));
         size_t loaded_site_size = 0;
-        size_t unpacked_site_size = 0;
         int site_ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_THERMAL_SITE,
-                                             site_buf, sizeof(site_buf), &loaded_site_size);
-        if (site_ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_THERMAL_SITE, site_buf, loaded_site_size,
-                                   &site_cfg, sizeof(site_cfg), &unpacked_site_size) == 0 &&
-            unpacked_site_size == sizeof(config_thermal_site_t) &&
+                                             &site_cfg, sizeof(site_cfg), &loaded_site_size);
+        if (site_ret == 0 && loaded_site_size >= sizeof(config_thermal_site_t) &&
             config_thermal_site_is_valid(&site_cfg)) {
             s_app->thermal_site_cfg = site_cfg;
         } else {
@@ -975,17 +933,12 @@ int app_facade_storage_reload_all(void)
 
     /* 8. THERMAL_BASELINE */
     {
-        uint8_t base_buf[sizeof(config_envelope_header_t) + sizeof(config_thermal_baseline_t)];
         config_thermal_baseline_t base_cfg;
         memset(&base_cfg, 0, sizeof(base_cfg));
         size_t loaded_base_size = 0;
-        size_t unpacked_base_size = 0;
         int base_ret = i_config_storage_load(&s_app->storage.port, CONFIG_DOMAIN_THERMAL_BASELINE,
-                                             base_buf, sizeof(base_buf), &loaded_base_size);
-        if (base_ret == 0 &&
-            config_envelope_unpack(CONFIG_DOMAIN_THERMAL_BASELINE, base_buf, loaded_base_size,
-                                   &base_cfg, sizeof(base_cfg), &unpacked_base_size) == 0 &&
-            unpacked_base_size == sizeof(config_thermal_baseline_t) &&
+                                             &base_cfg, sizeof(base_cfg), &loaded_base_size);
+        if (base_ret == 0 && loaded_base_size >= sizeof(config_thermal_baseline_t) &&
             config_thermal_baseline_is_valid(&base_cfg)) {
             s_app->thermal_baseline_cfg = base_cfg;
         } else {
@@ -1786,15 +1739,9 @@ int app_facade_snmp_reload(void)
     if (storage == NULL || !i_config_storage_is_bound(storage)) {
         return -ENODEV;
     }
-    uint8_t buf[sizeof(config_envelope_header_t) + sizeof(config_snmp_t)];
-    size_t loaded_len = 0U;
-    int err = i_config_storage_load(storage, CONFIG_DOMAIN_SNMP, buf, sizeof(buf), &loaded_len);
-    if (err != 0) {
-        return err;
-    }
     config_snmp_t cfg;
-    size_t unpacked_len = 0U;
-    err = config_envelope_unpack(CONFIG_DOMAIN_SNMP, buf, loaded_len, &cfg, sizeof(cfg), &unpacked_len);
+    size_t loaded_len = 0U;
+    int err = i_config_storage_load(storage, CONFIG_DOMAIN_SNMP, &cfg, sizeof(cfg), &loaded_len);
     if (err != 0) {
         return err;
     }
