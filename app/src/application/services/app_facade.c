@@ -1546,6 +1546,20 @@ uint32_t app_facade_time_get_fattime(void)
  * MicroSD Storage & Filesystem Service APIs
  * ========================================================================= */
 
+bool app_facade_sd_is_card_present(void)
+{
+    if (s_app == NULL) {
+        return false;
+    }
+
+    ao_storage_sd_t *ao = app_container_get_sd_storage_ao(s_app);
+    if (ao == NULL) {
+        return false;
+    }
+
+    return ao_storage_sd_is_card_present(ao);
+}
+
 int app_facade_sd_get_status(storage_fs_card_status_t *out_status, storage_fs_volume_info_t *out_vol)
 {
     if (s_app == NULL) {

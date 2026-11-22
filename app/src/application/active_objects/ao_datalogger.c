@@ -23,10 +23,13 @@ LOG_MODULE_REGISTER(ao_datalogger, CONFIG_LOG_DEFAULT_LEVEL);
 #define DATALOGGER_BUF_ATTR __aligned(32)
 #endif
 
-static uint8_t s_datalogger_telemetry_buf[AO_DATALOGGER_BUFFER_SIZE] DATALOGGER_BUF_ATTR;
-static uint8_t s_datalogger_alarms_buf[AO_DATALOGGER_BUFFER_SIZE]    DATALOGGER_BUF_ATTR;
-static uint8_t s_datalogger_system_buf[AO_DATALOGGER_BUFFER_SIZE]    DATALOGGER_BUF_ATTR;
-static uint8_t s_datalogger_boot_buf[AO_DATALOGGER_BUFFER_SIZE]      DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_temperature_buf[AO_DATALOGGER_BUFFER_SIZE] DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_energy_buf[AO_DATALOGGER_BUFFER_SIZE]      DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_thermal_buf[AO_DATALOGGER_BUFFER_SIZE]     DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_telemetry_buf[AO_DATALOGGER_BUFFER_SIZE]   DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_alarms_buf[AO_DATALOGGER_BUFFER_SIZE]      DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_system_buf[AO_DATALOGGER_BUFFER_SIZE]      DATALOGGER_BUF_ATTR;
+static uint8_t s_datalogger_boot_buf[AO_DATALOGGER_BUFFER_SIZE]        DATALOGGER_BUF_ATTR;
 
 #define CSV_ALARMS_HEADER \
     "# schema_version=1;source=BrightC_V3;medium=SDMMC\n" \
@@ -100,16 +103,24 @@ static void get_stream_file_path(const ao_datalogger_t *self, log_stream_t strea
         y = 2026; m = 1; d = 1;
     }
     switch (stream) {
-    case LOG_STREAM_TELEMETRY:
-        snprintf(out_path, out_size, "%s/history/%04d/%02d/%s_telemetry.csv",
+    case LOG_STREAM_TEMPERATURE:
+        snprintf(out_path, out_size, "%s/history/temperature/%04d/%02d/%s_temperature.csv",
+                 self->mount_point, y, m, self->current_date);
+        break;
+    case LOG_STREAM_ENERGY:
+        snprintf(out_path, out_size, "%s/history/energy/%04d/%02d/%s_energy.csv",
+                 self->mount_point, y, m, self->current_date);
+        break;
+    case LOG_STREAM_THERMAL:
+        snprintf(out_path, out_size, "%s/history/thermal/%04d/%02d/%s_thermal.csv",
                  self->mount_point, y, m, self->current_date);
         break;
     case LOG_STREAM_ALARMS:
-        snprintf(out_path, out_size, "%s/logs/%04d/%02d/%s_alarms.log",
+        snprintf(out_path, out_size, "%s/logs/alarms/%04d/%02d/%s_alarms.csv",
                  self->mount_point, y, m, self->current_date);
         break;
     case LOG_STREAM_SYSTEM:
-        snprintf(out_path, out_size, "%s/logs/%04d/%02d/%s_system.log",
+        snprintf(out_path, out_size, "%s/logs/system/%04d/%02d/%s_system.log",
                  self->mount_point, y, m, self->current_date);
         break;
     case LOG_STREAM_BOOT:
@@ -117,7 +128,8 @@ static void get_stream_file_path(const ao_datalogger_t *self, log_stream_t strea
                  self->mount_point, (unsigned int)self->boot_count);
         break;
     default:
-        out_path[0] = '\0';
+        snprintf(out_path, out_size, "%s/history/%04d/%02d/%s_telemetry.csv",
+                 self->mount_point, y, m, self->current_date);
         break;
     }
 }
@@ -131,24 +143,66 @@ static void ensure_stream_directories(ao_datalogger_t *self)
 
     char dir_path[FS_MAX_PATH_LEN];
 
+    /* History Base & Partitions */
     snprintf(dir_path, sizeof(dir_path), "%s/history", self->mount_point);
     ensure_directory_path(self, dir_path);
 
-    snprintf(dir_path, sizeof(dir_path), "%s/history/%04d", self->mount_point, y);
+    /* Temperature History */
+    snprintf(dir_path, sizeof(dir_path), "%s/history/temperature", self->mount_point);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/history/temperature/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/history/temperature/%04d/%02d", self->mount_point, y, m);
     ensure_directory_path(self, dir_path);
 
+    /* Energy History */
+    snprintf(dir_path, sizeof(dir_path), "%s/history/energy", self->mount_point);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/history/energy/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/history/energy/%04d/%02d", self->mount_point, y, m);
+    ensure_directory_path(self, dir_path);
+
+    /* Thermal Telemetry History */
+    snprintf(dir_path, sizeof(dir_path), "%s/history/thermal", self->mount_point);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/history/thermal/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/history/thermal/%04d/%02d", self->mount_point, y, m);
+    ensure_directory_path(self, dir_path);
+
+    /* Legacy History (for test compatibility) */
+    snprintf(dir_path, sizeof(dir_path), "%s/history/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
     snprintf(dir_path, sizeof(dir_path), "%s/history/%04d/%02d", self->mount_point, y, m);
     ensure_directory_path(self, dir_path);
 
+    /* Logs Base & Partitions */
     snprintf(dir_path, sizeof(dir_path), "%s/logs", self->mount_point);
     ensure_directory_path(self, dir_path);
 
     snprintf(dir_path, sizeof(dir_path), "%s/logs/boot", self->mount_point);
     ensure_directory_path(self, dir_path);
 
-    snprintf(dir_path, sizeof(dir_path), "%s/logs/%04d", self->mount_point, y);
+    /* Alarms Log */
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/alarms", self->mount_point);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/alarms/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/alarms/%04d/%02d", self->mount_point, y, m);
     ensure_directory_path(self, dir_path);
 
+    /* System Log */
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/system", self->mount_point);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/system/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/system/%04d/%02d", self->mount_point, y, m);
+    ensure_directory_path(self, dir_path);
+
+    /* Legacy Logs path */
+    snprintf(dir_path, sizeof(dir_path), "%s/logs/%04d", self->mount_point, y);
+    ensure_directory_path(self, dir_path);
     snprintf(dir_path, sizeof(dir_path), "%s/logs/%04d/%02d", self->mount_point, y, m);
     ensure_directory_path(self, dir_path);
 }
@@ -204,38 +258,84 @@ static void close_stream_file(ao_datalogger_t *self, void **file_handle)
     }
 }
 
+static void close_all_stream_files(ao_datalogger_t *self)
+{
+    close_stream_file(self, &self->temperature_file);
+    close_stream_file(self, &self->energy_file);
+    close_stream_file(self, &self->thermal_file);
+    close_stream_file(self, &self->telemetry_file);
+    close_stream_file(self, &self->alarms_file);
+    close_stream_file(self, &self->system_file);
+    close_stream_file(self, &self->boot_file);
+}
+
 static void flush_all_streams(ao_datalogger_t *self)
 {
     char path_buf[FS_MAX_PATH_LEN];
 
-    /* 0. Telemetry Stream */
+    /* 0. Temperature Stream */
+    if (self->temperature_buf_len > 0U && self->is_sd_mounted) {
+        get_stream_file_path(self, LOG_STREAM_TEMPERATURE, path_buf, sizeof(path_buf));
+        flush_stream_buffer(self, &self->temperature_file, path_buf, DATALOGGER_CSV_HEADER_TEMPERATURE,
+                            self->temperature_buf, &self->temperature_buf_len);
+    }
+
+    /* 1. Energy Stream */
+    if (self->energy_buf_len > 0U && self->is_sd_mounted) {
+        get_stream_file_path(self, LOG_STREAM_ENERGY, path_buf, sizeof(path_buf));
+        flush_stream_buffer(self, &self->energy_file, path_buf, DATALOGGER_CSV_HEADER_ENERGY,
+                            self->energy_buf, &self->energy_buf_len);
+    }
+
+    /* 2. Thermal Telemetry Stream */
+    if (self->thermal_buf_len > 0U && self->is_sd_mounted) {
+        get_stream_file_path(self, LOG_STREAM_THERMAL, path_buf, sizeof(path_buf));
+        flush_stream_buffer(self, &self->thermal_file, path_buf, DATALOGGER_CSV_HEADER_THERMAL,
+                            self->thermal_buf, &self->thermal_buf_len);
+    }
+
+    /* 3. Legacy Telemetry Stream */
     if (self->telemetry_buf_len > 0U && self->is_sd_mounted) {
-        get_stream_file_path(self, LOG_STREAM_TELEMETRY, path_buf, sizeof(path_buf));
+        int y = 0, m = 0, d = 0;
+        if (sscanf(self->current_date, "%d-%d-%d", &y, &m, &d) != 3) {
+            y = 2026; m = 1; d = 1;
+        }
+        snprintf(path_buf, sizeof(path_buf), "%s/history/%04d/%02d/%s_telemetry.csv",
+                 self->mount_point, y, m, self->current_date);
         flush_stream_buffer(self, &self->telemetry_file, path_buf, DATALOGGER_CSV_HEADER_TELEMETRY,
                             self->telemetry_buf, &self->telemetry_buf_len);
     }
 
-    /* 1. Alarms Stream */
+    /* 4. Alarms Stream */
     if (self->alarms_buf_len > 0U && self->is_sd_mounted) {
         get_stream_file_path(self, LOG_STREAM_ALARMS, path_buf, sizeof(path_buf));
         flush_stream_buffer(self, &self->alarms_file, path_buf, CSV_ALARMS_HEADER,
                             self->alarms_buf, &self->alarms_buf_len);
     }
 
-    /* 2. System Stream */
+    /* 5. System Stream */
     if (self->system_buf_len > 0U && self->is_sd_mounted) {
         get_stream_file_path(self, LOG_STREAM_SYSTEM, path_buf, sizeof(path_buf));
         flush_stream_buffer(self, &self->system_file, path_buf, NULL,
                             self->system_buf, &self->system_buf_len);
     }
 
-    /* 3. Boot Staging Stream */
+    /* 6. Boot Staging Stream */
     if (self->boot_buf_len > 0U && self->is_sd_mounted) {
         get_stream_file_path(self, LOG_STREAM_BOOT, path_buf, sizeof(path_buf));
         flush_stream_buffer(self, &self->boot_file, path_buf, CSV_BOOT_HEADER,
                             self->boot_buf, &self->boot_buf_len);
     }
 
+    if (self->temperature_file != NULL) {
+        (void)i_storage_fs_sync(&self->fs, self->temperature_file);
+    }
+    if (self->energy_file != NULL) {
+        (void)i_storage_fs_sync(&self->fs, self->energy_file);
+    }
+    if (self->thermal_file != NULL) {
+        (void)i_storage_fs_sync(&self->fs, self->thermal_file);
+    }
     if (self->telemetry_file != NULL) {
         (void)i_storage_fs_sync(&self->fs, self->telemetry_file);
     }
@@ -427,10 +527,7 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
                     reconcile_bkpsram(self);
                     check_storage_low_watermark(self);
                 } else {
-                    close_stream_file(self, &self->telemetry_file);
-                    close_stream_file(self, &self->alarms_file);
-                    close_stream_file(self, &self->system_file);
-                    close_stream_file(self, &self->boot_file);
+                    close_all_stream_files(self);
                 }
                 k_mutex_unlock(&self->lock);
                 break;
@@ -563,6 +660,78 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
                 break;
             }
 
+            case DATALOGGER_EVT_TEMPERATURE_SAMPLE: {
+                const datalogger_temperature_record_t *temp = &evt.payload.temperature;
+                char line_buf[256];
+                char time_str[32];
+                char path_buf[FS_MAX_PATH_LEN];
+
+                k_mutex_lock(&self->lock, K_FOREVER);
+                get_iso_timestamp(time_str, sizeof(time_str),
+                                  self->is_time_synced ? temp->epoch_s : 0,
+                                  (uint32_t)(temp->uptime_ms % 1000U));
+
+                get_stream_file_path(self, LOG_STREAM_TEMPERATURE, path_buf, sizeof(path_buf));
+
+                int len = datalogger_format_temperature_row(temp, time_str, line_buf, sizeof(line_buf));
+                if (len > 0) {
+                    append_to_stream(self, self->temperature_buf, &self->temperature_buf_len,
+                                     line_buf, (size_t)len, &self->temperature_file, path_buf,
+                                     DATALOGGER_CSV_HEADER_TEMPERATURE);
+                    self->stats.events_written++;
+                }
+                k_mutex_unlock(&self->lock);
+                break;
+            }
+
+            case DATALOGGER_EVT_ENERGY_SAMPLE: {
+                const datalogger_energy_record_t *en = &evt.payload.energy;
+                char line_buf[256];
+                char time_str[32];
+                char path_buf[FS_MAX_PATH_LEN];
+
+                k_mutex_lock(&self->lock, K_FOREVER);
+                get_iso_timestamp(time_str, sizeof(time_str),
+                                  self->is_time_synced ? en->epoch_s : 0,
+                                  (uint32_t)(en->uptime_ms % 1000U));
+
+                get_stream_file_path(self, LOG_STREAM_ENERGY, path_buf, sizeof(path_buf));
+
+                int len = datalogger_format_energy_row(en, time_str, line_buf, sizeof(line_buf));
+                if (len > 0) {
+                    append_to_stream(self, self->energy_buf, &self->energy_buf_len,
+                                     line_buf, (size_t)len, &self->energy_file, path_buf,
+                                     DATALOGGER_CSV_HEADER_ENERGY);
+                    self->stats.events_written++;
+                }
+                k_mutex_unlock(&self->lock);
+                break;
+            }
+
+            case DATALOGGER_EVT_THERMAL_SAMPLE: {
+                const datalogger_thermal_record_t *th = &evt.payload.thermal;
+                char line_buf[256];
+                char time_str[32];
+                char path_buf[FS_MAX_PATH_LEN];
+
+                k_mutex_lock(&self->lock, K_FOREVER);
+                get_iso_timestamp(time_str, sizeof(time_str),
+                                  self->is_time_synced ? th->epoch_s : 0,
+                                  (uint32_t)(th->uptime_ms % 1000U));
+
+                get_stream_file_path(self, LOG_STREAM_THERMAL, path_buf, sizeof(path_buf));
+
+                int len = datalogger_format_thermal_row(th, time_str, line_buf, sizeof(line_buf));
+                if (len > 0) {
+                    append_to_stream(self, self->thermal_buf, &self->thermal_buf_len,
+                                     line_buf, (size_t)len, &self->thermal_file, path_buf,
+                                     DATALOGGER_CSV_HEADER_THERMAL);
+                    self->stats.events_written++;
+                }
+                k_mutex_unlock(&self->lock);
+                break;
+            }
+
             case DATALOGGER_EVT_TELEMETRY_SAMPLE: {
                 const datalogger_telemetry_record_t *tel = &evt.payload.telemetry;
                 char line_buf[512];
@@ -574,7 +743,12 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
                                   self->is_time_synced ? tel->epoch_s : 0,
                                   (uint32_t)(tel->uptime_ms % 1000U));
 
-                get_stream_file_path(self, LOG_STREAM_TELEMETRY, path_buf, sizeof(path_buf));
+                int y = 0, m = 0, d = 0;
+                if (sscanf(self->current_date, "%d-%d-%d", &y, &m, &d) != 3) {
+                    y = 2026; m = 1; d = 1;
+                }
+                snprintf(path_buf, sizeof(path_buf), "%s/history/%04d/%02d/%s_telemetry.csv",
+                         self->mount_point, y, m, self->current_date);
 
                 int len = datalogger_format_telemetry_row(tel, time_str, line_buf, sizeof(line_buf));
                 if (len > 0) {
@@ -590,10 +764,7 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
             case DATALOGGER_EVT_FLUSH_TRIGGER:
                 k_mutex_lock(&self->lock, K_FOREVER);
                 flush_all_streams(self);
-                close_stream_file(self, &self->telemetry_file);
-                close_stream_file(self, &self->alarms_file);
-                close_stream_file(self, &self->system_file);
-                close_stream_file(self, &self->boot_file);
+                close_all_stream_files(self);
                 k_mutex_unlock(&self->lock);
                 break;
 
@@ -614,10 +785,7 @@ static void datalogger_thread_entry(void *arg1, void *arg2, void *arg3)
     /* Thread terminating: final flush & close */
     k_mutex_lock(&self->lock, K_FOREVER);
     flush_all_streams(self);
-    close_stream_file(self, &self->telemetry_file);
-    close_stream_file(self, &self->alarms_file);
-    close_stream_file(self, &self->system_file);
-    close_stream_file(self, &self->boot_file);
+    close_all_stream_files(self);
     k_mutex_unlock(&self->lock);
 
     k_sem_give(&self->stopped_sem);
@@ -658,14 +826,20 @@ int ao_datalogger_init(ao_datalogger_t *self,
     k_sem_init(&self->stopped_sem, 0, 1);
     k_mutex_init(&self->lock);
 
-    self->telemetry_buf = s_datalogger_telemetry_buf;
-    self->alarms_buf    = s_datalogger_alarms_buf;
-    self->system_buf    = s_datalogger_system_buf;
-    self->boot_buf      = s_datalogger_boot_buf;
-    memset(self->telemetry_buf, 0, AO_DATALOGGER_BUFFER_SIZE);
-    memset(self->alarms_buf,    0, AO_DATALOGGER_BUFFER_SIZE);
-    memset(self->system_buf,    0, AO_DATALOGGER_BUFFER_SIZE);
-    memset(self->boot_buf,      0, AO_DATALOGGER_BUFFER_SIZE);
+    self->temperature_buf = s_datalogger_temperature_buf;
+    self->energy_buf      = s_datalogger_energy_buf;
+    self->thermal_buf     = s_datalogger_thermal_buf;
+    self->telemetry_buf   = s_datalogger_telemetry_buf;
+    self->alarms_buf      = s_datalogger_alarms_buf;
+    self->system_buf      = s_datalogger_system_buf;
+    self->boot_buf        = s_datalogger_boot_buf;
+    memset(self->temperature_buf, 0, AO_DATALOGGER_BUFFER_SIZE);
+    memset(self->energy_buf,      0, AO_DATALOGGER_BUFFER_SIZE);
+    memset(self->thermal_buf,     0, AO_DATALOGGER_BUFFER_SIZE);
+    memset(self->telemetry_buf,   0, AO_DATALOGGER_BUFFER_SIZE);
+    memset(self->alarms_buf,      0, AO_DATALOGGER_BUFFER_SIZE);
+    memset(self->system_buf,      0, AO_DATALOGGER_BUFFER_SIZE);
+    memset(self->boot_buf,        0, AO_DATALOGGER_BUFFER_SIZE);
 
     self->is_initialized = true;
     return 0;
@@ -782,9 +956,7 @@ int ao_datalogger_set_date(ao_datalogger_t *self, const char *date_str)
     if (date_changed) {
         if (self->is_time_synced) {
             flush_all_streams(self);
-            close_stream_file(self, &self->telemetry_file);
-            close_stream_file(self, &self->alarms_file);
-            close_stream_file(self, &self->system_file);
+            close_all_stream_files(self);
         }
         strncpy(self->current_date, date_str, sizeof(self->current_date) - 1U);
         self->current_date[sizeof(self->current_date) - 1U] = '\0';

@@ -46,6 +46,100 @@ static const char *subsystem_to_str(alarm_source_category_t cat)
     }
 }
 
+int datalogger_format_temperature_row(const datalogger_temperature_record_t *rec,
+                                      const char *iso_time,
+                                      char *out_str,
+                                      size_t out_size)
+{
+    if (rec == NULL || iso_time == NULL || out_str == NULL || out_size == 0U) {
+        return -EINVAL;
+    }
+
+    int written = snprintf(out_str, out_size,
+        "%s,%lld,%u,0x%02X,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+        iso_time,
+        (long long)rec->epoch_s,
+        (unsigned int)rec->hvac_mode,
+        (unsigned int)rec->active_unit_mask,
+        (double)rec->t_ctrl_avg,
+        (double)rec->t_ctrl_max,
+        (double)rec->t_ctrl_min,
+        (double)rec->t_ctrl_g0,
+        (double)rec->t_ctrl_g1,
+        (double)rec->t_inj_mean,
+        (double)rec->t_ret_mean,
+        (double)rec->delta_t_clima);
+
+    if (written < 0 || (size_t)written >= out_size) {
+        return -ENOMEM;
+    }
+
+    return written;
+}
+
+int datalogger_format_energy_row(const datalogger_energy_record_t *rec,
+                                 const char *iso_time,
+                                 char *out_str,
+                                 size_t out_size)
+{
+    if (rec == NULL || iso_time == NULL || out_str == NULL || out_size == 0U) {
+        return -EINVAL;
+    }
+
+    int written = snprintf(out_str, out_size,
+        "%s,%lld,%.1f,%.1f,%.1f,%.2f,%.2f,%.2f,%.3f,%.2f,%.1f,%.2f,%.2f\n",
+        iso_time,
+        (long long)rec->epoch_s,
+        (double)rec->v_a,
+        (double)rec->v_b,
+        (double)rec->v_c,
+        (double)rec->i_a,
+        (double)rec->i_b,
+        (double)rec->i_c,
+        (double)rec->p_tot_kw,
+        (double)rec->power_factor,
+        (double)rec->frequency_hz,
+        (double)rec->energy_kwh,
+        (double)rec->reactive_energy_kvarh);
+
+    if (written < 0 || (size_t)written >= out_size) {
+        return -ENOMEM;
+    }
+
+    return written;
+}
+
+int datalogger_format_thermal_row(const datalogger_thermal_record_t *rec,
+                                  const char *iso_time,
+                                  char *out_str,
+                                  size_t out_size)
+{
+    if (rec == NULL || iso_time == NULL || out_str == NULL || out_size == 0U) {
+        return -EINVAL;
+    }
+
+    int written = snprintf(out_str, out_size,
+        "%s,%lld,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f,%.3f,%.2f,%.3f,0x%08X\n",
+        iso_time,
+        (long long)rec->epoch_s,
+        (double)rec->q_sens_kw,
+        (double)rec->q_lat_kw,
+        (double)rec->q_tot_kw,
+        (double)rec->cop_real,
+        (double)rec->cop_carnot,
+        (double)rec->eta_ii_pct,
+        (double)rec->airflow_kg_s,
+        (double)rec->t_dew_c,
+        (double)rec->shf,
+        (unsigned int)rec->alarm_bits);
+
+    if (written < 0 || (size_t)written >= out_size) {
+        return -ENOMEM;
+    }
+
+    return written;
+}
+
 int datalogger_format_telemetry_row(const datalogger_telemetry_record_t *rec,
                                     const char *iso_time,
                                     char *out_str,

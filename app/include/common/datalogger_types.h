@@ -66,19 +66,74 @@ _Static_assert(sizeof(alarm_nv_record_t) == 64U, "alarm_nv_record_t must be exac
 /**
  * @brief Logical logging destination streams.
  */
-/**
- * @brief Logical logging destination streams.
- */
 typedef enum {
-    LOG_STREAM_TELEMETRY = 0,       /**< Unified periodic telemetry CSV */
+    LOG_STREAM_TEMPERATURE = 0,     /**< Dedicated periodic temperature CSV */
+    LOG_STREAM_ENERGY,              /**< Dedicated periodic electrical energy CSV */
+    LOG_STREAM_THERMAL,             /**< Dedicated periodic thermal physics CSV */
     LOG_STREAM_ALARMS,              /**< Forensic Sequence of Events (SOE) CSV */
     LOG_STREAM_SYSTEM,              /**< Operational system lifecycle text log */
     LOG_STREAM_BOOT,                /**< Pre-NTP cold boot staging CSV */
-    LOG_STREAM_MAX
+    LOG_STREAM_MAX,
+    LOG_STREAM_TELEMETRY = LOG_STREAM_THERMAL /**< Backward compatibility alias */
 } log_stream_t;
 
 /**
- * @brief Unified periodic telemetry sample data record for CSV logging.
+ * @brief Dedicated periodic temperature record for control zone & coil logging.
+ */
+typedef struct {
+    int64_t  epoch_s;               /**< Unix epoch timestamp in seconds */
+    uint64_t uptime_ms;             /**< Monotonic system uptime in ms */
+    uint8_t  hvac_mode;             /**< HVAC operational state/mode */
+    uint8_t  active_unit_mask;      /**< Bitmask of active compressor/unit stages */
+    float    t_ctrl_avg;            /**< Average thermal control zone temperature (°C) */
+    float    t_ctrl_max;            /**< Max thermal control zone temperature (°C) */
+    float    t_ctrl_min;            /**< Min thermal control zone temperature (°C) */
+    float    t_ctrl_g0;             /**< HVAC Group 0 governing control temperature (°C) */
+    float    t_ctrl_g1;             /**< HVAC Group 1 governing control temperature (°C) */
+    float    t_inj_mean;            /**< Mean evaporator coil supply/injection temperature (°C) */
+    float    t_ret_mean;            /**< Mean evaporator coil return temperature (°C) */
+    float    delta_t_clima;         /**< Thermal differential / cooling lift ΔT (°C) */
+} datalogger_temperature_record_t;
+
+/**
+ * @brief Dedicated periodic electrical energy record from multi-phase power meter.
+ */
+typedef struct {
+    int64_t  epoch_s;               /**< Unix epoch timestamp in seconds */
+    uint64_t uptime_ms;             /**< Monotonic system uptime in ms */
+    float    v_a;                   /**< Phase A RMS voltage (V) */
+    float    v_b;                   /**< Phase B RMS voltage (V) */
+    float    v_c;                   /**< Phase C RMS voltage (V) */
+    float    i_a;                   /**< Phase A RMS current (A) */
+    float    i_b;                   /**< Phase B RMS current (A) */
+    float    i_c;                   /**< Phase C RMS current (A) */
+    float    p_tot_kw;              /**< Total active power (kW) */
+    float    power_factor;          /**< System aggregate power factor (0.00 - 1.00) */
+    float    frequency_hz;          /**< Grid line frequency (Hz) */
+    float    energy_kwh;            /**< Cumulative active energy (kWh) */
+    float    reactive_energy_kvarh; /**< Cumulative reactive energy (kvarh) */
+} datalogger_energy_record_t;
+
+/**
+ * @brief Dedicated periodic thermal physics & mathematical model telemetry record.
+ */
+typedef struct {
+    int64_t  epoch_s;               /**< Unix epoch timestamp in seconds */
+    uint64_t uptime_ms;             /**< Monotonic system uptime in ms */
+    float    q_sens_kw;             /**< Sensible thermal cooling capacity (kW) */
+    float    q_lat_kw;              /**< Latent thermal cooling capacity (kW) */
+    float    q_tot_kw;              /**< Total cooling capacity (kW) */
+    float    cop_real;              /**< Real-time Coefficient of Performance */
+    float    cop_carnot;            /**< Theoretical Carnot COP upper bound */
+    float    eta_ii_pct;            /**< Second-law exergy thermodynamic efficiency (%) */
+    float    airflow_kg_s;          /**< Total mass airflow rate (kg/s) */
+    float    t_dew_c;               /**< Calculated indoor dew point temperature (°C) */
+    float    shf;                   /**< Sensible Heat Factor (SHF = Q_sens / Q_tot) */
+    uint32_t alarm_bits;            /**< Active alarm bitfield snapshot */
+} datalogger_thermal_record_t;
+
+/**
+ * @brief Unified periodic telemetry sample data record for CSV logging (Legacy).
  */
 typedef struct {
     int64_t  epoch_s;               /**< Unix epoch timestamp in seconds */
@@ -149,6 +204,9 @@ typedef enum {
     DATALOGGER_EVT_HVAC_EVENT,
     DATALOGGER_EVT_SYSTEM_EVENT,
     DATALOGGER_EVT_TELEMETRY_SAMPLE,
+    DATALOGGER_EVT_TEMPERATURE_SAMPLE,
+    DATALOGGER_EVT_ENERGY_SAMPLE,
+    DATALOGGER_EVT_THERMAL_SAMPLE,
     DATALOGGER_EVT_STORAGE_STATUS,
     DATALOGGER_EVT_TIME_SYNC_TRIGGER,
     DATALOGGER_EVT_FLUSH_TRIGGER,
@@ -163,11 +221,14 @@ typedef struct {
     uint32_t                seq_id;
     uint64_t                uptime_ms;
     union {
-        datalogger_telemetry_record_t telemetry;
-        alarm_transition_event_t      alarm;
-        hvac_event_t                  hvac;
-        system_event_msg_t            system;
-        storage_fs_card_status_t      storage_status;
+        datalogger_telemetry_record_t   telemetry;
+        datalogger_temperature_record_t temperature;
+        datalogger_energy_record_t      energy;
+        datalogger_thermal_record_t     thermal;
+        alarm_transition_event_t        alarm;
+        hvac_event_t                    hvac;
+        system_event_msg_t              system;
+        storage_fs_card_status_t        storage_status;
     } payload;
 } datalogger_event_envelope_t;
 

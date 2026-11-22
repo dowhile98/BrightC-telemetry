@@ -20,6 +20,19 @@
 extern "C" {
 #endif
 
+#define DATALOGGER_CSV_HEADER_TEMPERATURE \
+    "# schema_version=1;source=BrightC_V3;type=temperature_history\n" \
+    "Timestamp_ISO,Epoch_s,HVAC_Mode,Active_Mask,T_ctrl_avg,T_ctrl_max,T_ctrl_min," \
+    "T_ctrl_g0,T_ctrl_g1,T_inj_mean,T_ret_mean,Delta_T_clima\n"
+
+#define DATALOGGER_CSV_HEADER_ENERGY \
+    "# schema_version=1;source=BrightC_V3;type=energy_history\n" \
+    "Timestamp_ISO,Epoch_s,V_a,V_b,V_c,I_a,I_b,I_c,P_tot_kW,PF,Frequency_Hz,Energy_kWh,Reactive_Energy_kvarh\n"
+
+#define DATALOGGER_CSV_HEADER_THERMAL \
+    "# schema_version=1;source=BrightC_V3;type=thermal_history\n" \
+    "Timestamp_ISO,Epoch_s,Q_sens_kW,Q_lat_kW,Q_tot_kW,COP_real,COP_Carnot,Eta_II_pct,AirFlow_kg_s,T_dew_C,SHF,Alarm_Bits\n"
+
 #define DATALOGGER_CSV_HEADER_TELEMETRY \
     "# schema_version=2;source=BrightC_V3;type=periodic_telemetry\n" \
     "Timestamp_ISO,Epoch_s,HVAC_Mode,Active_Mask,T_ctrl_avg,T_ctrl_max,T_ctrl_min," \
@@ -33,6 +46,48 @@ extern "C" {
 #define DATALOGGER_CSV_HEADER_BOOT \
     "# schema_version=1;source=BrightC_V3;type=boot_staging\n" \
     "Uptime_ms,Seq_ID,Stream,Event_ID,Message\n"
+
+/**
+ * @brief Formats a dedicated periodic temperature record into a CSV row.
+ *
+ * @param[in]  rec      Temperature record data.
+ * @param[in]  iso_time Pre-formatted ISO 8601 timestamp string.
+ * @param[out] out_str  Destination character buffer.
+ * @param[in]  out_size Maximum size of the destination buffer.
+ * @return Number of characters written (excluding null terminator), or negative errno on error.
+ */
+int datalogger_format_temperature_row(const datalogger_temperature_record_t *rec,
+                                      const char *iso_time,
+                                      char *out_str,
+                                      size_t out_size);
+
+/**
+ * @brief Formats a dedicated periodic electrical energy record into a CSV row.
+ *
+ * @param[in]  rec      Energy record data.
+ * @param[in]  iso_time Pre-formatted ISO 8601 timestamp string.
+ * @param[out] out_str  Destination character buffer.
+ * @param[in]  out_size Maximum size of the destination buffer.
+ * @return Number of characters written (excluding null terminator), or negative errno on error.
+ */
+int datalogger_format_energy_row(const datalogger_energy_record_t *rec,
+                                 const char *iso_time,
+                                 char *out_str,
+                                 size_t out_size);
+
+/**
+ * @brief Formats a dedicated periodic thermal physics record into a CSV row.
+ *
+ * @param[in]  rec      Thermal physics record data.
+ * @param[in]  iso_time Pre-formatted ISO 8601 timestamp string.
+ * @param[out] out_str  Destination character buffer.
+ * @param[in]  out_size Maximum size of the destination buffer.
+ * @return Number of characters written (excluding null terminator), or negative errno on error.
+ */
+int datalogger_format_thermal_row(const datalogger_thermal_record_t *rec,
+                                  const char *iso_time,
+                                  char *out_str,
+                                  size_t out_size);
 
 /**
  * @brief Formats a unified periodic telemetry record into a CSV row.

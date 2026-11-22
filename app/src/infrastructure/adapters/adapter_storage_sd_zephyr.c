@@ -8,8 +8,13 @@
 #include "infrastructure/adapters/adapter_storage_sd_zephyr.h"
 #include <string.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/gpio.h>
 
 LOG_MODULE_REGISTER(adapter_storage_sd, CONFIG_LOG_DEFAULT_LEVEL);
+
+#if DT_NODE_HAS_PROP(DT_NODELABEL(sdmmc1), cd_gpios)
+static const struct gpio_dt_spec s_sdmmc_cd_gpio = GPIO_DT_SPEC_GET(DT_NODELABEL(sdmmc1), cd_gpios);
+#endif
 
 static bool adapter_is_card_present(void *impl)
 {
@@ -17,6 +22,15 @@ static bool adapter_is_card_present(void *impl)
     if (self == NULL) {
         return false;
     }
+
+#if DT_NODE_HAS_PROP(DT_NODELABEL(sdmmc1), cd_gpios)
+    if (device_is_ready(s_sdmmc_cd_gpio.port)) {
+        int val = gpio_pin_get_dt(&s_sdmmc_cd_gpio);
+        if (val >= 0) {
+            return (val != 0);
+        }
+    }
+#endif
 
     const char *disk = (self->disk_name[0] != '\0') ? self->disk_name : ADAPTER_STORAGE_SD_DEFAULT_DISK_NAME;
     int status = disk_access_status(disk);

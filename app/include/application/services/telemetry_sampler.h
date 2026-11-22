@@ -28,7 +28,10 @@
 extern "C" {
 #endif
 
-#define TELEMETRY_SAMPLER_DEFAULT_INTERVAL_S 600U /* 10 minutes */
+#define TELEMETRY_SAMPLER_DEFAULT_INTERVAL_S         600U /* 10 minutes */
+#define TELEMETRY_SAMPLER_DEFAULT_INTERVAL_TEMP_S    300U /* 5 minutes */
+#define TELEMETRY_SAMPLER_DEFAULT_INTERVAL_ENERGY_S  900U /* 15 minutes */
+#define TELEMETRY_SAMPLER_DEFAULT_INTERVAL_THERMAL_S 600U /* 10 minutes */
 
 /**
  * @brief Telemetry Sampler Aggregator context.
@@ -41,6 +44,9 @@ typedef struct {
     i_hvac_status_t     hvac_port;
     uint32_t            sample_interval_s;
     int64_t             last_sample_uptime_s;
+    int64_t             last_sample_temp_s;
+    int64_t             last_sample_energy_s;
+    int64_t             last_sample_thermal_s;
     bool                is_initialized;
 } telemetry_sampler_t;
 
@@ -73,6 +79,36 @@ int telemetry_sampler_init(telemetry_sampler_t *self,
  */
 int telemetry_sampler_sample_now(telemetry_sampler_t *self,
                                  datalogger_telemetry_record_t *out_rec);
+
+/**
+ * @brief Perform dedicated temperature acquisition and post to Datalogger queue.
+ *
+ * @param[in,out] self    Sampler context.
+ * @param[out]    out_rec Optional destination to copy the assembled sample record.
+ * @return 0 on success, negative errno on failure.
+ */
+int telemetry_sampler_sample_temperature(telemetry_sampler_t *self,
+                                         datalogger_temperature_record_t *out_rec);
+
+/**
+ * @brief Perform dedicated electrical energy acquisition and post to Datalogger queue.
+ *
+ * @param[in,out] self    Sampler context.
+ * @param[out]    out_rec Optional destination to copy the assembled sample record.
+ * @return 0 on success, negative errno on failure.
+ */
+int telemetry_sampler_sample_energy(telemetry_sampler_t *self,
+                                    datalogger_energy_record_t *out_rec);
+
+/**
+ * @brief Perform dedicated thermal physics acquisition and post to Datalogger queue.
+ *
+ * @param[in,out] self    Sampler context.
+ * @param[out]    out_rec Optional destination to copy the assembled sample record.
+ * @return 0 on success, negative errno on failure.
+ */
+int telemetry_sampler_sample_thermal(telemetry_sampler_t *self,
+                                     datalogger_thermal_record_t *out_rec);
 
 /**
  * @brief Periodic timer/cadence tick handler.

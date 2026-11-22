@@ -916,6 +916,13 @@ int app_facade_network_wifi_config_save(void);
  * ========================================================================= */
 
 /**
+ * @brief Check if MicroSD card is physically detected via card detect pin (PG5).
+ *
+ * @return true if card is physically inserted, false otherwise.
+ */
+bool app_facade_sd_is_card_present(void);
+
+/**
  * @brief Retrieve MicroSD card presence, mount state, and volume capacity.
  *
  * @param[out] out_status Destination status pointer (may be NULL).

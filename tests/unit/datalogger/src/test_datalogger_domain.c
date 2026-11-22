@@ -104,3 +104,79 @@ ZTEST(datalogger_domain_suite, test_format_null_and_bounds_checks)
     /* Buffer too small */
     zassert_equal(datalogger_format_telemetry_row(&rec, "2026-11-12T14:34:22.000Z", buf, sizeof(buf)), -ENOMEM);
 }
+
+ZTEST(datalogger_domain_suite, test_format_temperature_row_golden)
+{
+    datalogger_temperature_record_t rec = {
+        .epoch_s = 1794474862,
+        .uptime_ms = 120000,
+        .hvac_mode = 1,
+        .active_unit_mask = 0x05,
+        .t_ctrl_avg = 23.50f,
+        .t_ctrl_max = 24.10f,
+        .t_ctrl_min = 22.80f,
+        .t_ctrl_g0 = 24.10f,
+        .t_ctrl_g1 = 23.80f,
+        .t_inj_mean = 14.20f,
+        .t_ret_mean = 24.50f,
+        .delta_t_clima = 10.30f
+    };
+
+    char buf[256];
+    int len = datalogger_format_temperature_row(&rec, "2026-11-12T14:34:22.000Z", buf, sizeof(buf));
+    zassert_true(len > 0, "Format failed: %d", len);
+
+    const char *expected = "2026-11-12T14:34:22.000Z,1794474862,1,0x05,23.50,24.10,22.80,24.10,23.80,14.20,24.50,10.30\n";
+    zassert_equal(strcmp(buf, expected), 0, "Mismatch in formatted temperature row: got %s vs %s", buf, expected);
+}
+
+ZTEST(datalogger_domain_suite, test_format_energy_row_golden)
+{
+    datalogger_energy_record_t rec = {
+        .epoch_s = 1794474862,
+        .uptime_ms = 120000,
+        .v_a = 220.0f,
+        .v_b = 221.0f,
+        .v_c = 219.5f,
+        .i_a = 12.30f,
+        .i_b = 11.90f,
+        .i_c = 12.10f,
+        .p_tot_kw = 7.500f,
+        .power_factor = 0.96f,
+        .frequency_hz = 60.0f,
+        .energy_kwh = 3450.25f,
+        .reactive_energy_kvarh = 120.50f
+    };
+
+    char buf[256];
+    int len = datalogger_format_energy_row(&rec, "2026-11-12T14:34:22.000Z", buf, sizeof(buf));
+    zassert_true(len > 0, "Format failed: %d", len);
+
+    const char *expected = "2026-11-12T14:34:22.000Z,1794474862,220.0,221.0,219.5,12.30,11.90,12.10,7.500,0.96,60.0,3450.25,120.50\n";
+    zassert_equal(strcmp(buf, expected), 0, "Mismatch in formatted energy row: got %s vs %s", buf, expected);
+}
+
+ZTEST(datalogger_domain_suite, test_format_thermal_row_golden)
+{
+    datalogger_thermal_record_t rec = {
+        .epoch_s = 1794474862,
+        .uptime_ms = 120000,
+        .q_sens_kw = 10.50f,
+        .q_lat_kw = 1.80f,
+        .q_tot_kw = 12.30f,
+        .cop_real = 3.40f,
+        .cop_carnot = 5.20f,
+        .eta_ii_pct = 65.4f,
+        .airflow_kg_s = 0.750f,
+        .t_dew_c = 13.50f,
+        .shf = 0.854f,
+        .alarm_bits = 0x00000002
+    };
+
+    char buf[256];
+    int len = datalogger_format_thermal_row(&rec, "2026-11-12T14:34:22.000Z", buf, sizeof(buf));
+    zassert_true(len > 0, "Format failed: %d", len);
+
+    const char *expected = "2026-11-12T14:34:22.000Z,1794474862,10.50,1.80,12.30,3.40,5.20,65.4,0.750,13.50,0.854,0x00000002\n";
+    zassert_equal(strcmp(buf, expected), 0, "Mismatch in formatted thermal row: got %s vs %s", buf, expected);
+}

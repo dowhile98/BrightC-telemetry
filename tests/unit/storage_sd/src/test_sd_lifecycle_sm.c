@@ -97,6 +97,15 @@ ZTEST(sd_lifecycle_sm_suite, test_sm_mount_failure_and_error)
     zassert_equal(sd_lifecycle_sm_get_status(&s_sm), STORAGE_FS_CARD_ERROR);
     zassert_false(sd_lifecycle_sm_is_ready(&s_sm));
     zassert_equal(s_sm.last_error, -EIO);
+    zassert_equal(s_sm.retry_count, 1);
+
+    /* Tick 500 ms - backoff still pending (retry_backoff_ms = 1000) */
+    act = sd_lifecycle_sm_process(&s_sm, SD_LIFECYCLE_EVT_TICK, 500);
+    zassert_equal(act, SD_LIFECYCLE_ACTION_NONE);
+
+    /* Tick another 500 ms (total 1000 ms) -> triggers auto-mount retry! */
+    act = sd_lifecycle_sm_process(&s_sm, SD_LIFECYCLE_EVT_TICK, 500);
+    zassert_equal(act, SD_LIFECYCLE_ACTION_MOUNT);
 }
 
 ZTEST(sd_lifecycle_sm_suite, test_sm_orderly_eject)

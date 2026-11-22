@@ -101,24 +101,50 @@ int datalogger_streamer_stream_file(datalogger_streamer_t *self,
     (void)sscanf(date_str, "%d-%d-%d", &year, &month, &day);
 
     char path[FS_MAX_PATH_LEN];
+    storage_fs_stat_t st;
+
     switch (stream_type) {
-    case LOG_STREAM_TELEMETRY:
-        snprintf(path, sizeof(path), "%s/history/%04d/%02d/%s_telemetry.csv",
+    case LOG_STREAM_TEMPERATURE:
+        snprintf(path, sizeof(path), "%s/history/temperature/%04d/%02d/%s_temperature.csv",
                  self->mount_point, year, month, date_str);
+        break;
+
+    case LOG_STREAM_ENERGY:
+        snprintf(path, sizeof(path), "%s/history/energy/%04d/%02d/%s_energy.csv",
+                 self->mount_point, year, month, date_str);
+        break;
+
+    case LOG_STREAM_THERMAL:
+        snprintf(path, sizeof(path), "%s/history/thermal/%04d/%02d/%s_thermal.csv",
+                 self->mount_point, year, month, date_str);
+        if (i_storage_fs_stat(&self->fs, path, &st) != 0) {
+            snprintf(path, sizeof(path), "%s/history/%04d/%02d/%s_telemetry.csv",
+                     self->mount_point, year, month, date_str);
+        }
         break;
 
     case LOG_STREAM_ALARMS:
-        snprintf(path, sizeof(path), "%s/logs/%04d/%02d/%s_alarms.log",
+        snprintf(path, sizeof(path), "%s/logs/alarms/%04d/%02d/%s_alarms.csv",
                  self->mount_point, year, month, date_str);
+        if (i_storage_fs_stat(&self->fs, path, &st) != 0) {
+            snprintf(path, sizeof(path), "%s/logs/%04d/%02d/%s_alarms.log",
+                     self->mount_point, year, month, date_str);
+        }
         break;
 
     case LOG_STREAM_SYSTEM:
-        snprintf(path, sizeof(path), "%s/logs/%04d/%02d/%s_system.log",
+        snprintf(path, sizeof(path), "%s/logs/system/%04d/%02d/%s_system.log",
                  self->mount_point, year, month, date_str);
+        if (i_storage_fs_stat(&self->fs, path, &st) != 0) {
+            snprintf(path, sizeof(path), "%s/logs/%04d/%02d/%s_system.log",
+                     self->mount_point, year, month, date_str);
+        }
         break;
 
     default:
-        return -EINVAL;
+        snprintf(path, sizeof(path), "%s/history/%04d/%02d/%s_telemetry.csv",
+                 self->mount_point, year, month, date_str);
+        break;
     }
 
     void *file_handle = NULL;

@@ -2295,11 +2295,17 @@ static int cmd_sd_status(const struct shell *sh, size_t argc, char **argv)
         break;
     }
 
+    bool card_present = app_facade_sd_is_card_present();
+
     shell_print(sh, "=== MicroSD Storage & Filesystem Status ===");
     shell_print(sh, "  Card Detect (PG5):   %s",
-                (status != STORAGE_FS_CARD_NOT_INSERTED && status != STORAGE_FS_CARD_UNKNOWN) ? "DETECTED (LOW)" : "ABSENT (HIGH)");
+                card_present ? "DETECTED (LOW)" : "ABSENT (HIGH)");
     shell_print(sh, "  Lifecycle Status:    %s", status_str);
     shell_print(sh, "  Mount Point:         /SD:");
+
+    if (status == STORAGE_FS_CARD_ERROR) {
+        shell_warn(sh, "  Fault Diagnostic:    Mount failed or hardware error. Auto-retry backoff active if card is inserted.");
+    }
 
     if (status == STORAGE_FS_CARD_MOUNTED) {
         shell_print(sh, "  Filesystem Format:   %s", vol.fs_type[0] ? vol.fs_type : "FATFS");

@@ -13,7 +13,7 @@ menu "BrightC Modbus Configuration"
 # --- 1. JSY-MK-339 3-phase AC energy meter (RS485-1) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_JSY_MK339
 	bool "JSY-MK-339 3-Phase AC Energy Meter"
-	default y
+	default n
 	help
 	  Enable Modbus RTU polling for JSY-MK-339 3-Phase AC energy meter on RS485-1.
 
@@ -28,7 +28,7 @@ config BRIGHTC_MODBUS_ADDR_JSY_MK339
 # --- 2. CWT-TM-16PT 16-channel PT100 concentrator #1 (RS485-1) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_CWT_TM16PT_1
 	bool "CWT-TM-16PT 16-channel PT100 Concentrator 1"
-	default y
+	default n
 	help
 	  Enable Modbus RTU polling for primary 16-channel PT100 concentrator on RS485-1.
 
@@ -62,7 +62,7 @@ config BRIGHTC_MODBUS_ADDR_CWT_TM16PT_2
 # --- 4. MBSL32DI 32-channel digital input module (RS485-2) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_MBSL32DI
 	bool "MBSL32DI 32-channel Digital Input Expander"
-	default y
+	default n
 	help
 	  Enable Modbus RTU polling for 32-channel digital input module on RS485-2.
 
@@ -77,7 +77,7 @@ config BRIGHTC_MODBUS_ADDR_MBSL32DI
 # --- 5. Waveshare 32-channel relay expander (RS485-2) ---
 menuconfig BRIGHTC_MODBUS_ENABLE_WAVESHARE_RELAY
 	bool "Waveshare 32-channel Modbus Relay Expander"
-	default y
+	default n
 	help
 	  Enable Modbus RTU control for Waveshare 32-channel relay module on RS485-2.
 

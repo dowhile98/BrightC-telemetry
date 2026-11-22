@@ -141,7 +141,7 @@ static void ao_storage_sd_thread_entry(void *p1, void *p2, void *p3)
                 SD_LIFECYCLE_EVT_CARD_DETECTED : SD_LIFECYCLE_EVT_CARD_REMOVED;
             sd_lifecycle_action_t act = sd_lifecycle_sm_process(&self->fsm, ev, 0);
             handle_fsm_action(self, act);
-        } else if (self->fsm.is_debouncing) {
+        } else {
             sd_lifecycle_action_t act = sd_lifecycle_sm_process(&self->fsm,
                                                                SD_LIFECYCLE_EVT_TICK,
                                                                AO_STORAGE_SD_POLL_INTERVAL_MS);
@@ -315,4 +315,13 @@ int ao_storage_sd_get_status(ao_storage_sd_t *self,
 
     k_mutex_unlock(&self->lock);
     return 0;
+}
+
+bool ao_storage_sd_is_card_present(ao_storage_sd_t *self)
+{
+    if (self == NULL || !self->is_initialized) {
+        return false;
+    }
+
+    return i_storage_fs_is_card_present(&self->fs) || sd_lifecycle_sm_is_card_present(&self->fsm);
 }

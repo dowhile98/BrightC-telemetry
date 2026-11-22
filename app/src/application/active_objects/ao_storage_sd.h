@@ -125,6 +125,11 @@ int ao_storage_sd_get_status(ao_storage_sd_t *self,
                              storage_fs_card_status_t *out_status,
                              storage_fs_volume_info_t *out_vol);
 
+/**
+ * @brief Check if physical card is currently detected in slot.
+ */
+bool ao_storage_sd_is_card_present(ao_storage_sd_t *self);
+
 #ifdef __cplusplus
 }
 #endif

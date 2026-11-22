@@ -64,8 +64,14 @@ typedef struct {
     char                    mount_point[32];
     uint32_t                boot_count;
 
-    /* Dedicated 512-byte RAM stream buffers (sector-aligned, .nocache on hardware) */
-    uint8_t                *telemetry_buf;
+    /* Dedicated RAM stream buffers (sector-aligned, .nocache on hardware) */
+    uint8_t                *temperature_buf;
+    size_t                  temperature_buf_len;
+    uint8_t                *energy_buf;
+    size_t                  energy_buf_len;
+    uint8_t                *thermal_buf;
+    size_t                  thermal_buf_len;
+    uint8_t                *telemetry_buf;      /* Backward compatibility pointer */
     size_t                  telemetry_buf_len;
     uint8_t                *alarms_buf;
     size_t                  alarms_buf_len;
@@ -75,7 +81,10 @@ typedef struct {
     size_t                  boot_buf_len;
 
     /* Active file handles */
-    void                   *telemetry_file;
+    void                   *temperature_file;
+    void                   *energy_file;
+    void                   *thermal_file;
+    void                   *telemetry_file;     /* Backward compatibility handle */
     void                   *alarms_file;
     void                   *system_file;
     void                   *boot_file;

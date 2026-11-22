@@ -358,3 +358,122 @@ ZTEST(ao_datalogger_suite, test_telemetry_stream_date_rollover)
     (void)ao_datalogger_stop(&s_datalogger);
     (void)ao_datalogger_wait_stopped(&s_datalogger, K_MSEC(1000));
 }
+
+ZTEST(ao_datalogger_suite, test_multi_stream_partitioned_logging)
+{
+    zassert_equal(ao_datalogger_start(&s_datalogger), 0);
+
+    /* Mount SD storage */
+    datalogger_event_envelope_t mount_evt = {
+        .type = DATALOGGER_EVT_STORAGE_STATUS,
+        .payload.storage_status = STORAGE_FS_CARD_MOUNTED,
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &mount_evt), 0);
+    zassert_equal(ao_datalogger_set_date(&s_datalogger, "2026-11-12"), 0);
+    k_sleep(K_MSEC(20));
+
+    /* 1. Post Temperature Sample */
+    datalogger_event_envelope_t temp_evt = {
+        .type = DATALOGGER_EVT_TEMPERATURE_SAMPLE,
+        .seq_id = 1,
+        .uptime_ms = 10000,
+        .payload.temperature = {
+            .epoch_s = 1794474862,
+            .uptime_ms = 10000,
+            .hvac_mode = 1,
+            .active_unit_mask = 0x01,
+            .t_ctrl_avg = 22.4f,
+            .t_ctrl_max = 23.0f,
+            .t_ctrl_min = 21.8f,
+            .t_ctrl_g0 = 22.5f,
+            .t_ctrl_g1 = 22.3f,
+            .t_inj_mean = 13.5f,
+            .t_ret_mean = 23.5f,
+            .delta_t_clima = 10.0f
+        }
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &temp_evt), 0);
+
+    /* 2. Post Energy Sample */
+    datalogger_event_envelope_t energy_evt = {
+        .type = DATALOGGER_EVT_ENERGY_SAMPLE,
+        .seq_id = 2,
+        .uptime_ms = 10000,
+        .payload.energy = {
+            .epoch_s = 1794474862,
+            .uptime_ms = 10000,
+            .v_a = 220.0f,
+            .v_b = 220.5f,
+            .v_c = 219.8f,
+            .i_a = 15.2f,
+            .i_b = 14.8f,
+            .i_c = 15.0f,
+            .p_tot_kw = 9.8f,
+            .power_factor = 0.95f,
+            .frequency_hz = 60.0f,
+            .energy_kwh = 12500.5f,
+            .reactive_energy_kvarh = 320.0f
+        }
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &energy_evt), 0);
+
+    /* 3. Post Thermal Sample */
+    datalogger_event_envelope_t thermal_evt = {
+        .type = DATALOGGER_EVT_THERMAL_SAMPLE,
+        .seq_id = 3,
+        .uptime_ms = 10000,
+        .payload.thermal = {
+            .epoch_s = 1794474862,
+            .uptime_ms = 10000,
+            .q_sens_kw = 12.5f,
+            .q_lat_kw = 2.1f,
+            .q_tot_kw = 14.6f,
+            .cop_real = 3.6f,
+            .cop_carnot = 5.5f,
+            .eta_ii_pct = 68.2f,
+            .airflow_kg_s = 0.82f,
+            .t_dew_c = 12.8f,
+            .shf = 0.856f,
+            .alarm_bits = 0x00000000
+        }
+    };
+    zassert_equal(ao_datalogger_post_event(&s_datalogger, &thermal_evt), 0);
+    k_sleep(K_MSEC(20));
+
+    /* Flush streams */
+    zassert_equal(ao_datalogger_flush(&s_datalogger), 0);
+    k_sleep(K_MSEC(50));
+
+    /* Inspect fake FS nodes */
+    fake_storage_fs_state_t *st = fake_storage_fs_get_state();
+    bool found_temp = false;
+    bool found_energy = false;
+    bool found_thermal = false;
+
+    for (size_t i = 0; i < FAKE_STORAGE_FS_MAX_NODES; i++) {
+        if (st->nodes[i].exists) {
+            if (strstr(st->nodes[i].path, "history/temperature/2026/11/2026-11-12_temperature.csv") != NULL) {
+                found_temp = true;
+                zassert_not_null(strstr((const char *)st->nodes[i].data, "# schema_version=1;source=BrightC_V3;type=temperature_history"));
+                zassert_not_null(strstr((const char *)st->nodes[i].data, "22.40,23.00,21.80"));
+            }
+            if (strstr(st->nodes[i].path, "history/energy/2026/11/2026-11-12_energy.csv") != NULL) {
+                found_energy = true;
+                zassert_not_null(strstr((const char *)st->nodes[i].data, "# schema_version=1;source=BrightC_V3;type=energy_history"));
+                zassert_not_null(strstr((const char *)st->nodes[i].data, "220.0,220.5,219.8"));
+            }
+            if (strstr(st->nodes[i].path, "history/thermal/2026/11/2026-11-12_thermal.csv") != NULL) {
+                found_thermal = true;
+                zassert_not_null(strstr((const char *)st->nodes[i].data, "# schema_version=1;source=BrightC_V3;type=thermal_history"));
+                zassert_not_null(strstr((const char *)st->nodes[i].data, "12.50,2.10,14.60"));
+            }
+        }
+    }
+
+    zassert_true(found_temp, "Temperature history file missing or misplaced!");
+    zassert_true(found_energy, "Energy history file missing or misplaced!");
+    zassert_true(found_thermal, "Thermal history file missing or misplaced!");
+
+    (void)ao_datalogger_stop(&s_datalogger);
+    (void)ao_datalogger_wait_stopped(&s_datalogger, K_MSEC(1000));
+}

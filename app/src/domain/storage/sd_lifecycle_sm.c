@@ -31,6 +31,8 @@ sd_lifecycle_action_t sd_lifecycle_sm_process(sd_lifecycle_sm_t *sm,
     switch (evt) {
     case SD_LIFECYCLE_EVT_CARD_DETECTED:
         sm->card_present = true;
+        sm->retry_count = 0;
+        sm->retry_backoff_elapsed_ms = 0;
         if (!sm->is_mounted) {
             sm->status = STORAGE_FS_CARD_INSERTED_UNMOUNTED;
             sm->is_debouncing = true;
@@ -43,6 +45,8 @@ sd_lifecycle_action_t sd_lifecycle_sm_process(sd_lifecycle_sm_t *sm,
         sm->card_present = false;
         sm->is_debouncing = false;
         sm->debounce_elapsed_ms = 0;
+        sm->retry_count = 0;
+        sm->retry_backoff_elapsed_ms = 0;
 
         if (sm->is_mounted) {
             sm->status = STORAGE_FS_CARD_EJECT_REQUESTED;
@@ -63,6 +67,16 @@ sd_lifecycle_action_t sd_lifecycle_sm_process(sd_lifecycle_sm_t *sm,
                     return SD_LIFECYCLE_ACTION_MOUNT;
                 }
             }
+        } else if (sm->status == STORAGE_FS_CARD_ERROR && sm->card_present && !sm->is_mounted) {
+            /* Auto-recovery retry backoff */
+            if (sm->retry_count <= SD_LIFECYCLE_MAX_RETRIES) {
+                uint32_t delta = (param > 0) ? (uint32_t)param : 0U;
+                sm->retry_backoff_elapsed_ms += delta;
+                if (sm->retry_backoff_elapsed_ms >= SD_LIFECYCLE_RETRY_BACKOFF_MS) {
+                    sm->retry_backoff_elapsed_ms = 0;
+                    return SD_LIFECYCLE_ACTION_MOUNT;
+                }
+            }
         }
         return SD_LIFECYCLE_ACTION_NONE;
 
@@ -71,6 +85,8 @@ sd_lifecycle_action_t sd_lifecycle_sm_process(sd_lifecycle_sm_t *sm,
         sm->is_debouncing = false;
         sm->status = STORAGE_FS_CARD_MOUNTED;
         sm->last_error = 0;
+        sm->retry_count = 0;
+        sm->retry_backoff_elapsed_ms = 0;
         return SD_LIFECYCLE_ACTION_PUBLISH_STATUS;
 
     case SD_LIFECYCLE_EVT_MOUNT_FAILED:
@@ -78,6 +94,8 @@ sd_lifecycle_action_t sd_lifecycle_sm_process(sd_lifecycle_sm_t *sm,
         sm->is_debouncing = false;
         sm->status = STORAGE_FS_CARD_ERROR;
         sm->last_error = (int)param;
+        sm->retry_count++;
+        sm->retry_backoff_elapsed_ms = 0;
         return SD_LIFECYCLE_ACTION_PUBLISH_STATUS;
 
     case SD_LIFECYCLE_EVT_EJECT_REQUESTED:
@@ -99,6 +117,8 @@ sd_lifecycle_action_t sd_lifecycle_sm_process(sd_lifecycle_sm_t *sm,
     case SD_LIFECYCLE_EVT_MANUAL_MOUNT:
         if (sm->card_present && !sm->is_mounted) {
             sm->is_debouncing = false;
+            sm->retry_count = 0;
+            sm->retry_backoff_elapsed_ms = 0;
             return SD_LIFECYCLE_ACTION_MOUNT;
         }
         return SD_LIFECYCLE_ACTION_NONE;

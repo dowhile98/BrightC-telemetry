@@ -22,6 +22,8 @@ extern "C" {
 #endif
 
 #define SD_LIFECYCLE_DEFAULT_DEBOUNCE_MS 150U
+#define SD_LIFECYCLE_MAX_RETRIES         3U
+#define SD_LIFECYCLE_RETRY_BACKOFF_MS    1000U
 
 typedef enum {
     SD_LIFECYCLE_EVT_NONE = 0,
@@ -50,6 +52,8 @@ typedef struct {
     bool                     is_debouncing;
     uint32_t                 debounce_elapsed_ms;
     uint32_t                 debounce_target_ms;
+    uint32_t                 retry_count;
+    uint32_t                 retry_backoff_elapsed_ms;
     int                      last_error;
 } sd_lifecycle_sm_t;
 

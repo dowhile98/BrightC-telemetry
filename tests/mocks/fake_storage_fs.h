@@ -20,10 +20,10 @@
 extern "C" {
 #endif
 
-#define FAKE_STORAGE_FS_MAX_NODES        32U
+#define FAKE_STORAGE_FS_MAX_NODES        64U
 #define FAKE_STORAGE_FS_FILE_MAX_SIZE    8192U
-#define FAKE_STORAGE_FS_MAX_OPEN_FILES   8U
-#define FAKE_STORAGE_FS_MAX_OPEN_DIRS    4U
+#define FAKE_STORAGE_FS_MAX_OPEN_FILES   16U
+#define FAKE_STORAGE_FS_MAX_OPEN_DIRS    8U
 
 typedef struct {
     char    path[FS_MAX_PATH_LEN];
